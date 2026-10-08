@@ -23,6 +23,7 @@ import {
   getTransferCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
+import { withRateLimitRetry as rl } from "./retry";
 import type { SettlementAdapter, SettleResult } from "./types";
 
 const DECIMALS = 6;
@@ -45,7 +46,7 @@ export function createSolanaAdapter(cfg: {
 
   async function sendAndConfirm(instructions: Instruction[]): Promise<string> {
     const feePayer = await treasury;
-    const { value: latest } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
+    const { value: latest } = await rl(() => rpc.getLatestBlockhash({ commitment: "confirmed" }).send());
     const message = pipe(
       createTransactionMessage({ version: 0 }),
       (m) => setTransactionMessageFeePayerSigner(feePayer, m),
@@ -54,15 +55,14 @@ export function createSolanaAdapter(cfg: {
     );
     const tx = await signTransactionMessageWithSigners(message);
     const sig = getSignatureFromTransaction(tx);
-    await rpc
-      .sendTransaction(getBase64EncodedWireTransaction(tx), { encoding: "base64", preflightCommitment: "confirmed" })
-      .send();
-    for (let i = 0; i < 40; i++) {
-      const { value } = await rpc.getSignatureStatuses([sig]).send();
+    const wire = getBase64EncodedWireTransaction(tx);
+    await rl(() => rpc.sendTransaction(wire, { encoding: "base64", preflightCommitment: "confirmed" }).send());
+    for (let i = 0; i < 30; i++) {
+      await sleep(1000);
+      const { value } = await rl(() => rpc.getSignatureStatuses([sig]).send());
       const status = value[0];
       if (status?.err) throw new Error(`Solana tx ${sig} failed: ${JSON.stringify(status.err)}`);
       if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return sig;
-      await sleep(750);
     }
     throw new Error(`Solana tx ${sig} not confirmed in time`);
   }
@@ -99,9 +99,9 @@ export function createSolanaAdapter(cfg: {
     },
     async getBalance(owner) {
       const ata = await ataOf(address(owner));
-      const { value } = await rpc.getAccountInfo(ata, { encoding: "base64" }).send();
+      const { value } = await rl(() => rpc.getAccountInfo(ata, { encoding: "base64" }).send());
       if (!value) return 0n;
-      const bal = await rpc.getTokenAccountBalance(ata).send();
+      const bal = await rl(() => rpc.getTokenAccountBalance(ata).send());
       return BigInt(bal.value.amount);
     },
     async settle({ fromSecret, to, amount, memo, closeSource }) {

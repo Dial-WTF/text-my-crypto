@@ -13,7 +13,8 @@
     "PAYPHONE_BASE_URL": "https://payphone.wtf",
     "SMS_MODE": "payphone",
     "SOLANA_RPC_URL": "https://api.devnet.solana.com",
-    "ESCROW_TTL_DAYS": "7"
+    "ESCROW_TTL_DAYS": "7",
+    "SIGNUP_DRIP_USD": "2"
   },
   "d1_databases": [
     {
