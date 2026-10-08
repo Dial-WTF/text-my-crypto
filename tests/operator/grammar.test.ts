@@ -43,6 +43,19 @@ describe("parseCommand: request and invoice", () => {
   });
 });
 
+describe("parseCommand: withdraw", () => {
+  const SOL = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  const EVM = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb";
+  it.each([
+    [`withdraw $10 to ${SOL}`, { kind: "withdraw", amountUsd: "10", address: SOL }],
+    [`send $10 to ${SOL}`, { kind: "withdraw", amountUsd: "10", address: SOL }],
+    [`withdraw all to ${SOL}`, { kind: "withdraw", amountUsd: "all", address: SOL }],
+    [`cash out 5 to ${EVM} on base`, { kind: "withdraw", amountUsd: "5", address: EVM, chain: "base" }],
+  ])("%s", (text, expected) => {
+    expect(parseCommand(text)).toEqual(expected);
+  });
+});
+
 describe("parseCommand: other", () => {
   it.each(["balance", "Balance?", "bal"])("%s → balance", (t) => {
     expect(parseCommand(t)).toEqual({ kind: "balance" });

@@ -13,7 +13,7 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { logInbound } from "@/lib/sms/log";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains } from "./accounts";
-import { moneyCommandSchema, prepareMoney } from "./money";
+import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { text } from "./text";
 import type { BotDeps } from "./types";
@@ -88,6 +88,9 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
     case "request":
     case "invoice":
       await reply(await prepareMoney(deps, user, cmd));
+      break;
+    case "withdraw":
+      await reply(await prepareWithdraw(deps, user, cmd));
       break;
   }
   return out;

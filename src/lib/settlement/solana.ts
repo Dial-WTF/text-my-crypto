@@ -7,6 +7,7 @@ import {
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
+  isAddress,
   type Instruction,
   type KeyPairSigner,
   pipe,
@@ -90,6 +91,7 @@ export function createSolanaAdapter(cfg: {
   return {
     chain: "solana",
     tokenId: cfg.mint,
+    isValidAddress: (a) => isAddress(a),
     async createWallet() {
       const secret = crypto.getRandomValues(new Uint8Array(32));
       const signer = await createKeyPairSignerFromPrivateKeyBytes(secret);

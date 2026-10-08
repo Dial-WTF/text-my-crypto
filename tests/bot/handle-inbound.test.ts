@@ -197,6 +197,28 @@ describe("request and invoice", () => {
   });
 });
 
+describe("withdraw", () => {
+  const OUT = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  beforeEach(async () => {
+    await signUp(ALEX, "alex");
+  });
+
+  it("withdraws to an outside address after the texted code", async () => {
+    const confirm = await say(ALEX, `withdraw $12 to ${OUT}`);
+    expect(confirm).toMatch(/^Withdraw \$12 USDC to 7xKX…gAsU on Solana\? Reply \d{6} to confirm/);
+    await say(ALEX, codeIn(confirm));
+    expect(sol.settled.at(-1)).toMatchObject({ to: OUT, amount: 12_000_000n });
+    expect(sms.last(ALEX)).toMatch(/^Withdrew \$12 to 7xKX…gAsU\. Receipt: /);
+  });
+
+  it("withdraws everything and rejects bad addresses", async () => {
+    expect(await say(ALEX, `withdraw all to ${OUT}`)).toMatch(/^Withdraw \$50 USDC|^Test mode caps/);
+    expect(await say(ALEX, "withdraw $1 to 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb on tempo")).toBe(
+      "Tempo isn't switched on yet. Try Solana.",
+    );
+  });
+});
+
 describe("balance, receive, upgrade, chat", () => {
   beforeEach(async () => {
     await signUp(ALEX, "alex");

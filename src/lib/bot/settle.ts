@@ -72,6 +72,11 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   }
 
   await markSettled(deps.db, intent.id, result, deps.now());
+  if (intent.kind === "withdraw") {
+    const short = `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}`;
+    await notify(deps, sender.phone, replies.withdrew(amount, short, result.explorerUrl));
+    return { ok: true, status: "settled", ...result };
+  }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
   if (intent.kind === "send") {
     await notify(

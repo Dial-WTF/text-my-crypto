@@ -16,6 +16,7 @@ export function fakeAdapter(opts: { defaultBalance?: bigint; chain?: SettlementA
   return {
     chain,
     tokenId: "Mint111",
+    isValidAddress: (a) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a) || /^0x[0-9a-fA-F]{40}$/.test(a),
     settled,
     funded,
     balances,

@@ -11,8 +11,11 @@ export type MoneyCommand = {
   chain?: Chain;
 };
 
+export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
+
 export type Command =
   | MoneyCommand
+  | WithdrawCommand
   | { kind: "balance" }
   | { kind: "receive" }
   | { kind: "reclaim" }
@@ -51,6 +54,12 @@ const PATTERNS: Pattern[] = [
   p("invoice", String.raw`${INVOICE}\s+(${WHO})\s+${AMT}`, 1, 2, 3, 4),
 ];
 
+const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,})`;
+const WITHDRAW = new RegExp(
+  String.raw`^(?:withdraw|cash out|send|move)\s+(all|everything|\$?\d{1,7}(?:\.\d+)?)\s*(?:usdc?|dollars?|bucks)?\s+to\s+${ADDRESS}${ON}${END}`,
+  "i",
+);
+
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
 const RECEIVE = /^(?:receive|my address|address|deposit|wallet)\??$/i;
 const HELP = /^(?:help|\?|commands)$/i;
@@ -86,6 +95,16 @@ export function parseCommand(text: string): Command {
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
+  const w = WITHDRAW.exec(t);
+  if (w?.[1] && w[2]) {
+    const rawAmount = w[1].replace(/^\$/, "");
+    const all = /^(all|everything)$/i.test(rawAmount);
+    if (!all && !isUsdAmount(rawAmount)) return { kind: "chat" };
+    const cmd: WithdrawCommand = { kind: "withdraw", amountUsd: all ? "all" : rawAmount, address: w[2] };
+    if (w[3] === undefined) return cmd;
+    const chain = parseChain(w[3]);
+    return chain ? { ...cmd, chain } : { kind: "chat" };
+  }
   for (const pat of PATTERNS) {
     const m = pat.re.exec(t);
     if (!m) continue;

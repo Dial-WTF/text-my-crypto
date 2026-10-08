@@ -54,5 +54,11 @@ export const replies = {
   nothingToReclaim: (days: number) =>
     `Nothing to reclaim right now. Unclaimed payments can come back after ${plural(days, "day")}.`,
   upgrade: (link: string) => `Add a passkey for one-tap approvals and higher limits: ${link}`,
+  confirmWithdraw: (amount: string, address: string, chain: string, code: string, link: string) =>
+    `Withdraw ${amount} USDC to ${address} on ${chain}? Reply ${code} to confirm, or tap: ${link}`,
+  withdrew: (amount: string, address: string, explorerUrl: string) =>
+    `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
+  badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
+  nothingToWithdraw: () => `Your balance is $0. Nothing to withdraw.`,
   failed: () => `That payment didn't go through. No funds moved.`,
 } as const;

@@ -12,7 +12,7 @@ const amount = customType<{ data: bigint; driverData: number | bigint }>({
 const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
 const now = sql`(unixepoch('subsec') * 1000)`;
 
-const INTENT_KINDS = ["send", "request", "invoice"] as const;
+const INTENT_KINDS = ["send", "request", "invoice", "withdraw"] as const;
 const INTENT_STATUSES = ["pending", "settling", "escrowed", "settled", "refunded", "failed", "declined"] as const;
 
 export const users = sqliteTable("users", {

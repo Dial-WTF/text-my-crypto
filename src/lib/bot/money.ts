@@ -6,7 +6,7 @@ import type { User } from "@/lib/db/schema";
 import { createUnclaimedUser, displayName, findUserByHandle, findUserByPhone, isClaimed } from "@/lib/identity";
 import { createIntent, issueCode, sentSince } from "@/lib/intents";
 import { formatUsd, usdToBaseUnits } from "@/lib/money";
-import type { MoneyCommand } from "@/lib/operator/grammar";
+import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
@@ -125,4 +125,49 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
   }
   await text(deps, other.phone, replies.payInvoice(me, formatUsd(amount), note, code, link));
   return replies.invoiceSent(formatUsd(amount), otherName, link);
+}
+
+function shortAddress(a: string): string {
+  return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+}
+
+/** Moves funds out to an address the user controls. Same code/limit rules as a send. */
+export async function prepareWithdraw(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<string> {
+  const chain = cmd.chain ?? user.defaultChain;
+  const adapter = deps.adapters[chain];
+  if (!adapter) return replies.chainUnavailable(chainLabel(chain));
+  if (!adapter.isValidAddress(cmd.address)) return replies.badAddress(chainLabel(chain));
+
+  const mine = await ensureWallet(deps, user.id, chain, adapter);
+  const balance = await adapter.getBalance(mine.address);
+  const amount = cmd.amountUsd === "all" ? balance : usdToBaseUnits(cmd.amountUsd);
+  if (amount <= 0n) return replies.nothingToWithdraw();
+  if (amount > deps.perTxCap) return replies.overCap(formatUsd(deps.perTxCap));
+  if (balance < amount) return replies.insufficient(formatUsd(balance));
+  const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
+  if (today + amount > deps.perDayCap) return replies.overDaily(formatUsd(deps.perDayCap));
+
+  const intent = await createIntent(
+    deps.db,
+    {
+      kind: "withdraw",
+      createdBy: user.id,
+      senderId: user.id,
+      recipientId: user.id,
+      chain,
+      token: adapter.tokenId,
+      recipientAddress: cmd.address,
+      amount,
+      note: null,
+    },
+    deps.now(),
+  );
+  const code = await issueCode(deps.db, intent.id);
+  return replies.confirmWithdraw(
+    formatUsd(amount),
+    shortAddress(cmd.address),
+    chainLabel(chain),
+    code,
+    `${deps.appUrl}/a/${intent.id}`,
+  );
 }
