@@ -16,6 +16,7 @@ import { createIntent, findPendingDuplicate, findRecentCompletedDuplicate, issue
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
+import { hasOutboundSince } from "@/lib/sms/log";
 import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
@@ -142,15 +143,32 @@ export async function findDuplicate(
   return done ? { justSent: done } : null;
 }
 
-/** SMS answer to a repeat: the pending one gets a fresh code; a just-sent one is pointed out. */
-async function repeatReply(deps: BotDeps, user: User, other: User, kind: MoneyCommand["kind"], dup: Duplicate): Promise<string | null> {
+/**
+ * SMS answer to a repeat. A pending payment gets a fresh code (as a normal confirmation if its first confirmation
+ * never went out, otherwise as "you already asked… or NEW"); a just-sent one is pointed out. `askNew` means the
+ * operator should wait for NEW.
+ */
+async function repeatReply(
+  deps: BotDeps,
+  user: User,
+  other: User,
+  kind: MoneyCommand["kind"],
+  dup: Duplicate,
+): Promise<{ text: string; askNew: boolean } | null> {
   if (!dup) return null;
   const otherName = describe(other);
-  if ("justSent" in dup) return replies.justSent(formatUsd(dup.justSent.amount), otherName);
+  if ("justSent" in dup) return { text: replies.justSent(formatUsd(dup.justSent.amount), otherName), askNew: true };
   const { pending } = dup;
-  if (kind !== "send") return replies.alreadyRequested(formatUsd(pending.amount), otherName);
+  if (kind !== "send") return { text: replies.alreadyRequested(formatUsd(pending.amount), otherName), askNew: false };
   const code = await codeFor(deps, user.id, pending.id, pending.amount);
-  return replies.alreadyPending(formatUsd(pending.amount), otherName, code, `${deps.appUrl}/a/${pending.id}`);
+  const link = `${deps.appUrl}/a/${pending.id}`;
+  // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
+  // so confirm normally. Otherwise they saw it and are repeating on purpose.
+  if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
+    const text = replies.confirmSend(formatUsd(pending.amount), otherName, chainLabel(pending.chain), pending.note, code, link);
+    return { text, askNew: false };
+  }
+  return { text: replies.alreadyPending(formatUsd(pending.amount), otherName, code, link), askNew: true };
 }
 
 /**
@@ -329,10 +347,10 @@ export async function prepareMoney(
   if (!opts.allowDuplicate) {
     const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain);
     const repeat = await repeatReply(deps, user, other, cmd.kind, dup);
-    if (repeat) {
+    if (repeat?.askNew) {
       await setConversation(deps.db, user.phone, { state: "awaiting_duplicate", payload: { command: JSON.stringify(cmd) } }, deps.now());
-      return repeat;
     }
+    if (repeat) return repeat.text;
   }
 
   const r = await createMoneyIntent(deps, user, cmd, other);

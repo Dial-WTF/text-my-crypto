@@ -2,7 +2,7 @@ import { logOutbound } from "@/lib/sms/log";
 import { isOptedOut } from "@/lib/sms/optout";
 import type { BotDeps } from "./types";
 
-type TextDeps = Pick<BotDeps, "db" | "sendSms">;
+type TextDeps = Pick<BotDeps, "db" | "sendSms"> & Partial<Pick<BotDeps, "now">>;
 
 /**
  * Sends an SMS and logs it. Numbers that texted STOP are never texted, except for the one
@@ -11,7 +11,7 @@ type TextDeps = Pick<BotDeps, "db" | "sendSms">;
 export async function text(deps: TextDeps, phone: string, body: string, opts: { force?: boolean } = {}): Promise<boolean> {
   if (!opts.force && (await isOptedOut(deps.db, phone))) return false;
   await deps.sendSms(phone, body);
-  await logOutbound(deps.db, phone, body);
+  await logOutbound(deps.db, phone, body, deps.now?.() ?? new Date());
   return true;
 }
 

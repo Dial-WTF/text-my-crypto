@@ -17,7 +17,10 @@ const conversationSchema = z.discriminatedUnion("state", [
 
 export type Conversation = z.infer<typeof conversationSchema>;
 
-export async function getConversation(db: Db, phone: string, now: Date): Promise<Conversation | null> {
+/** A conversation as loaded, with `rev` (its stored expiry) so it can be cleared only if unchanged. */
+export type LoadedConversation = Conversation & { rev: number };
+
+export async function getConversation(db: Db, phone: string, now: Date): Promise<LoadedConversation | null> {
   const [row] = await db
     .select()
     .from(conversations)
@@ -25,7 +28,7 @@ export async function getConversation(db: Db, phone: string, now: Date): Promise
     .limit(1);
   if (!row) return null;
   const parsed = conversationSchema.safeParse({ state: row.state, payload: JSON.parse(row.payload) });
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? { ...parsed.data, rev: row.expiresAt.getTime() } : null;
 }
 
 export async function setConversation(db: Db, phone: string, c: Conversation, now: Date): Promise<void> {
@@ -39,6 +42,14 @@ export async function setConversation(db: Db, phone: string, c: Conversation, no
     .insert(conversations)
     .values(values)
     .onConflictDoUpdate({ target: conversations.phone, set: values });
+}
+
+/**
+ * Clears the question the operator was waiting on, but only if it's still the one that was loaded:
+ * a newer question set during the same turn survives.
+ */
+export async function clearConversationIf(db: Db, phone: string, rev: number): Promise<void> {
+  await db.delete(conversations).where(and(eq(conversations.phone, phone), eq(conversations.expiresAt, new Date(rev))));
 }
 
 export async function clearConversation(db: Db, phone: string): Promise<void> {

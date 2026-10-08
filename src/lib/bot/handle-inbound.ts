@@ -1,7 +1,13 @@
 import { chainLabel } from "@/lib/chains";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { saveContact } from "@/lib/contacts";
-import { clearConversation, type Conversation, getConversation, setConversation } from "@/lib/conversations";
+import {
+  clearConversationIf,
+  type Conversation,
+  getConversation,
+  type LoadedConversation,
+  setConversation,
+} from "@/lib/conversations";
 import type { User } from "@/lib/db/schema";
 import {
   createSignupToken,
@@ -54,7 +60,8 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   if (await isBurstRepeat(deps.db, logId, msg.from, msg.body, new Date(deps.now().getTime() - BURST_MS))) return [];
 
   const user = await findUserByPhone(deps.db, msg.from);
-  const session = await loadSession(deps, msg.from, user);
+  const loaded = await getConversation(deps.db, msg.from, deps.now());
+  const session = await loadSession(deps, msg.from, user, loaded);
   const action = decide(session, classify(msg.body));
 
   const out: string[] = [];
@@ -62,15 +69,25 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
     if (await text(deps, msg.from, body, { force })) out.push(body);
   };
   await act(deps, action, { phone: msg.from, body: msg.body, user, convo: session.convo, reply });
+  // Only now, after the action and its reply succeeded, is the question it answered (or abandoned) used up.
+  // If anything above threw, the question is still there for the retry.
+  if (loaded && CONSUMES_QUESTION.has(action.do)) await clearConversationIf(deps.db, msg.from, loaded.rev);
   return out;
 }
 
-async function loadSession(deps: BotDeps, phone: string, user: User | null): Promise<Session> {
+const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "command"]);
+
+async function loadSession(
+  deps: BotDeps,
+  phone: string,
+  user: User | null,
+  convo: LoadedConversation | null,
+): Promise<Session> {
   const claimed = user !== null && isClaimed(user);
   return {
     account: !user ? "unknown" : claimed ? "claimed" : "unclaimed",
     optedOut: await isOptedOut(deps.db, phone),
-    convo: await getConversation(deps.db, phone, deps.now()),
+    convo,
     awaitingApproval: claimed ? await hasAwaitingApproval(deps.db, user.id, deps.now()) : false,
   };
 }
@@ -106,7 +123,6 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
     case "signup": {
       const result = await completeSignup(deps, phone, action.name);
       if (!result.ok) return reply(result.error);
-      await clearConversation(deps.db, phone);
       await reply(result.reply);
       return offerWaiting(deps, result.user);
     }
@@ -122,7 +138,6 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
     case "codeHint":
       return reply(replies.codeHint());
     case "nevermind":
-      await clearConversation(deps.db, phone);
       return reply(replies.cancelled(await cancelUnapproved(deps.db, user.id, deps.now())));
     case "confirmNew":
     case "pick":
@@ -140,7 +155,6 @@ async function answerPrompt(
   convo: Conversation | null,
   action: Extract<Action, { do: "confirmNew" | "pick" | "useNumber" }>,
 ): Promise<string> {
-  await clearConversation(deps.db, user.phone);
   if (!convo || convo.state === "awaiting_name") return replies.chatFallback();
   const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
   if (!parsed.success) return replies.chatFallback();
@@ -154,7 +168,6 @@ async function answerPrompt(
 }
 
 async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: string) => Promise<void>): Promise<void> {
-  await clearConversation(deps.db, user.phone);
   const turn = await interpret(body, deps.llm, await recentHistory(deps.db, user.phone));
   const cmd = turn.command;
   switch (cmd.kind) {

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
 import { smsLog } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -123,4 +123,14 @@ export async function recentHistory(db: Db, phone: string, limit = 6): Promise<s
     .orderBy(desc(inserted))
     .limit(limit);
   return rows.reverse().map((r) => `${r.direction === "in" ? "them" : "operator"}: ${r.body.slice(0, 200)}`);
+}
+
+/** Has the operator texted this phone at or after `since`? */
+export async function hasOutboundSince(db: Db, phone: string, since: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: smsLog.id })
+    .from(smsLog)
+    .where(and(eq(smsLog.phone, phone), eq(smsLog.direction, "out"), gte(smsLog.createdAt, since)))
+    .limit(1);
+  return Boolean(row);
 }
