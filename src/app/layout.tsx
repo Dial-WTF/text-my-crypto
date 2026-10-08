@@ -37,6 +37,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: s.title,
     description: s.description,
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: s.shareAlt }],
   },
   appleWebApp: { capable: true, title: s.name, statusBarStyle: "black-translucent" },
   robots: { index: true, follow: true },
