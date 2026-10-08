@@ -20,7 +20,7 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 ## Non-goals (for the hackathon)
 
 - Mainnet funds, fiat on/off-ramp, KYC.
-- Payment requests, invoices, thread unlocks (pitch-deck roadmap only).
+- Thread unlocks, fiat on/off-ramp (pitch-deck roadmap only).
 - Dial chat / Matrix channel (SMS only; channel interface leaves room).
 - Native mobile app.
 
@@ -46,6 +46,19 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 
 ### 3. Unregistered recipient (claim link)
 If the recipient is a phone number with no account, funds go to a per-intent escrow held by the server wallet on that chain, and the recipient gets an SMS claim link. Claiming = onboarding, then the escrow pays out. Unclaimed after 7 days → refund. This is the growth loop for the pitch. **Stretch goal**: build after all three chains settle end to end.
+
+### 4. Request, receive, invoice (SMS)
+- `request $25 from adam for pizza` → intent with `kind=request`, `createdBy=alex`, sender=adam, recipient=alex, 7-day expiry. adam gets: `alex is asking for $25 USDC (pizza). Pay: <link>` and approves with his passkey, or taps Decline.
+- `invoice sam $200 for logo design` → same as a request with `kind=invoice`; the link renders as an invoice page.
+- `receive` / `my address` → the user's Dial name and wallet address on each enabled chain.
+
+### 5. Agents (MCP server + skill)
+Any AI agent can use Dial on a person's behalf. The person stays the signer.
+- **MCP server** at `/api/mcp` (Streamable HTTP, same Worker). Tools: `whoami`, `get_balance`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `get_payment`, `list_payments`, `get_receive_address`.
+- **Auth:** per-user agent keys. Text `connect agent` → link → passkey → key shown once (stored hashed). Revoke by texting `revoke agents`.
+- **Approval stays human:** every money-moving tool creates a PaymentIntent and texts the owner the approval link; the tool returns `{ intentId, status: "awaiting_approval", approveUrl }`. Agents poll `get_payment`. (Later: an optional per-agent allowance under which payments auto-approve.)
+- **Skill:** `skills/dial-operator/SKILL.md` in this repo, installable with `npx skills add Dial-WTF/text-my-crypto`, telling agents how to connect and use the tools.
+- Pitch line: any agent can pay, request or invoice anyone with a phone number; the human approves from a text.
 
 ## Architecture
 
