@@ -3,7 +3,15 @@ import { CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import { setConversation } from "@/lib/conversations";
 import type { User } from "@/lib/db/schema";
-import { createUnclaimedUser, displayName, findUserByHandle, findUserByPhone, isClaimed } from "@/lib/identity";
+import {
+  createUnclaimedUser,
+  describe,
+  displayName,
+  findUserByHandle,
+  findUserByPhone,
+  isClaimed,
+  searchDirectory,
+} from "@/lib/identity";
 import { createIntent, issueCode, sentSince } from "@/lib/intents";
 import { formatUsd, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
@@ -23,16 +31,28 @@ export const moneyCommandSchema = z.object({
   chain: z.enum(CHAINS).optional(),
 });
 
-type Resolved = { user: User } | { askFor: string } | { error: string };
+type Resolved = { user: User } | { askFor: string } | { choose: User[] } | { error: string };
 
+/**
+ * Who does the sender mean? Like an operator: @handle and numbers connect directly; then the sender's
+ * own contacts; then the directory. One directory match connects (the confirmation names them),
+ * several ask the sender to pick, none asks for a number.
+ */
 async function resolveCounterparty(deps: BotDeps, owner: User, raw: string): Promise<Resolved> {
   if (raw.startsWith("@")) {
     const u = await findUserByHandle(deps.db, raw.slice(1));
     return u ? { user: u } : { error: replies.unknownHandle(raw) };
   }
   const phone = normalizePhone(raw) ?? (await findContact(deps.db, owner.id, raw))?.phone ?? null;
-  if (!phone) return { askFor: raw };
-  return { user: (await findUserByPhone(deps.db, phone)) ?? (await createUnclaimedUser(deps.db, phone)) };
+  if (phone) return { user: (await findUserByPhone(deps.db, phone)) ?? (await createUnclaimedUser(deps.db, phone)) };
+
+  const exact = await findUserByHandle(deps.db, raw);
+  if (exact && exact.id !== owner.id) return { user: exact };
+  const matches = (await searchDirectory(deps.db, raw, 6)).filter((u) => u.id !== owner.id).slice(0, 5);
+  const [only] = matches;
+  if (matches.length === 1 && only) return { user: only };
+  if (matches.length > 1) return { choose: matches };
+  return { askFor: raw };
 }
 
 /** Over the threshold, an account with a passkey must use it: no SMS code is issued. */
@@ -57,6 +77,22 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
 
   const resolved = await resolveCounterparty(deps, user, cmd.counterparty);
   if ("error" in resolved) return resolved.error;
+  if ("choose" in resolved) {
+    await setConversation(
+      deps.db,
+      user.phone,
+      {
+        state: "awaiting_choice",
+        payload: {
+          name: cmd.counterparty,
+          command: JSON.stringify(cmd),
+          handles: resolved.choose.flatMap((u) => (u.handle ? [u.handle] : [])),
+        },
+      },
+      deps.now(),
+    );
+    return replies.chooseRecipient(cmd.counterparty, resolved.choose.map(describe));
+  }
   if ("askFor" in resolved) {
     await setConversation(
       deps.db,
@@ -71,7 +107,7 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
 
   const mine = await ensureWallet(deps, user.id, chain, adapter);
   const note = cmd.note ?? null;
-  const otherName = displayName(other);
+  const otherName = describe(other);
   const me = displayName(user);
 
   if (cmd.kind === "send") {

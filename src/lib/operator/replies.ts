@@ -8,15 +8,23 @@ export const replies = {
     `hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?`,
   welcomeWithMoney: (amount: string, from: string) =>
     `hi, I'm the Dial operator. ${from} sent you ${amount} USDC and it's waiting for you. What name should people use to pay you?`,
-  badHandle: () => `Names are 3-20 letters, numbers or _, starting with a letter. Try another?`,
-  handleTaken: (name: string) => `${name} is taken. Try another?`,
-  joined: (handle: string, drip: string | null) =>
-    drip
-      ? `You're in, ${handle}. I dropped ${drip} of test USDC in your wallet. Try: send jeremy $5`
-      : `You're in, ${handle}. Try: send jeremy $5`,
+  badName: () => `What should I call you? Any name works, like Alex or J. P. Meyer.`,
+  nameFirst: () => `First things first: what name should people use to pay you?`,
+  joined: (name: string, handle: string, drip: string | null) =>
+    `You're in, ${name}. Your Dial name is @${handle}, so people can text me "send @${handle} $5".` +
+    (drip ? ` I dropped ${drip} of test USDC in your wallet.` : "") +
+    ` Text 411 and a name to find anyone.`,
+  renamed: (name: string, handle: string) => `Done. You're ${name} now, still @${handle}.`,
+  whoami: (name: string, handle: string) => `You're ${name}, @${handle}. People can text me "send @${handle} $5".`,
+  directory: (query: string, entries: string[]) =>
+    entries.length
+      ? `Directory for "${query}": ${entries.join(" · ")}. Text "send @name $5" to connect.`
+      : `No one matching "${query}" in the directory yet. Send to their phone number instead.`,
+  chooseRecipient: (name: string, options: string[]) =>
+    `I found ${options.length} people for "${name}": ${options.map((o, i) => `${i + 1}) ${o}`).join("  ")}. Reply ${options.map((_, i) => i + 1).join(" or ")}, or their number.`,
   claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${amount} USDC. Reply ${code} to claim it.`,
   help: () =>
-    `Text me things like "send jeremy $10", "request $25 from adam for pizza", "invoice sam $200 for logo design", "balance", "receive" or "reclaim".`,
+    `Operator here. Try "send @jeremy $10", "request $25 from adam for pizza", "invoice sam $200 for logo design", "411 jeremy", "balance", "receive" or "call me <name>".`,
   chatFallback: () => `I'm the Dial operator. I move money by text. Try "send jeremy $10".`,
   askNumber: (name: string) => `What's ${name}'s number?`,
   unknownHandle: (handle: string) => `There's no Dial user called ${handle}. Send their phone number instead.`,

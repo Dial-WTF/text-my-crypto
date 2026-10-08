@@ -21,6 +21,9 @@ export type Command =
   | { kind: "reclaim" }
   | { kind: "upgrade" }
   | { kind: "decline" }
+  | { kind: "directory"; query: string }
+  | { kind: "rename"; name: string }
+  | { kind: "whoami" }
   | { kind: "help" }
   | { kind: "chat" };
 
@@ -66,6 +69,9 @@ const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
 const DECLINE = /^(?:no|nope|decline)$/i;
+const DIRECTORY = /^(?:411|directory|lookup|look up|find|who is|whos|who's)\s+(.{2,40}?)\??$/i;
+const RENAME = /^(?:call me|my name is|rename me to|rename to|rename)\s+(.{1,80})$/i;
+const WHOAMI = /^(?:whoami|who am i|me)\??$/i;
 
 /** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
@@ -95,6 +101,11 @@ export function parseCommand(text: string): Command {
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
+  if (WHOAMI.test(t)) return { kind: "whoami" };
+  const dir = DIRECTORY.exec(t);
+  if (dir?.[1]) return { kind: "directory", query: dir[1].trim() };
+  const rename = RENAME.exec(t);
+  if (rename?.[1]) return { kind: "rename", name: rename[1].trim() };
   const w = WITHDRAW.exec(t);
   if (w?.[1] && w[2]) {
     const rawAmount = w[1].replace(/^\$/, "");

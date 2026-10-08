@@ -39,7 +39,9 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 - **Paying someone new.** Their phone number is enough. Funds wait in a per-payment escrow address; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days.
 - **Exit anytime.** `withdraw all to <address>`.
 
-Commands: `send jeremy $10`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `help`.
+Names work like an operator's switchboard: reply with any name ("J. P. Meyer, crypto anarchist" becomes J. P. Meyer, `@jpmeyer`), find people with `411 <name>`, and pay a name: your contacts first, then the directory (one match connects, several ask you to pick, none asks for a number).
+
+Commands: `send jeremy $10`, `411 jeremy`, `call me <name>`, `whoami`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `help`.
 
 ## Stack
 

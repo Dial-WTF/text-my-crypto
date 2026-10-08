@@ -4,14 +4,14 @@ import {
   claimUser,
   createUser,
   displayName,
-  findUserByHandle,
   findUserByPhone,
   getUserById,
-  HANDLE_RE,
   isClaimed,
+  uniqueHandle,
 } from "@/lib/identity";
 import { escrowedTo, issueSharedCode } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import type { SettlementAdapter } from "@/lib/settlement/types";
 import { addWallet, getWallet } from "@/lib/wallets";
@@ -47,17 +47,16 @@ export type SignupResult = { ok: true; user: User; reply: string } | { ok: false
  * or creates a new one, opens wallets on every enabled chain, drops test funds, and offers any waiting escrows.
  */
 export async function completeSignup(deps: BotDeps, phone: string, rawName: string): Promise<SignupResult> {
-  const handle = rawName.trim().replace(/^@/, "").toLowerCase();
-  if (!HANDLE_RE.test(handle)) return { ok: false, error: replies.badHandle() };
-  const taken = await findUserByHandle(deps.db, handle);
-  if (taken) return { ok: false, error: replies.handleTaken(handle) };
+  const name = cleanDisplayName(rawName);
+  if (!name) return { ok: false, error: replies.badName() };
+  const handle = await uniqueHandle(deps.db, handleFromName(name) ?? `dial${phone.slice(-4)}`);
 
   const existing = await findUserByPhone(deps.db, phone);
-  if (existing && isClaimed(existing)) return { ok: false, error: replies.handleTaken(existing.handle ?? handle) };
+  if (existing && isClaimed(existing)) return { ok: true, user: existing, reply: replies.whoami(displayName(existing), existing.handle ?? handle) };
   const user = existing
-    ? await claimUser(deps.db, existing.id, handle, deps.now())
-    : await createUser(deps.db, { phone, handle }, deps.now());
-  if (!user) return { ok: false, error: replies.handleTaken(handle) };
+    ? await claimUser(deps.db, existing.id, handle, deps.now(), name)
+    : await createUser(deps.db, { phone, handle, name }, deps.now());
+  if (!user) return { ok: false, error: replies.badName() };
 
   let dripped = false;
   for (const [chain, adapter] of enabledChains(deps)) {
@@ -73,7 +72,7 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   }
 
   await offerEscrowClaims(deps, user);
-  return { ok: true, user, reply: replies.joined(handle, dripped ? formatUsd(deps.dripAmount) : null) };
+  return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
 }
 
 /** Texts the person one code that claims every escrow waiting for them. */

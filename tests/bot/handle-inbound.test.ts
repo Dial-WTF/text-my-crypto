@@ -48,20 +48,29 @@ describe("signup over SMS", () => {
       "hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?",
     );
     expect(await say(JEREMY, "Jeremy")).toBe(
-      "You're in, jeremy. I dropped $25 of test USDC in your wallet. Try: send jeremy $5",
+      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". I dropped $25 of test USDC in your wallet. Text 411 and a name to find anyone.',
     );
     const u = await findUserByPhone(db, JEREMY);
     expect(u?.handle).toBe("jeremy");
+    expect(u?.name).toBe("Jeremy");
     expect(await getWallet(db, u!.id, "solana")).not.toBeNull();
     expect(sol.funded).toHaveLength(1);
   });
 
-  it("rejects bad and taken names", async () => {
-    await signUp(ALEX, "alex");
+  it("accepts whatever people call themselves and derives a free handle", async () => {
+    await say(JEREMY, "yo");
+    expect(await say(JEREMY, "J. P. Meyer, Crypto Anartist Imperialist and Bank Robber lmao")).toMatch(
+      /^You're in, J\. P\. Meyer\. Your Dial name is @jpmeyer,/,
+    );
+    await signUp(ALEX, "J.P. Meyer");
+    expect((await findUserByPhone(db, ALEX))?.handle).toBe("jpmeyer2");
+  });
+
+  it("asks again for nonsense names and for commands sent before a name", async () => {
     await say(JEREMY, "hi");
-    expect(await say(JEREMY, "x")).toMatch(/^Names are 3-20/);
-    expect(await say(JEREMY, "alex")).toBe("alex is taken. Try another?");
-    expect(await say(JEREMY, "jeremy")).toMatch(/^You're in, jeremy/);
+    expect(await say(JEREMY, "!!!")).toBe("What should I call you? Any name works, like Alex or J. P. Meyer.");
+    expect(await say(JEREMY, "send alex $5")).toBe("First things first: what name should people use to pay you?");
+    expect(await say(JEREMY, "Al")).toMatch(/^You're in, Al\. Your Dial name is @dial0011,/);
   });
 
   it("ignores a duplicate delivery", async () => {
@@ -78,22 +87,22 @@ describe("send to someone on Dial", () => {
   });
 
   it("asks for an unknown name's number, remembers it, and pays on the texted code", async () => {
-    expect(await say(ALEX, "send jeremy $10 for pizza")).toBe("What's jeremy's number?");
+    expect(await say(ALEX, "send mom $10 for pizza")).toBe("What's mom's number?");
     const confirm = await say(ALEX, "(555) 000-0011");
-    expect(confirm).toMatch(/^Send \$10 USDC to jeremy \(pizza\) on Solana\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
+    expect(confirm).toMatch(/^Send \$10 USDC to @jeremy \(pizza\) on Solana\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
 
     await say(ALEX, codeIn(confirm));
     expect(sms.last(ALEX)).toMatch(/^Sent \$10 to jeremy on Solana\. Receipt: https:\/\/explorer\.test\//);
-    expect(sms.last(JEREMY)).toBe("jeremy, you got $10 from alex (pizza) on Solana. Text \"balance\" anytime.");
+    expect(sms.last(JEREMY)).toBe('jeremy, you got $10 from alex (pizza) on Solana. Text "balance" anytime.');
     const jeremy = await findUserByPhone(db, JEREMY);
     const jw = await getWallet(db, jeremy!.id, "solana");
     expect(sol.settled.at(-1)).toMatchObject({ to: jw!.address, amount: 10_000_000n, closeSource: false });
 
-    expect(await say(ALEX, "send jeremy $1")).toMatch(/^Send \$1 USDC to jeremy on Solana\? Reply \d{6}/);
+    expect(await say(ALEX, "send mom $1")).toMatch(/^Send \$1 USDC to @jeremy on Solana\? Reply \d{6}/);
   });
 
   it("pays a global @handle directly", async () => {
-    expect(await say(ALEX, "send @jeremy $2")).toMatch(/^Send \$2 USDC to jeremy/);
+    expect(await say(ALEX, "send @jeremy $2")).toMatch(/^Send \$2 USDC to @jeremy/);
     expect(await say(ALEX, "send @nobody $2")).toBe("There's no Dial user called @nobody. Send their phone number instead.");
   });
 
@@ -181,7 +190,7 @@ describe("request and invoice", () => {
   });
 
   it("texts the payer a code, and paying it notifies the requester", async () => {
-    expect(await say(JEREMY, "request $25 from @alex for pizza")).toBe("Asked alex for $25. I'll text you when they pay.");
+    expect(await say(JEREMY, "request $25 from @alex for pizza")).toBe("Asked @alex for $25. I'll text you when they pay.");
     const ask = sms.last(ALEX);
     expect(ask).toMatch(/^jeremy is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay or NO to decline\. Or tap: /);
     await say(ALEX, codeIn(ask));
@@ -195,6 +204,39 @@ describe("request and invoice", () => {
     expect(await say(ALEX, "no")).toBe("Declined. Nothing was paid.");
     expect(sms.last(JEREMY)).toBe("alex declined your request for $40.");
     expect(await say(ALEX, "no")).toBe("Nothing waiting on you to decline.");
+  });
+});
+
+describe("directory", () => {
+  const JP = "+15550000020";
+  const JK = "+15550000021";
+  beforeEach(async () => {
+    await signUp(ALEX, "Alex");
+    await signUp(JP, "Jeremy Meyer");
+    await signUp(JK, "Jeremy King");
+  });
+
+  it("looks people up with 411 without revealing numbers", async () => {
+    const r = await say(ALEX, "411 jeremy");
+    expect(r).toMatch(/^Directory for "jeremy": @jeremymeyer \(Jeremy Meyer\) · @jeremyking \(Jeremy King\)\./);
+    expect(r).not.toContain("555");
+    expect(await say(ALEX, "who is nobody")).toMatch(/^No one matching "nobody"/);
+  });
+
+  it("asks which one when a name matches several people, then connects the pick", async () => {
+    expect(await say(ALEX, "send jeremy $3")).toBe(
+      'I found 2 people for "jeremy": 1) @jeremymeyer (Jeremy Meyer)  2) @jeremyking (Jeremy King). Reply 1 or 2, or their number.',
+    );
+    expect(await say(ALEX, "2")).toMatch(/^Send \$3 USDC to @jeremyking \(Jeremy King\) on Solana\? Reply \d{6}/);
+  });
+
+  it("connects directly on a single directory match", async () => {
+    expect(await say(ALEX, "send king $1")).toMatch(/^Send \$1 USDC to @jeremyking \(Jeremy King\)/);
+  });
+
+  it("renames and reports who you are", async () => {
+    expect(await say(ALEX, "call me Alex the Great, obviously")).toBe("Done. You're Alex the Great now, still @alex.");
+    expect(await say(ALEX, "whoami")).toBe('You\'re Alex the Great, @alex. People can text me "send @alex $5".');
   });
 });
 
@@ -230,7 +272,7 @@ describe("passkey accounts", () => {
 
   it("requires the passkey above the threshold and issues no code", async () => {
     const confirm = await say(ALEX, "send @jeremy $25");
-    expect(confirm).toMatch(/^Send \$25 USDC to jeremy on Solana\? Approve with your passkey: https:\/\/tmc\.test\/a\/pi_/);
+    expect(confirm).toMatch(/^Send \$25 USDC to @jeremy on Solana\? Approve with your passkey: https:\/\/tmc\.test\/a\/pi_/);
     expect(codeIn(confirm)).toBe("");
     expect(await say(ALEX, "123456")).toBe("That code didn't match anything waiting on you. Check my last text.");
   });

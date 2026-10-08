@@ -40,6 +40,7 @@
   ],
   "exclude": [
     "node_modules",
-    ".open-next"
+    ".open-next",
+    ".claude"
   ]
 }
