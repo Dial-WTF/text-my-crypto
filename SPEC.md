@@ -32,6 +32,13 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 3. Signup page: create a passkey, pick a handle ("jeremy"). A server-held wallet is created per chain, and the passkey gates every spend from it. Testnet funds are dropped automatically on signup.
 4. Bot texts: `You're in, jeremy. Try: send alex $5`.
 
+### 0. Works on any phone; the browser is an optional upgrade
+- **Every money movement is confirmed by a one-time code we text to the phone, or by a passkey.** Codes are 6 digits, bound to one intent, stored hashed, 10-minute TTL, 5 attempts. A forged inbound "From" can't confirm anything because the code goes to the real phone.
+- **SMS-only signup:** first text → `hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?` → reply with a name → account + wallet created. Every outbound money action still needs a code, so a spoofed signup can't move funds.
+- **Confirmations:** `Send $5 USDC to alex on Solana? Reply 482913 to confirm.` plus `or tap to approve: <link>` for smartphones. Requests: `Reply <code> to pay, or NO to decline.` Escrow claims: `Reply <code> to claim.`
+- **Upgrade:** text `upgrade` → passkey link. With a passkey: payments over $20 require it (codes still OK below), optional passkey-only mode. Limits: SMS-only $50/tx, $200/day; passkey accounts higher.
+- The web signup and approval pages below are the smartphone path; SMS-only users never need them.
+
 ### 2. Send (SMS)
 1. User texts the Dial operator number: `send jeremy $10`.
 2. Payphone forwards the inbound SMS to our webhook. We look up the sender by phone. Unknown sender → flow 1.
