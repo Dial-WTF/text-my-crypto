@@ -1,10 +1,14 @@
 # Text My Crypto — Spec
 
-Text a payment to anyone. Dial AI parses it, you approve it with a passkey, it settles on-chain, and you get a receipt by text.
+Text a payment to anyone. Text the Dial number, it says hi, notices when you want to send money, you approve with a passkey, it settles on-chain, and you get a receipt by text.
+
+This is Text My Bits (2020, Rootstock, SMS bearer codes) rebuilt: same idea of money over plain SMS, but with real identities instead of hashed phone codes, passkey approval instead of a 4-character code, and settlement on modern chains. The voucher idea survives as the claim link for people who don't have an account yet.
 
 > "send jeremy $10" → confirm link → passkey → 10 USDC lands → receipt with tx hash
 
-Target: Colosseum Crypto World's Fair. Submission closes **2026-10-12 11:59pm PDT**. One submission, multiple chains integrated (Tempo, Solana, Base) so it's eligible across ecosystem tracks plus the general pool.
+Target: Colosseum Crypto World's Fair. Submission closes **2026-10-12 11:59pm PDT**. One submission, multiple chains integrated so it's eligible across ecosystem tracks plus the general pool. **Main demo is Solana.** Chain order: Solana → Tempo → Base → Zcash (stretch).
+
+Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 
 ## Goals
 
@@ -25,20 +29,20 @@ Target: Colosseum Crypto World's Fair. Submission closes **2026-10-12 11:59pm PD
 ### 1. Start from a text (single landing page)
 1. The site is one page: "Text here to start", the Dial AI phone number, and a QR code that opens the phone's SMS app with an `sms:` link prefilled (`sms:+1XXXXXXXXXX?&body=hi`). Below it, a looping SMS-thread mock of the full flow.
 2. The first text from an unknown number gets a reply with a one-time signup link (`/s/<token>`, 15 min). The link is delivered to that phone, so opening it proves control of the number. No separate OTP step.
-3. Signup page: create a passkey, pick a handle ("jeremy"). On Tempo the passkey *is* the account signer. On Solana/Base a server-held wallet is created, and the passkey gates every spend from it. Testnet funds are dropped automatically on signup.
+3. Signup page: create a passkey, pick a handle ("jeremy"). A server-held wallet is created per chain, and the passkey gates every spend from it. Testnet funds are dropped automatically on signup.
 4. Bot texts: `You're in, jeremy. Try: send alex $5`.
 
 ### 2. Send (SMS)
 1. User texts the Dial AI number: `send jeremy $10`.
 2. Payphone forwards the inbound SMS to our webhook. We look up the sender by phone. Unknown sender → flow 1.
-3. Dial AI parses to `{ action: "send", amount: "10", asset: "USD", recipient: "jeremy", chain?: "solana" }`.
+3. Dial AI reads the message. Small talk gets a short friendly reply (first contact: `hi, I'm Dial. Text me something like "send jeremy $10" and I'll handle it.`). When it detects a payment, it parses to `{ action: "send", amount: "10", asset: "USD", recipient: "jeremy", chain?: "solana" }`.
 4. Deterministic validation: amount > 0 and ≤ per-tx cap, recipient resolves, sender has balance. Any failure → plain-English SMS reply, no intent created.
 5. Server creates a **PaymentIntent** (immutable: sender, recipient address, chain, token, amount in base units, nonce, expiresAt = now + 10 min) and texts back:
-   `Send 10 USDC to jeremy on Tempo? Approve: https://<host>/a/<intentId>`
+   `Send 10 USDC to jeremy on Solana? Approve: https://<host>/a/<intentId>`
 6. Approval page shows the exact intent. User approves with passkey. The WebAuthn challenge is the hash of the canonical intent, so the signature covers recipient, amount, chain, token, nonce and expiry.
 7. Server verifies the assertion, atomically flips intent `pending → approved` (single-use), hands it to the settlement adapter.
 8. Adapter submits and waits for confirmation. Intent → `settled` with tx hash.
-9. Sender gets: `Sent 10 USDC to jeremy. Tempo tx 0xab…cd <explorer link>`. Recipient gets: `jeremy, you received 10 USDC from alex.`
+9. Sender gets: `Sent 10 USDC to jeremy. Solana tx 5Hx…9k <explorer link>`. Recipient gets: `jeremy, you received 10 USDC from alex.`
 
 ### 3. Unregistered recipient (claim link)
 If the recipient is a phone number with no account, funds go to a per-intent escrow held by the server wallet on that chain, and the recipient gets an SMS claim link. Claiming = onboarding, then the escrow pays out. Unclaimed after 7 days → refund. This is the growth loop for the pitch. **Stretch goal**: build after all three chains settle end to end.
@@ -64,9 +68,10 @@ Payphone line ──► /api/sms/[secret] (secret-path webhook)
                                           │
                                           ▼
               SettlementAdapter.settle(intent) → { txHash, explorerUrl }
-                 ├─ tempo   (TIP-20 transfer w/ memo = intentId, fee sponsored)
-                 ├─ solana  (SPL USDC transfer, devnet)
-                 └─ base    (ERC-20 USDC transfer, Base Sepolia)
+                 ├─ solana  (SPL USDC transfer, devnet, treasury pays fees)
+                 ├─ tempo   (TIP-20 transfer w/ memo = intentId)
+                 ├─ base    (ERC-20 USDC transfer, Base Sepolia)
+                 └─ zcash   (shielded send via wallet sidecar, stretch)
                                           │
                                           ▼
                               Receipt SMS to both parties
@@ -87,7 +92,7 @@ Payphone line ──► /api/sms/[secret] (secret-path webhook)
 `SettlementAdapter`:
 ```ts
 interface SettlementAdapter {
-  chain: "tempo" | "solana" | "base";
+  chain: "solana" | "tempo" | "base" | "zcash";
   getBalance(address: string): Promise<bigint>;
   settle(intent: ApprovedIntent): Promise<{ txHash: string; explorerUrl: string }>;
 }
@@ -102,11 +107,12 @@ interface SettlementAdapter {
 - `sms_log(id, direction, phone, body, intent_id null, created_at)` (demo activity feed + inbound dedupe)
 
 ### Chains
-- **Tempo** (primary): Moderato testnet, Viem + Tempo TypeScript SDK, Accounts SDK passkey account, TIP-20 stablecoin transfer with memo, testnet fee sponsor. Verify the emitted Transfer recipient, since blocked transfers can succeed at the tx level.
-- **Solana**: devnet, `@solana/kit`, devnet USDC (or a clearly labeled test mint). Server-held keypair per user, passkey-gated.
+- **Solana** (primary, main demo): devnet, `@solana/kit` + `@solana-program/token`, Circle devnet USDC (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, 6 decimals). Server-held keypair per user, passkey-gated. A treasury wallet pays all SOL fees and ATA rent, so users never hold SOL, and drips test USDC to new users.
+- **Tempo**: Moderato testnet (chain 42431), `viem/tempo` client, AlphaUSD (`0x20c0000000000000000000000000000000000001`, 6 decimals) as transfer and fee token, `token.transferSync` with memo = intent id, faucet `fundSync` on signup. Verify the Transfer event recipient, since blocked transfers can succeed at the tx level.
 - **Base**: Base Sepolia, viem, USDC test token. Server-held key per user, passkey-gated.
+- **Zcash** (stretch): testnet, shielded send with the intent id in the encrypted memo. Needs a light-client wallet process (e.g. zingo-cli against a testnet lightwalletd) on a small VPS, called by the app over an authenticated HTTP API. Built only after Solana and Tempo settle end to end.
 
-Server-held secrets are encrypted at rest with a key from env. The pitch says plainly which chains are passkey-native (Tempo) and which are passkey-gated custodial (Solana, Base), with a smart-account roadmap for the latter.
+Server-held secrets are encrypted at rest with a key from env. The pitch says plainly that hackathon wallets are server-held and passkey-gated on every chain, with a smart-account roadmap for the latter.
 
 ## Security rules
 - Payphone's per-line inbound forward is **not signed**, so the webhook lives at an unguessable secret path (`/api/sms/<32+ random bytes>`), rotated if leaked. A forged inbound can at most create a pending intent or trigger a reply to the real phone owner. It can never move money, because every spend needs the sender's passkey. Dedupe inbound on `(sender, date, message)`.
@@ -132,18 +138,18 @@ Custom, not a component-kit default. Payments end in a receipt, so the UI is bui
 ## Testing
 - Unit: parser fixtures (20+ phrasings incl. junk), canonical intent hash, state machine transitions, validator caps.
 - Integration: settlement adapters against each testnet behind an env flag.
-- E2E smoke: simulated Payphone inbound POST → intent → approval (virtual authenticator in Playwright) → settled on Tempo.
+- E2E smoke: simulated Payphone inbound POST → intent → approval (virtual authenticator in Playwright) → settled on Solana devnet.
 
 ## Submission checklist
 - Public GitHub repo, README with architecture and how to run.
 - 2–3 min pitch video, ≤3 min demo video (real phone, real SMS, explorer link on screen).
-- Form: chains integrated (Tempo, Solana, Base), go-to-market (Dial identities + claim-link growth loop), prior work disclosure: this repo starts at the hackathon; SMS runs on Payphone.wtf, our pre-existing SMS platform, used as an external API (no code copied).
+- Form: chains integrated (Solana, Tempo, Base, Zcash if shipped), go-to-market (Dial identities + claim-link growth loop), prior work disclosure: this repo starts at the hackathon; SMS runs on Payphone.wtf, our pre-existing SMS platform, used as an external API (no code copied).
 - Open question to confirm in Colosseum Discord: can one project place in multiple ecosystem tracks?
 
 ## Schedule
 | Day | Deliverable |
 |---|---|
-| Oct 9 | Scaffold, landing page + QR, DB, Payphone webhook + reply, parser, identity, intents, Tempo adapter. Text → settled on Tempo (approval stubbed). |
-| Oct 10 | Passkey onboarding + intent-bound approval. Solana adapter. Receipt UI. |
-| Oct 11 | Base adapter, landing page, demo seed data, record both videos. |
+| Oct 9 | Scaffold, landing page + QR, DB, Payphone webhook + reply, Dial AI conversation + parser, identity, intents, Solana adapter. Text → settled on Solana devnet (approval stubbed). |
+| Oct 10 | Passkey onboarding + intent-bound approval. Tempo adapter. Receipt UI. |
+| Oct 11 | Base adapter, Zcash sidecar if green, demo seed data, record both videos. |
 | Oct 12 | Buffer, claim-link stretch if green, submit before 11:59pm PDT. |
