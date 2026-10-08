@@ -1,0 +1,24 @@
+import type { BotDeps } from "@/lib/bot/types";
+import { getDb } from "@/lib/db/client";
+import { env } from "@/lib/env";
+import { usdToBaseUnits } from "@/lib/money";
+import { gatewayInterpreter } from "@/lib/operator/brain";
+import { getAdapters } from "@/lib/settlement";
+import { payphoneSender } from "@/lib/sms/payphone";
+
+export function botDeps(): BotDeps {
+  const e = env();
+  return {
+    db: getDb(),
+    sendSms: payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER }),
+    llm: gatewayInterpreter(e.DIAL_OPERATOR_MODEL),
+    adapters: getAdapters(),
+    appUrl: e.APP_URL,
+    now: () => new Date(),
+    walletKey: e.WALLET_ENCRYPTION_KEY,
+    perTxCap: usdToBaseUnits(e.PER_TX_CAP_USD),
+    perDayCap: usdToBaseUnits(e.PER_DAY_CAP_USD),
+    escrowTtlDays: e.ESCROW_TTL_DAYS,
+    dripAmount: usdToBaseUnits(e.SIGNUP_DRIP_USD),
+  };
+}
