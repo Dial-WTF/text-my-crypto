@@ -118,8 +118,49 @@ export const smsLog = sqliteTable("sms_log", {
   createdAt: ts("created_at").notNull().default(now),
 });
 
+/** Bearer keys for the MCP server. Only the SHA-256 of a key is stored; the key itself is shown once. */
+export const agentKeys = sqliteTable("agent_keys", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  keyHash: text("key_hash").notNull().unique(),
+  label: text("label").notNull(),
+  createdAt: ts("created_at").notNull().default(now),
+  lastUsedAt: ts("last_used_at"),
+  revokedAt: ts("revoked_at"),
+});
+
+/** One-time links texted after "connect agent". Redeemed with the code from the same text to mint a key. */
+export const agentLinks = sqliteTable("agent_links", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  label: text("label").notNull(),
+  codeHash: text("code_hash").notNull(),
+  codeAttempts: integer("code_attempts").notNull().default(0),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+});
+
+/** Fixed-window call counters per agent key and bucket. */
+export const agentRate = sqliteTable(
+  "agent_rate",
+  {
+    keyId: text("key_id")
+      .notNull()
+      .references(() => agentKeys.id),
+    bucket: text("bucket").notNull(),
+    windowStart: integer("window_start").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.keyId, t.bucket] })],
+);
+
 export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type Passkey = typeof passkeys.$inferSelect;
+export type AgentKey = typeof agentKeys.$inferSelect;

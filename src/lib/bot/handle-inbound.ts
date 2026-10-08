@@ -13,6 +13,7 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { logInbound } from "@/lib/sms/log";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains } from "./accounts";
+import { connectAgentReply, revokeAgentsReply } from "./agents";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { text } from "./text";
@@ -83,6 +84,12 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
       break;
     case "upgrade":
       await reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+      break;
+    case "connect_agent":
+      await reply(await connectAgentReply(deps, user, cmd.label));
+      break;
+    case "revoke_agents":
+      await reply(await revokeAgentsReply(deps, user));
       break;
     case "send":
     case "request":

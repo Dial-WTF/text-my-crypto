@@ -1,0 +1,20 @@
+.secret {
+  margin: 0;
+  padding: var(--space-sm);
+  border: 2px dashed var(--color-card-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-2);
+  color: var(--color-on-card);
+  font: 500 var(--text-sm) / 1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: all;
+}
+
+.caption {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-on-card-muted);
+}

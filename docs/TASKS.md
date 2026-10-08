@@ -31,8 +31,8 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [ ] you · Testnet gas + USDC for the treasury on each EVM chain (faucets)
 - [ ] build · Tempo adapter (Moderato testnet, AlphaUSD, transfer memo) → flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
-- [ ] build · MCP server at `/api/mcp` (send / request / invoice / balance / payments) with per-user agent keys
-- [ ] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
+- [x] build · MCP server at `/api/mcp` (send / request / invoice / withdraw / balance / payments) with per-user agent keys
+- [x] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
 - [ ] build · Solana smart wallet with passkey authority (stretch)
 
 ## Tranche 3 · On-chain escrow

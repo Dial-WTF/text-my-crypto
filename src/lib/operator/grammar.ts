@@ -21,6 +21,8 @@ export type Command =
   | { kind: "reclaim" }
   | { kind: "upgrade" }
   | { kind: "decline" }
+  | { kind: "connect_agent"; label?: string }
+  | { kind: "revoke_agents" }
   | { kind: "help" }
   | { kind: "chat" };
 
@@ -66,6 +68,8 @@ const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
 const DECLINE = /^(?:no|nope|decline)$/i;
+const CONNECT_AGENT = /^connect\s+(?:an?\s+|my\s+)?agent(?:\s+(?:called\s+|named\s+)?(.+?))?\s*[.!]?$/i;
+const REVOKE_AGENTS = /^(?:revoke|disconnect|remove)\s+(?:all\s+|my\s+)?agents?\s*[.!]?$/i;
 
 /** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
@@ -95,6 +99,9 @@ export function parseCommand(text: string): Command {
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
+  if (REVOKE_AGENTS.test(t)) return { kind: "revoke_agents" };
+  const agent = CONNECT_AGENT.exec(t);
+  if (agent) return agent[1] ? { kind: "connect_agent", label: agent[1] } : { kind: "connect_agent" };
   const w = WITHDRAW.exec(t);
   if (w?.[1] && w[2]) {
     const rawAmount = w[1].replace(/^\$/, "");

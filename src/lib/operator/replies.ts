@@ -60,6 +60,14 @@ export const replies = {
   nothingToReclaim: (days: number) =>
     `Nothing to reclaim right now. Unclaimed payments can come back after ${plural(days, "day")}.`,
   upgrade: (link: string) => `Add a passkey for one-tap approvals and higher limits: ${link}`,
+  connectAgent: (link: string, code: string) =>
+    `Connect an AI agent to your Dial account: open ${link} and enter ${code}. The key shows once. You still approve every payment by text.`,
+  agentConnected: (label: string) => `Agent "${label}" is connected. Text "revoke agents" anytime to cut it off.`,
+  agentsRevoked: (count: number) =>
+    count > 0
+      ? `Revoked ${plural(count, "agent key")}. Text "connect agent" to connect one again.`
+      : `No agents are connected. Text "connect agent" to connect one.`,
+  fromAgent: (label: string, body: string) => `From your agent "${label}": ${body}`,
   confirmWithdraw: (amount: string, address: string, chain: string, code: string | null, link: string) =>
     `Withdraw ${amount} USDC to ${address} on ${chain}? ${approveWith(code, link)}`,
   withdrew: (amount: string, address: string, explorerUrl: string) =>

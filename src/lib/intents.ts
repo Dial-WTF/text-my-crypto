@@ -274,3 +274,13 @@ export async function latestSettledTo(db: Db, userId: string): Promise<Intent | 
     .limit(1);
   return row ?? null;
 }
+
+/** Payments a user is part of (paying, being paid, or asked for), newest first. */
+export async function intentsFor(db: Db, userId: string, limit: number): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(or(eq(intents.senderId, userId), eq(intents.recipientId, userId), eq(intents.createdBy, userId)))
+    .orderBy(desc(intents.createdAt))
+    .limit(limit);
+}

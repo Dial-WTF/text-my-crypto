@@ -39,7 +39,25 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 - **Paying someone new.** Their phone number is enough. Funds wait in a per-payment escrow address; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days.
 - **Exit anytime.** `withdraw all to <address>`.
 
-Commands: `send jeremy $10`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `help`.
+Commands: `send jeremy $10`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `connect agent`, `revoke agents`, `help`.
+
+## For agents
+
+Any MCP client can pay, request or invoice anyone with a phone number. The person still approves every payment from a text.
+
+1. Text `connect agent` to +1 806 607 1387. You get a one-time link and code; the page shows an agent key once.
+2. Point your MCP client at `https://text-my-crypto.raspy-thunder-20d2.workers.dev/api/mcp` with `Authorization: Bearer <key>`.
+3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `withdraw`, `get_payment`, `list_payments`.
+
+Money tools create a pending payment, text the payer a code, and return `{ intentId, status: "awaiting_approval", approveUrl }`. Agents poll `get_payment`; there is no tool that approves. Text `revoke agents` to turn off every key. Keys are stored as SHA-256 hashes and rate-limited per key.
+
+Install the skill that teaches an agent all this:
+
+```bash
+npx skills add Dial-WTF/text-my-crypto
+```
+
+Source: `src/app/api/mcp/route.ts`, `src/lib/agents/`, `skills/dial-operator/`.
 
 ## Stack
 
