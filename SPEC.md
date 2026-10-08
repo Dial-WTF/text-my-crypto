@@ -20,7 +20,7 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 ## Non-goals (for the hackathon)
 
 - Mainnet funds, fiat on/off-ramp, KYC.
-- Payment requests, invoices, thread unlocks (pitch-deck roadmap only).
+- Thread unlocks (pitch-deck roadmap only).
 - Dial chat / Matrix channel (SMS only; channel interface leaves room).
 - Native mobile app.
 
@@ -31,6 +31,13 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 2. The first text from an unknown number gets a reply with a one-time signup link (`/s/<token>`, 15 min). The link is delivered to that phone, so opening it proves control of the number. No separate OTP step.
 3. Signup page: create a passkey, pick a handle ("jeremy"). A server-held wallet is created per chain, and the passkey gates every spend from it. Testnet funds are dropped automatically on signup.
 4. Bot texts: `You're in, jeremy. Try: send alex $5`.
+
+### 0. Works on any phone; the browser is an optional upgrade
+- **Every money movement is confirmed by a one-time code we text to the phone, or by a passkey.** Codes are 6 digits, bound to one intent, stored hashed, 10-minute TTL, 5 attempts. A forged inbound "From" can't confirm anything because the code goes to the real phone.
+- **SMS-only signup:** first text → `hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?` → reply with a name → account + wallet created. Every outbound money action still needs a code, so a spoofed signup can't move funds.
+- **Confirmations:** `Send $5 USDC to alex on Solana? Reply 482913 to confirm.` plus `or tap to approve: <link>` for smartphones. Requests: `Reply <code> to pay, or NO to decline.` Escrow claims: `Reply <code> to claim.`
+- **Upgrade:** text `upgrade` → passkey link. With a passkey: payments over $20 require it (codes still OK below), optional passkey-only mode. Limits: SMS-only $50/tx, $200/day; passkey accounts higher.
+- The web signup and approval pages below are the smartphone path; SMS-only users never need them.
 
 ### 2. Send (SMS)
 1. User texts the Dial operator number: `send jeremy $10`.
@@ -44,8 +51,25 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 8. Adapter submits and waits for confirmation. Intent → `settled` with tx hash.
 9. Sender gets: `Sent 10 USDC to jeremy. Solana tx 5Hx…9k <explorer link>`. Recipient gets: `jeremy, you received 10 USDC from alex.`
 
-### 3. Unregistered recipient (claim link)
-If the recipient is a phone number with no account, funds go to a per-intent escrow held by the server wallet on that chain, and the recipient gets an SMS claim link. Claiming = onboarding, then the escrow pays out. Unclaimed after 7 days → refund. This is the growth loop for the pitch. **Stretch goal**: build after all three chains settle end to end.
+### 3. Names, numbers and escrow
+- **Contacts first.** `send jeremy $10`: if "jeremy" isn't in the sender's contacts, the operator asks `What's jeremy's number?` and parks the command (15 min). The reply number completes it and is saved as a contact, so next time it resolves directly. `@jeremy` pays the global Dial handle.
+- **Recipient already on Dial (claimed):** direct transfer after approval; they proved phone custody at signup.
+- **Recipient not on Dial:** after the sender approves, funds move into a **per-payment escrow address** (memo = intent id). The recipient gets `alex sent you $10 USDC on Dial. Reply to this text to claim it.` Only the holder of that phone number can claim: they text in from it and finish signup via a link delivered to that number. On claim, escrow pays out to their new wallet and the escrow token account is closed (rent back to treasury).
+- **Expiry and reclaim:** escrows expire after `ESCROW_TTL_DAYS` (default 7). The sender texts `reclaim` to refund every expired, unclaimed escrow. Nothing is stuck forever.
+- Statuses: `pending` (awaiting sender approval) → `settling` → `escrowed` → `settled` (claimed) | `refunded`; also `failed`, `declined`.
+
+### 4. Request, receive, invoice (SMS)
+- `request $25 from adam for pizza` → intent with `kind=request`, `createdBy=alex`, sender=adam, recipient=alex, 7-day expiry. adam gets: `alex is asking for $25 USDC (pizza). Pay: <link>` and approves with his passkey, or taps Decline.
+- `invoice sam $200 for logo design` → same as a request with `kind=invoice`; the link renders as an invoice page.
+- `receive` / `my address` → the user's Dial name and wallet address on each enabled chain.
+
+### 5. Agents (MCP server + skill)
+Any AI agent can use Dial on a person's behalf. The person stays the signer.
+- **MCP server** at `/api/mcp` (Streamable HTTP, same Worker). Tools: `whoami`, `get_balance`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `get_payment`, `list_payments`, `get_receive_address`.
+- **Auth:** per-user agent keys. Text `connect agent` → link → passkey → key shown once (stored hashed). Revoke by texting `revoke agents`.
+- **Approval stays human:** every money-moving tool creates a PaymentIntent and texts the owner the approval link; the tool returns `{ intentId, status: "awaiting_approval", approveUrl }`. Agents poll `get_payment`. (Later: an optional per-agent allowance under which payments auto-approve.)
+- **Skill:** `skills/dial-operator/SKILL.md` in this repo, installable with `npx skills add Dial-WTF/text-my-crypto`, telling agents how to connect and use the tools.
+- Pitch line: any agent can pay, request or invoice anyone with a phone number; the human approves from a text.
 
 ## Architecture
 

@@ -1,0 +1,23 @@
+.desk {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--gutter) 0;
+}
+
+.heading {
+  margin: 0;
+  max-width: 18ch;
+  text-align: center;
+  font: 800 var(--text-3xl) / 0.95 var(--font-display);
+  text-transform: var(--display-case);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.lede {
+  max-width: 44ch;
+  margin: 0;
+  text-align: center;
+  color: var(--color-on-canvas-muted);
+}

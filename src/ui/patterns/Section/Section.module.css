@@ -1,0 +1,33 @@
+.section {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-2xl) var(--gutter) 0;
+  min-width: 0;
+}
+
+.heading {
+  max-width: 22ch;
+  margin: 0;
+  font: 800 var(--text-3xl) / 0.95 var(--font-display);
+  text-transform: var(--display-case);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.lede {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--color-on-canvas-muted);
+}
+
+.split {
+  display: grid;
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

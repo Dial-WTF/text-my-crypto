@@ -1,0 +1,33 @@
+/* Theme · matrix — digital rain on black, Matrix green (#00FF41) phosphor text with a soft glow,
+ * terminal mono everywhere, bordered panels instead of paper. Chroma runs past the kit's 0.20 cap
+ * on purpose: the source green is a saturated phosphor, and the theme is a homage. */
+[data-theme="matrix"] {
+  color-scheme: dark;
+  --color-canvas: oklch(7% 0.012 150);
+  --color-canvas-2: oklch(11% 0.025 148);
+  --color-canvas-rule: oklch(34% 0.11 145);
+  --color-on-canvas: oklch(87.5% 0.27 143);
+  --color-on-canvas-muted: oklch(60% 0.18 144);
+
+  --color-card: oklch(8.5% 0.02 150 / 0.88);
+  --color-card-2: oklch(13% 0.035 148);
+  --color-card-rule: oklch(38% 0.12 145);
+  --color-on-card: oklch(87.5% 0.27 143);
+  --color-on-card-muted: oklch(62% 0.18 144);
+
+  --color-accent: oklch(87.5% 0.27 143);
+  --color-accent-ink: oklch(7% 0.012 150);
+  --color-focus: oklch(95% 0.2 140);
+  --color-danger: oklch(72% 0.2 30);
+  --color-danger-on-card: oklch(74% 0.19 30);
+
+  --font-display: var(--family-terminal);
+  --font-body: var(--family-terminal);
+  --font-mono: var(--family-terminal);
+  --display-case: none;
+  --text-marquee: clamp(2rem, 8.4vw, 9rem);
+  --text-glow: 0 0 0.35em oklch(87.5% 0.27 143 / 0.45);
+
+  --card-edge: none;
+  --card-border: var(--rule-thin) solid var(--color-card-rule);
+}

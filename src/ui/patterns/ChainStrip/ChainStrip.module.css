@@ -1,0 +1,91 @@
+.strip {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--gutter) 0;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-on-canvas-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tile-min, 14rem)), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--rule-thin) solid var(--color-canvas-rule);
+  border-left: var(--rule-thin) solid var(--color-canvas-rule);
+}
+
+.item {
+  display: grid;
+  gap: var(--space-xs);
+  align-content: start;
+  padding: var(--space-md);
+  border-right: var(--rule-thin) solid var(--color-canvas-rule);
+  border-bottom: var(--rule-thin) solid var(--color-canvas-rule);
+  min-width: 0;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--mark-size, var(--text-2xl));
+  line-height: 1;
+  min-width: 0;
+}
+
+.large {
+  --tile-min: 15rem;
+  --mark-size: var(--text-3xl);
+}
+
+.large .name,
+.large .wordmark {
+  font-size: var(--text-2xl);
+}
+
+.name {
+  font: 800 var(--text-xl) / 1 var(--font-display);
+  text-transform: var(--display-case);
+  white-space: nowrap;
+}
+
+.wordmark {
+  font: 800 var(--text-xl) / 1 var(--font-display);
+  text-transform: var(--display-case);
+  letter-spacing: 0.02em;
+}
+
+.role {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-on-canvas-muted);
+}
+
+.status {
+  justify-self: start;
+  padding: var(--space-3xs) var(--space-2xs);
+  border: var(--rule-thin) solid currentColor;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.live {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.next {
+  color: var(--color-on-canvas-muted);
+}

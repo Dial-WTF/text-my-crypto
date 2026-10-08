@@ -1,0 +1,276 @@
+import { and, desc, eq, gt, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import type { Chain } from "@/lib/chains";
+import { hashCode, MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
+import type { Db } from "@/lib/db/client";
+import { type Intent, intents } from "@/lib/db/schema";
+import { sha256Hex } from "@/lib/hash";
+import { newId, randomToken } from "@/lib/ids";
+
+export const SEND_TTL_MS = 10 * 60_000;
+export const REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
+
+export type IntentKind = Intent["kind"];
+
+export type NewIntent = {
+  kind: IntentKind;
+  createdBy: string;
+  senderId: string;
+  recipientId: string;
+  chain: Chain;
+  token: string;
+  recipientAddress: string;
+  amount: bigint;
+  note: string | null;
+  escrowSecretEnc?: string | null;
+};
+
+type Bound = Pick<
+  Intent,
+  | "id"
+  | "kind"
+  | "senderId"
+  | "recipientId"
+  | "chain"
+  | "token"
+  | "recipientAddress"
+  | "amount"
+  | "nonce"
+  | "expiresAt"
+>;
+
+export function canonicalIntent(i: Bound): string {
+  return JSON.stringify([
+    "dial-intent-v1",
+    i.id,
+    i.kind,
+    i.senderId,
+    i.recipientId,
+    i.chain,
+    i.token,
+    i.recipientAddress,
+    i.amount.toString(),
+    i.nonce,
+    i.expiresAt.toISOString(),
+  ]);
+}
+
+export function intentHash(i: Bound): Promise<string> {
+  return sha256Hex(canonicalIntent(i));
+}
+
+export async function createIntent(db: Db, n: NewIntent, now: Date): Promise<Intent> {
+  const ttl = n.kind === "send" ? SEND_TTL_MS : REQUEST_TTL_MS;
+  const [row] = await db
+    .insert(intents)
+    .values({ ...n, id: newId("pi"), nonce: randomToken(16), createdAt: now, expiresAt: new Date(now.getTime() + ttl) })
+    .returning();
+  if (!row) throw new Error("createIntent returned no row");
+  return row;
+}
+
+export async function getIntent(db: Db, id: string): Promise<Intent | null> {
+  const [row] = await db.select().from(intents).where(eq(intents.id, id)).limit(1);
+  return row ?? null;
+}
+
+/** Issues a fresh one-time code for the intent's current phase and returns it in plain text. */
+export async function issueCode(db: Db, id: string): Promise<string> {
+  const code = newCode();
+  await db
+    .update(intents)
+    .set({ codeHash: await hashCode(id, code), codeAttempts: 0 })
+    .where(eq(intents.id, id));
+  return code;
+}
+
+/** Issues one code shared by several intents (e.g. every escrow waiting for the same person). */
+export async function issueSharedCode(db: Db, ids: string[]): Promise<string> {
+  const code = newCode();
+  for (const id of ids) {
+    await db
+      .update(intents)
+      .set({ codeHash: await hashCode(id, code), codeAttempts: 0 })
+      .where(eq(intents.id, id));
+  }
+  return code;
+}
+
+/** Intents a user can act on with a texted code: their own pending payments and escrows waiting for them. */
+export async function codeCandidates(db: Db, userId: string, now: Date): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        isNotNull(intents.codeHash),
+        lt(intents.codeAttempts, MAX_CODE_ATTEMPTS),
+        or(
+          and(eq(intents.senderId, userId), eq(intents.status, "pending"), gt(intents.expiresAt, now)),
+          and(eq(intents.recipientId, userId), eq(intents.status, "escrowed")),
+        ),
+      ),
+    );
+}
+
+/** Finds the candidate whose code matches; on a miss, burns an attempt on every candidate. */
+export async function matchCode(db: Db, candidates: Intent[], code: string): Promise<Intent[]> {
+  const matches: Intent[] = [];
+  for (const c of candidates) {
+    if (c.codeHash && c.codeHash === (await hashCode(c.id, code))) matches.push(c);
+  }
+  if (matches.length === 0 && candidates.length > 0) {
+    await db
+      .update(intents)
+      .set({ codeAttempts: sql`${intents.codeAttempts} + 1` })
+      .where(
+        inArray(
+          intents.id,
+          candidates.map((c) => c.id),
+        ),
+      );
+  }
+  return matches;
+}
+
+export async function claimForSettlement(db: Db, id: string, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ status: "settling", codeHash: null })
+    .where(and(eq(intents.id, id), eq(intents.status, "pending"), gt(intents.expiresAt, now)))
+    .returning();
+  return row ?? null;
+}
+
+export async function claimEscrowForRelease(db: Db, id: string): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ status: "settling", codeHash: null })
+    .where(and(eq(intents.id, id), eq(intents.status, "escrowed")))
+    .returning();
+  return row ?? null;
+}
+
+export async function claimEscrowForRefund(db: Db, id: string, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ status: "settling", codeHash: null })
+    .where(and(eq(intents.id, id), eq(intents.status, "escrowed"), lt(intents.escrowExpiresAt, now)))
+    .returning();
+  return row ?? null;
+}
+
+export async function declineIntent(db: Db, id: string): Promise<boolean> {
+  const rows = await db
+    .update(intents)
+    .set({ status: "declined", codeHash: null })
+    .where(and(eq(intents.id, id), eq(intents.status, "pending")))
+    .returning({ id: intents.id });
+  return rows.length > 0;
+}
+
+export async function markSettled(
+  db: Db,
+  id: string,
+  r: { txHash: string; explorerUrl: string },
+  now = new Date(),
+): Promise<void> {
+  await db
+    .update(intents)
+    .set({ status: "settled", txHash: r.txHash, explorerUrl: r.explorerUrl, settledAt: now })
+    .where(eq(intents.id, id));
+}
+
+export async function markEscrowed(
+  db: Db,
+  id: string,
+  r: { txHash: string; explorerUrl: string },
+  escrowExpiresAt: Date,
+): Promise<void> {
+  await db
+    .update(intents)
+    .set({ status: "escrowed", txHash: r.txHash, explorerUrl: r.explorerUrl, escrowExpiresAt })
+    .where(eq(intents.id, id));
+}
+
+export async function markReleased(
+  db: Db,
+  id: string,
+  status: "settled" | "refunded",
+  r: { txHash: string; explorerUrl: string },
+  now: Date,
+): Promise<void> {
+  await db
+    .update(intents)
+    .set({ status, releaseTxHash: r.txHash, releaseExplorerUrl: r.explorerUrl, settledAt: now })
+    .where(eq(intents.id, id));
+}
+
+export async function revertToEscrowed(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ status: "escrowed", error: error.slice(0, 500) })
+    .where(eq(intents.id, id));
+}
+
+export async function markFailed(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ status: "failed", error: error.slice(0, 500), codeHash: null })
+    .where(eq(intents.id, id));
+}
+
+export async function escrowedTo(db: Db, userId: string): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.recipientId, userId), eq(intents.status, "escrowed")))
+    .orderBy(intents.createdAt);
+}
+
+export async function expiredEscrowsFrom(db: Db, userId: string, now: Date): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.senderId, userId), eq(intents.status, "escrowed"), lt(intents.escrowExpiresAt, now)));
+}
+
+export async function latestPendingRequestFor(db: Db, payerId: string, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, payerId),
+        eq(intents.status, "pending"),
+        inArray(intents.kind, ["request", "invoice"]),
+        gt(intents.expiresAt, now),
+      ),
+    )
+    .orderBy(desc(intents.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function sentSince(db: Db, userId: string, since: Date): Promise<bigint> {
+  const [row] = await db
+    .select({ total: sql<string | null>`sum(${intents.amount})` })
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, userId),
+        inArray(intents.status, ["settling", "escrowed", "settled"]),
+        gte(intents.createdAt, since),
+      ),
+    );
+  return BigInt(row?.total ?? 0);
+}
+
+export async function latestSettledTo(db: Db, userId: string): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.recipientId, userId), inArray(intents.status, ["settled", "escrowed"])))
+    .orderBy(desc(intents.createdAt))
+    .limit(1);
+  return row ?? null;
+}

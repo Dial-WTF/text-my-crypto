@@ -1,0 +1,30 @@
+/* Theme · dark — carbon counter, thermal paper receipts, one signal green. Also the :root fallback. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: oklch(16% 0.012 140);
+  --color-canvas-2: oklch(20% 0.014 140);
+  --color-canvas-rule: oklch(31% 0.014 140);
+  --color-on-canvas: oklch(93% 0.012 110);
+  --color-on-canvas-muted: oklch(70% 0.014 120);
+
+  --color-card: oklch(95% 0.014 95);
+  --color-card-2: oklch(91% 0.016 95);
+  --color-card-rule: oklch(78% 0.016 95);
+  --color-on-card: oklch(22% 0.012 95);
+  --color-on-card-muted: oklch(48% 0.016 95);
+
+  --color-accent: oklch(87% 0.19 128);
+  --color-accent-ink: oklch(22% 0.05 140);
+  --color-focus: oklch(88% 0.21 128);
+  --color-danger: oklch(66% 0.19 32);
+  --color-danger-on-card: oklch(50% 0.17 32);
+
+  --font-display: var(--family-display);
+  --font-body: var(--family-body);
+  --font-mono: var(--family-mono);
+  --display-case: uppercase;
+
+  --card-edge: var(--edge-torn);
+  --card-border: none;
+}

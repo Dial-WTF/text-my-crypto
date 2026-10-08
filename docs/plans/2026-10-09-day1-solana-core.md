@@ -637,7 +637,7 @@ export type LlmResult = z.infer<typeof llmSchema>;
 export type LlmInterpreter = (text: string) => Promise<LlmResult>;
 export type OperatorTurn = { command: Command; reply?: string };
 
-const SYSTEM = `You are the Dial operator, an SMS assistant that helps people text crypto to friends.
+const INSTRUCTIONS = `You are the Dial operator, an SMS assistant that helps people text crypto to friends.
 Classify the user's text message.
 - intent "send": they want to send money. recipient = the name, @handle or phone number exactly as written. amountUsd = a plain decimal string in US dollars ("10", "2.50"); convert words like "ten" to digits. chain only if they named solana, tempo, base or zcash.
 - intent "balance": they ask what they have.
@@ -649,7 +649,7 @@ export function gatewayInterpreter(model: string): LlmInterpreter {
   return async (text) => {
     const { output } = await generateText({
       model,
-      system: SYSTEM,
+      instructions: INSTRUCTIONS,
       prompt: text,
       output: Output.object({ schema: llmSchema }),
     });
@@ -1696,13 +1696,7 @@ export async function logOutbound(db: Db, phone: string, body: string): Promise<
 
 - [ ] **Step 4: Run, expect PASS** — `pnpm test tests/sms.test.ts && pnpm typecheck`
 
-- [ ] **Step 5: Live send check (Jeremy's phone)** — with `.env.local` loaded:
-
-```bash
-set -a; . ./.env.local; set +a
-curl -sS -X POST "$PAYPHONE_BASE_URL/api/v1/sms/send" -H "Authorization: Bearer $PAYPHONE_API_KEY" -H "Content-Type: application/json" -d "{\"to\":\"$TEST_PHONE\",\"message\":\"hi, I'm the Dial operator. test.\",\"from\":\"$DIAL_OPERATOR_NUMBER\"}"
-```
-Expected: `success: true` and the text arrives. If it returns 402/403, the key lacks `sms:send` scope or the line needs credits; fix in Payphone before Task 13.
+- [ ] **Step 5: No live SMS in tests.** Automated tests use the in-memory sink. Local dev uses `SMS_MODE=log` (default), which only logs. Only production sets `SMS_MODE=payphone`.
 
 - [ ] **Step 6: Commit**
 
@@ -2672,6 +2666,13 @@ export async function SmsQr({ number, body }: { number: string; body: string }) 
 `hi` → `hi, I'm the Dial operator. I can help you text your crypto.` → `send jeremy $10` → `Send $10 USDC to jeremy on Solana? Approve: dial.wtf/a/…` → `Sent $10 to jeremy on Solana. Receipt: explorer.solana.com/tx/…`. User bubbles right-aligned in `--signal` on ink; operator bubbles left in paper. Respect `prefers-reduced-motion` (show all at once).
 
 - [ ] **Step 4: Landing page** — `src/app/page.tsx`: one screen. Left: headline "Text money to anyone.", the number formatted `+1 (806) 607-1387` as a `tel:`/`sms:` link, the `<Receipt title="DIAL OPERATOR">` containing `<Line label="Text" value="hi" />`, `<Line label="To" value="+1 806 607 1387" />` and the `<SmsQr number="+18066071387" body="hi" />` as the last receipt item with caption "Scan to text". Right (stacks below on mobile): `<PhoneThread />`. Footer line: "Testnet demo. Solana devnet USDC." Works at 375px with 16px gutters, no horizontal scroll.
+
+- [ ] **Step 4b: Proof on the page** (judges reward working product + traction; three prior SMS-payment winners exist, so show what's new)
+  - Live stats strip from the DB: payments settled, total USD moved, people texting (counts over `intents` where status settled, and `users`). Server component, `export const revalidate = 15`.
+  - Recent payments feed: last 8 settled intents as receipt lines `alex → jeremy · $5 · Solana · 5Hx…9k` linking to the explorer. Handles only, never phone numbers.
+  - "Why this is different" row: plain English instead of command syntax · passkey approves the exact payment, no PIN in a text · pay names, not just numbers.
+  - Lineage line: "Text My Bits (2020) → the Dial operator (2026)".
+  - Honest footer: testnet, server-held wallets gated by passkey, chains live.
 
 - [ ] **Step 5: Restyle `/s/[token]` and `/a/[intentId]`** with `Receipt`, `Line` and `Stamp` (approval page: `Receipt title="PAYMENT"`, lines for Amount, From, To, Network, Expires; `Stamp` for status; tx link line once settled; add `printing` when status is settled).
 

@@ -1,0 +1,8 @@
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+patchedDependencies:
+  '@opennextjs/cloudflare@1.20.9': patches/@opennextjs__cloudflare@1.20.9.patch
