@@ -4,6 +4,7 @@ import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
 import { EVM_CHAINS, type EvmChainConfig } from "./evm-chains";
 import { createSolanaAdapter } from "./solana";
+import { createTempoAdapter } from "./tempo";
 import type { Adapters } from "./types";
 
 let cached: Adapters | undefined;
@@ -31,6 +32,9 @@ export function getAdapters(): Adapters {
     for (const cfg of enabledEvmChains(e.EVM_CHAINS)) {
       adapters[cfg.chain] = createEvmAdapter({ ...cfg, treasuryKey: e.EVM_TREASURY_KEY as Hex });
     }
+  }
+  if (e.TEMPO_TREASURY_KEY) {
+    adapters.tempo = createTempoAdapter({ treasuryKey: e.TEMPO_TREASURY_KEY as Hex, rpcUrl: e.TEMPO_RPC_URL, faucet: true });
   }
   cached = adapters;
   return adapters;

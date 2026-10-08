@@ -16,6 +16,12 @@ const schema = z.object({
     .optional(),
   /** Comma-separated EVM chains to settle on, e.g. "base,arbitrum,hyperevm". Only list funded chains. */
   EVM_CHAINS: z.string().default(""),
+  /** Tempo Moderato treasury: funds signups and co-signs every transfer as fee payer. Tempo is off when unset. */
+  TEMPO_TREASURY_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
+  TEMPO_RPC_URL: z.url().default("https://rpc.moderato.tempo.xyz"),
   SIGNUP_DRIP_USD: z.string().default("25"),
   PER_TX_CAP_USD: z.string().default("50"),
   PER_DAY_CAP_USD: z.string().default("200"),
