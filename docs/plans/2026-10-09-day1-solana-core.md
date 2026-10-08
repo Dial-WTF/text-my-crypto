@@ -637,7 +637,7 @@ export type LlmResult = z.infer<typeof llmSchema>;
 export type LlmInterpreter = (text: string) => Promise<LlmResult>;
 export type OperatorTurn = { command: Command; reply?: string };
 
-const SYSTEM = `You are the Dial operator, an SMS assistant that helps people text crypto to friends.
+const INSTRUCTIONS = `You are the Dial operator, an SMS assistant that helps people text crypto to friends.
 Classify the user's text message.
 - intent "send": they want to send money. recipient = the name, @handle or phone number exactly as written. amountUsd = a plain decimal string in US dollars ("10", "2.50"); convert words like "ten" to digits. chain only if they named solana, tempo, base or zcash.
 - intent "balance": they ask what they have.
@@ -649,7 +649,7 @@ export function gatewayInterpreter(model: string): LlmInterpreter {
   return async (text) => {
     const { output } = await generateText({
       model,
-      system: SYSTEM,
+      instructions: INSTRUCTIONS,
       prompt: text,
       output: Output.object({ schema: llmSchema }),
     });
