@@ -1,4 +1,4 @@
-/* Theme · dark — carbon counter, thermal paper receipts, one signal green. Default. */
+/* Theme · dark — carbon counter, thermal paper receipts, one signal green. Also the :root fallback. */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
