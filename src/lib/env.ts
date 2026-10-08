@@ -32,3 +32,15 @@ export function env(): Env {
 export function resetEnvForTests(): void {
   cached = undefined;
 }
+
+const publicSchema = z.object({
+  DIAL_OPERATOR_NUMBER: z
+    .string()
+    .regex(/^\+[1-9]\d{7,14}$/)
+    .default("+18066071387"),
+});
+
+/** The few settings public pages need. Never includes secrets. */
+export function publicEnv(): z.infer<typeof publicSchema> {
+  return publicSchema.parse(process.env);
+}

@@ -1,0 +1,71 @@
+/* Hallmark · macrostructure: Marquee Hero · tone: utilitarian · anchor hue: 128 (signal green)
+ * theme: custom · vibe: "thermal receipt, carbon ink, after-hours payphone signal"
+ * page oklch(16% 0.012 140) · receipt paper oklch(95% 0.014 95) · accent oklch(87% 0.19 128)
+ * display: Big Shoulders · body: Geist · numerals: Geist Mono
+ * axes: dark / display-condensed-bold / chromatic-other (signal green ~128°)
+ * nav: N9 edge-aligned · footer: Ft4 dense colophon
+ */
+
+:root {
+  /* Page: carbon ink, tinted toward the signal hue */
+  --color-carbon: oklch(16% 0.012 140);
+  --color-carbon-2: oklch(20% 0.014 140);
+  --color-carbon-rule: oklch(31% 0.014 140);
+  --color-on-carbon: oklch(93% 0.012 110);
+  --color-on-carbon-muted: oklch(70% 0.014 120);
+
+  /* Receipts: warm thermal paper */
+  --color-paper: oklch(95% 0.014 95);
+  --color-paper-2: oklch(91% 0.016 95);
+  --color-paper-ink: oklch(22% 0.012 95);
+  --color-paper-muted: oklch(48% 0.016 95);
+  --color-paper-rule: oklch(78% 0.016 95);
+
+  /* One signal */
+  --color-accent: oklch(87% 0.19 128);
+  --color-accent-ink: oklch(22% 0.05 140);
+  --color-focus: oklch(88% 0.21 128);
+  --color-danger: oklch(66% 0.19 32);
+  --color-danger-on-paper: oklch(50% 0.17 32);
+
+  /* Type */
+  --font-display: var(--font-big-shoulders), "Arial Narrow", sans-serif;
+  --font-body: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.5rem;
+  --text-3xl: clamp(2.5rem, 6vw, 4.5rem);
+  --text-marquee: clamp(4.5rem, 17vw, 15rem);
+
+  /* 4pt spacing */
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --gutter: clamp(1rem, 4vw, 3rem);
+
+  --measure: 62ch;
+  --receipt-width: 26rem;
+  --radius-sm: 3px;
+  --rule-thin: 1px;
+  --rule-thick: 6px;
+  --tooth: 10px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-print: 900ms;
+}

@@ -1,0 +1,26 @@
+.stamp {
+  display: inline-block;
+  padding: var(--space-3xs) var(--space-2xs);
+  border: 2px solid currentColor;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  white-space: nowrap;
+}
+
+.done {
+  color: var(--color-accent-ink);
+  background: var(--color-accent);
+  border-color: var(--color-accent-ink);
+}
+
+.waiting {
+  color: var(--color-paper-muted);
+}
+
+.bad {
+  color: var(--color-danger-on-paper);
+}

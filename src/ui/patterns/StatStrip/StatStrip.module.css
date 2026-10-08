@@ -1,0 +1,7 @@
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-block: var(--rule-thin) solid var(--color-carbon-rule);
+}

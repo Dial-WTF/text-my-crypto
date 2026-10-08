@@ -1,0 +1,81 @@
+.receipt {
+  position: relative;
+  width: min(100%, var(--receipt-width));
+  padding: var(--space-lg) var(--space-md);
+  background: var(--color-paper);
+  color: var(--color-paper-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x,
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x;
+}
+
+.printing {
+  animation: print var(--dur-print) steps(16, end) both;
+}
+
+.title {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-paper-muted);
+}
+
+.body {
+  display: grid;
+  gap: var(--space-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.rule {
+  margin: var(--space-sm) 0;
+  border: 0;
+  border-top: var(--rule-thin) dashed var(--color-paper-rule);
+}
+
+.line {
+  display: flex;
+  gap: var(--space-2xs);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.label {
+  flex: none;
+  color: var(--color-paper-muted);
+}
+
+.leader {
+  flex: 1;
+  min-width: var(--space-sm);
+  border-bottom: var(--rule-thin) dotted var(--color-paper-rule);
+  transform: translateY(-0.3em);
+}
+
+.value {
+  flex: none;
+  max-width: 70%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.total {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.total .label {
+  color: var(--color-paper-ink);
+}
+
+@keyframes print {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
