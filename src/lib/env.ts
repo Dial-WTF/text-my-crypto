@@ -40,6 +40,7 @@ export function resetEnvForTests(): void {
 }
 
 const publicSchema = z.object({
+  APP_URL: z.url().default("https://text-my-crypto.raspy-thunder-20d2.workers.dev"),
   DIAL_OPERATOR_NUMBER: z
     .string()
     .regex(/^\+[1-9]\d{7,14}$/)

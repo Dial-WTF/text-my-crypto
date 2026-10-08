@@ -15,6 +15,7 @@ import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { runsOn, settlesOn, transcript } from "./landing-content";
+import { StructuredData } from "./StructuredData";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ export default async function Home() {
         </>
       }
     >
+      <StructuredData />
       <Marquee
         kicker="Text the Dial operator"
         number={formatPhone(number)}
