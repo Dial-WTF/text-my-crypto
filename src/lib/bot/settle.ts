@@ -17,6 +17,7 @@ import {
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { open } from "@/lib/secretbox";
+import { errorText } from "@/lib/settlement/types";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
@@ -64,7 +65,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
       memo: intent.id,
     });
   } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
+    const error = errorText(e);
     await markFailed(deps.db, intent.id, error);
     await notify(deps, sender.phone, replies.failed());
     return { ok: false, reason: "failed", error };
@@ -137,7 +138,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
   } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
+    const error = errorText(e);
     await revertToEscrowed(deps.db, intent.id, error);
     return { ok: false, reason: "failed", error };
   }
@@ -157,7 +158,7 @@ export async function reclaimExpired(deps: BotDeps, senderId: string): Promise<s
       total += intent.amount;
       count++;
     } catch (e) {
-      await revertToEscrowed(deps.db, intent.id, e instanceof Error ? e.message : String(e));
+      await revertToEscrowed(deps.db, intent.id, errorText(e));
     }
   }
   return count > 0 ? replies.refunded(formatUsd(total), count) : replies.nothingToReclaim(deps.escrowTtlDays);

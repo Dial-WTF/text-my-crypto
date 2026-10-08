@@ -1,3 +1,4 @@
+import { errorText } from "@/lib/settlement/types";
 import { type Chain, CHAINS } from "@/lib/chains";
 import type { User, Wallet } from "@/lib/db/schema";
 import {
@@ -54,7 +55,7 @@ export async function ensureSenderWallet(
     try {
       await adapter.fund(wallet.address, deps.dripAmount);
     } catch (e) {
-      console.error("first-use drip failed", chain, e);
+      console.error("first-use drip failed", chain, errorText(e));
     }
   }
   return wallet;
@@ -88,7 +89,7 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
         await solana.fund(w.address, deps.dripAmount);
         dripped = true;
       } catch (e) {
-        console.error("signup drip failed", e);
+        console.error("signup drip failed", errorText(e));
       }
     }
   }

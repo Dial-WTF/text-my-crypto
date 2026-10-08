@@ -1,3 +1,4 @@
+import { errorText } from "@/lib/settlement/types";
 import {
   type AuthInfo,
   type CallToolResult,
@@ -42,7 +43,7 @@ async function runSafely(deps: BotDeps, agent: Agent, name: ToolName, input: unk
   try {
     return await runTool(deps, agent, name, input);
   } catch (e) {
-    console.error(`mcp tool ${name} failed`, e);
+    console.error(`mcp tool ${name} failed`, errorText(e));
     return {
       ok: false,
       error: { error: "unavailable", message: "Dial couldn't finish that just now. Try again in a minute." },

@@ -21,13 +21,26 @@ export interface SettlementAdapter {
 
 export type Adapters = Partial<Record<Chain, SettlementAdapter>>;
 
+/**
+ * Error text from RPC clients quotes the full URL, and keyed RPCs carry their key in it. Keep only
+ * the host so a message can be logged, stored on a payment or shown in the health check.
+ */
+export function redactUrls(text: string): string {
+  return text.replace(/\b(?:https?|wss?):\/\/([^/\s?#"']+)[^\s"']*/g, (_m, host: string) => `${host}/…`);
+}
+
+/** The error's message, safe to log or store. */
+export function errorText(e: unknown): string {
+  return redactUrls(e instanceof Error ? e.message : String(e));
+}
+
 /** The chain's RPC didn't answer (rate limit, 403, timeout). Nothing moved; the person should try again later. */
 export class ChainDownError extends Error {
   constructor(
     readonly chain: Chain,
     cause: unknown,
   ) {
-    super(`${chain} RPC unavailable: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 300));
+    super(`${chain} RPC unavailable: ${errorText(cause)}`.slice(0, 300));
     this.name = "ChainDownError";
   }
 }

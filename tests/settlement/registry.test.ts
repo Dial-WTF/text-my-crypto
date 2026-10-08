@@ -65,3 +65,15 @@ describe("rpcOverrides", () => {
     expect(() => rpcOverrides({ RPC_SOLANA_DEVNET: "not a url" })).toThrow();
   });
 });
+
+describe("redactUrls", () => {
+  it("keeps the host and drops paths and queries that carry keys", async () => {
+    const { redactUrls } = await import("@/lib/settlement/types");
+    const msg =
+      'HTTP request failed.\n\nURL: https://tempo-moderato.g.alchemy.com/v2/SECRETKEY\nRequest body: {"x":1} and https://devnet.helius-rpc.com/?api-key=SECRET2';
+    const out = redactUrls(msg);
+    expect(out).not.toContain("SECRET");
+    expect(out).toContain("tempo-moderato.g.alchemy.com/…");
+    expect(out).toContain("devnet.helius-rpc.com/…");
+  });
+});

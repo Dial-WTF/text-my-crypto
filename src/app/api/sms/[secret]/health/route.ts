@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { safeEqual } from "@/lib/runtime";
 import { activeChains, getAdapters } from "@/lib/settlement";
+import { errorText } from "@/lib/settlement/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ async function timed(fn: () => Promise<string | undefined>): Promise<Check> {
     const detail = await fn();
     return { ok: true, ms: Date.now() - start, ...(detail ? { detail } : {}) };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorText(e);
     return { ok: false, ms: Date.now() - start, detail: message.replace(/\d{7,}/g, "…").slice(0, 300) };
   }
 }
