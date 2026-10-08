@@ -5,6 +5,7 @@ import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
 import { getIntent } from "@/lib/intents";
 import { noLlm } from "@/lib/operator/brain";
+import { ChainDownError } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
@@ -143,6 +144,20 @@ describe("cancelling and bad targets", () => {
   it("refuses the operator's own number and zero amounts", async () => {
     expect(await say(ALEX, "send $5 to (806) 607-1387")).toBe("That's my number. Who should get the money?");
     expect(await say(ALEX, "send @jeremy $0")).toBe("Amounts can be from $0.01 to $50.");
+  });
+});
+
+describe("chain outages", () => {
+  it("says the network is down right away instead of going silent, and keeps the question", async () => {
+    const down = fakeAdapter({ defaultBalance: 100_000_000n });
+    down.getBalance = async () => {
+      throw new ChainDownError("solana", new Error("HTTP 403"));
+    };
+    deps = { ...deps, adapters: { solana: down } };
+    expect(await say(ALEX, "send mom $1")).toBe("What's mom's number?");
+    expect(await say(ALEX, "(555) 000-0055")).toBe("The Solana network isn't answering right now. Nothing moved. Try again in a minute.");
+    deps = { ...deps, adapters: { solana: sol } };
+    expect(await say(ALEX, "(555) 000-0055")).toMatch(/^Send \$1 USDC to \+•••••••0055/);
   });
 });
 

@@ -1,7 +1,8 @@
 import { agentFacts } from "../agent-content";
+import { settlesOn } from "../landing-content";
 import { site } from "../site";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 /** Plain-text guide for agents and LLM crawlers (llmstxt.org). */
 export function GET(): Response {
@@ -25,8 +26,7 @@ export function GET(): Response {
 ${a.tools.map(([name, what]) => `- ${name}: ${what}`).join("\n")}
 
 ## Chains
-- Live: Solana devnet (USDC)
-- Building: Tempo Moderato (AlphaUSD); Base, Ethereum, Arbitrum, HyperEVM (Circle test USDC via EIP-3009); Robinhood Chain; Zcash
+${settlesOn.map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`).join("\n")}
 
 ## Links
 - Site: ${s.url}
