@@ -21,8 +21,8 @@ import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { ensureSenderWallet, ensureWallet } from "./accounts";
-import { text } from "./text";
+import { dripOnce, ensureSenderWallet, ensureWallet } from "./accounts";
+import { notify, text } from "./text";
 import type { BotDeps } from "./types";
 
 export const moneyCommandSchema = z.object({
@@ -186,7 +186,12 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   const note = cmd.note ?? null;
 
   if (cmd.kind === "send") {
-    const balance = await adapter.getBalance(mine.address);
+    let balance = await adapter.getBalance(mine.address);
+    // Short, and the test drip never landed (say the chain was down at signup): drop it now.
+    if (balance < amount && (await dripOnce(deps, mine, adapter))) {
+      balance += deps.dripAmount;
+      await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
+    }
     if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 

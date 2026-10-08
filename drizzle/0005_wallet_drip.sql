@@ -1,0 +1,1 @@
+ALTER TABLE `wallets` ADD `dripped_at` integer;

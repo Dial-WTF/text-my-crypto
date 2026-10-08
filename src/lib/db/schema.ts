@@ -34,6 +34,8 @@ export const wallets = sqliteTable(
     chain: text("chain", { enum: CHAINS }).notNull(),
     address: text("address").notNull(),
     secretEnc: text("secret_enc").notNull(),
+    /** When the test-funds drip landed. Null until it succeeds, so a drip that failed is retried. */
+    drippedAt: ts("dripped_at"),
   },
   (t) => [uniqueIndex("wallets_user_chain").on(t.userId, t.chain)],
 );

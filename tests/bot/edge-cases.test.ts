@@ -161,6 +161,26 @@ describe("chain outages", () => {
   });
 });
 
+describe("test-funds drip", () => {
+  it("retries a drip that failed at signup the first time they come up short, and only once", async () => {
+    const broke = fakeAdapter({ defaultBalance: 0n });
+    const fund = broke.fund;
+    broke.fund = async () => {
+      throw new ChainDownError("solana", new Error("HTTP 403"));
+    };
+    deps = { ...deps, adapters: { solana: broke } };
+    expect(await signUp(NEWBIE, "Sam")).not.toMatch(/test USDC/);
+
+    broke.fund = fund;
+    expect(await say(NEWBIE, "send @alex $1")).toMatch(/^Send \$1 USDC to @alex/);
+    expect(sms.to(NEWBIE)).toContain("I dropped $25 of test USDC in your wallet.");
+    expect(broke.funded).toHaveLength(1);
+
+    expect(await say(NEWBIE, "send @jeremy $30")).toBe("You have $0. Not enough for that one.");
+    expect(broke.funded).toHaveLength(1);
+  });
+});
+
 describe("things the operator can't parse", () => {
   it("asks for the number of a multi-word name", async () => {
     expect(await say(ALEX, "send my guy $1")).toBe("What's my guy's number?");

@@ -54,6 +54,7 @@ export const replies = {
   overCap: (cap: string) => `Test mode caps payments at ${cap}. Try a smaller amount.`,
   overDaily: (cap: string) => `Text-only accounts can send ${cap} a day. Text "upgrade" to add a passkey for higher limits.`,
   insufficient: (balance: string) => `You have ${balance}. Not enough for that one.`,
+  dripped: (amount: string) => `I dropped ${amount} of test USDC in your wallet.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
   confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
     `Send ${amount} USDC to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,

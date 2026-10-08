@@ -15,7 +15,7 @@ import { formatUsd } from "@/lib/money";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { addWallet, getWallet } from "@/lib/wallets";
+import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
 
@@ -41,9 +41,29 @@ export async function ensureWallet(
   return created;
 }
 
+/**
+ * Sends a wallet its one test-funds drip. True when it landed now; false when the wallet already had it.
+ * A failed transfer gives the drip back and rethrows, so it is retried next time instead of lost.
+ */
+export async function dripOnce(
+  deps: Pick<BotDeps, "db" | "dripAmount" | "now">,
+  wallet: Wallet,
+  adapter: SettlementAdapter,
+): Promise<boolean> {
+  if (deps.dripAmount <= 0n) return false;
+  if (!(await claimDrip(deps.db, wallet.userId, wallet.chain, deps.now()))) return false;
+  try {
+    await adapter.fund(wallet.address, deps.dripAmount);
+    return true;
+  } catch (e) {
+    await releaseDrip(deps.db, wallet.userId, wallet.chain);
+    throw e;
+  }
+}
+
 /** The sender's wallet on a chain; a wallet opened on first use gets the same test drip as signup. */
 export async function ensureSenderWallet(
-  deps: Pick<BotDeps, "db" | "walletKey" | "dripAmount">,
+  deps: Pick<BotDeps, "db" | "walletKey" | "dripAmount" | "now">,
   userId: string,
   chain: Chain,
   adapter: SettlementAdapter,
@@ -51,12 +71,10 @@ export async function ensureSenderWallet(
   const existing = await getWallet(deps.db, userId, chain);
   if (existing) return existing;
   const wallet = await ensureWallet(deps, userId, chain, adapter);
-  if (deps.dripAmount > 0n) {
-    try {
-      await adapter.fund(wallet.address, deps.dripAmount);
-    } catch (e) {
-      console.error("first-use drip failed", chain, errorText(e));
-    }
+  try {
+    await dripOnce(deps, wallet, adapter);
+  } catch (e) {
+    console.error("first-use drip failed", chain, errorText(e));
   }
   return wallet;
 }
@@ -84,13 +102,10 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   const solana = deps.adapters.solana;
   if (solana) {
     const w = await ensureWallet(deps, user.id, "solana", solana);
-    if (deps.dripAmount > 0n) {
-      try {
-        await solana.fund(w.address, deps.dripAmount);
-        dripped = true;
-      } catch (e) {
-        console.error("signup drip failed", errorText(e));
-      }
+    try {
+      dripped = await dripOnce(deps, w, solana);
+    } catch (e) {
+      console.error("signup drip failed", errorText(e));
     }
   }
 
