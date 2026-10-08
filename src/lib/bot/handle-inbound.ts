@@ -1,7 +1,7 @@
 import { chainLabel } from "@/lib/chains";
-import { CODE_RE } from "@/lib/codes";
+import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { saveContact } from "@/lib/contacts";
-import { clearConversation, getConversation, setConversation } from "@/lib/conversations";
+import { clearConversation, type Conversation, getConversation, setConversation } from "@/lib/conversations";
 import type { User } from "@/lib/db/schema";
 import {
   createSignupToken,
@@ -13,17 +13,26 @@ import {
   renameUser,
   searchDirectory,
 } from "@/lib/identity";
-import { codeCandidates, latestSettledTo, matchCode } from "@/lib/intents";
+import {
+  cancelUnapproved,
+  codeCandidates,
+  hasAwaitingApproval,
+  hasLockedCode,
+  latestSettledTo,
+  matchCode,
+  matchesExpiredCode,
+} from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { cleanDisplayName } from "@/lib/names";
 import { interpret } from "@/lib/operator/brain";
-import { parseCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
-import { normalizePhone } from "@/lib/phone";
 import type { InboundSms } from "@/lib/sms/inbound";
-import { logInbound } from "@/lib/sms/log";
+import { isBurstRepeat, logInbound, recentHistory } from "@/lib/sms/log";
+import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
-import { completeSignup, enabledChains } from "./accounts";
+import { completeSignup, enabledChains, offerWaiting } from "./accounts";
+import { type Action, decide, type Session } from "./machine/decide";
+import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { text } from "./text";
@@ -31,111 +40,154 @@ import type { BotDeps } from "./types";
 
 export type { BotDeps } from "./types";
 
-export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<string[]> {
-  if (!(await logInbound(deps.db, msg))) return [];
+const BURST_MS = 60_000;
 
-  const out: string[] = [];
-  const reply = async (body: string) => {
-    out.push(body);
-    await text(deps, msg.from, body);
-  };
+/**
+ * One inbound text, start to finish: log (dropping redeliveries), drop double-taps, load what the
+ * operator knows about this number, classify the text, decide the single action, do it.
+ */
+export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<string[]> {
+  const logId = await logInbound(deps.db, msg, deps.now());
+  if (!logId) return [];
+  if (await isBurstRepeat(deps.db, logId, msg.from, msg.body, new Date(deps.now().getTime() - BURST_MS))) return [];
 
   const user = await findUserByPhone(deps.db, msg.from);
-  const convo = await getConversation(deps.db, msg.from, deps.now());
+  const session = await loadSession(deps, msg.from, user);
+  const action = decide(session, classify(msg.body));
 
-  if (!user || !isClaimed(user)) {
-    if (convo?.state === "awaiting_name" && !CODE_RE.test(msg.body)) {
-      if (parseCommand(msg.body).kind !== "chat") {
-        await reply(replies.nameFirst());
-        return out;
-      }
-      const result = await completeSignup(deps, msg.from, msg.body);
-      if (result.ok) await clearConversation(deps.db, msg.from);
-      await reply(result.ok ? result.reply : result.error);
-      return out;
+  const out: string[] = [];
+  const reply = async (body: string, force = false) => {
+    if (await text(deps, msg.from, body, { force })) out.push(body);
+  };
+  await act(deps, action, { phone: msg.from, body: msg.body, user, convo: session.convo, reply });
+  return out;
+}
+
+async function loadSession(deps: BotDeps, phone: string, user: User | null): Promise<Session> {
+  const claimed = user !== null && isClaimed(user);
+  return {
+    account: !user ? "unknown" : claimed ? "claimed" : "unclaimed",
+    optedOut: await isOptedOut(deps.db, phone),
+    convo: await getConversation(deps.db, phone, deps.now()),
+    awaitingApproval: claimed ? await hasAwaitingApproval(deps.db, user.id, deps.now()) : false,
+  };
+}
+
+type Ctx = {
+  phone: string;
+  body: string;
+  user: User | null;
+  convo: Conversation | null;
+  reply: (body: string, force?: boolean) => Promise<void>;
+};
+
+async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
+  const { phone, reply } = ctx;
+  switch (action.do) {
+    case "silence":
+      return;
+    case "optOut":
+      await optOut(deps.db, phone, deps.now());
+      return reply(replies.optedOut(), true);
+    case "optIn":
+      await optIn(deps.db, phone);
+      return reply(replies.optedIn());
+    case "help":
+      return reply(replies.help());
+    case "welcome":
+      await setConversation(deps.db, phone, { state: "awaiting_name", payload: {} }, deps.now());
+      return reply(await welcome(deps, ctx.user));
+    case "nameFirst":
+      return reply(replies.nameFirst());
+    case "badName":
+      return reply(replies.badName());
+    case "signup": {
+      const result = await completeSignup(deps, phone, action.name);
+      if (!result.ok) return reply(result.error);
+      await clearConversation(deps.db, phone);
+      await reply(result.reply);
+      return offerWaiting(deps, result.user);
     }
-    await setConversation(deps.db, msg.from, { state: "awaiting_name", payload: {} }, deps.now());
-    await reply(await welcome(deps, user));
-    return out;
   }
 
-  if (CODE_RE.test(msg.body)) {
-    for (const r of await handleCode(deps, user, msg.body)) await reply(r);
-    return out;
-  }
+  const user = ctx.user;
+  if (!user) return reply(replies.welcome());
 
-  if (convo?.state === "awaiting_choice") {
-    await clearConversation(deps.db, msg.from);
-    const pick = /^\s*([1-5])\s*$/.exec(msg.body)?.[1];
-    const handle = pick ? convo.payload.handles[Number(pick) - 1] : undefined;
-    const phone = normalizePhone(msg.body);
-    const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
-    if (parsed.success && (handle || phone)) {
-      if (phone) await saveContact(deps.db, user.id, convo.payload.name, phone);
-      await reply(await prepareMoney(deps, user, { ...parsed.data, counterparty: handle ? `@${handle}` : (phone ?? "") }));
-      return out;
-    }
+  switch (action.do) {
+    case "approve":
+      for (const r of await approveByCode(deps, user, action.code)) await reply(r);
+      return;
+    case "codeHint":
+      return reply(replies.codeHint());
+    case "nevermind":
+      await clearConversation(deps.db, phone);
+      return reply(replies.cancelled(await cancelUnapproved(deps.db, user.id, deps.now())));
+    case "confirmNew":
+    case "pick":
+    case "useNumber":
+      return reply(await answerPrompt(deps, user, ctx.convo, action));
+    case "command":
+      return runCommand(deps, user, action.text, reply);
   }
+}
 
-  if (convo?.state === "awaiting_number") {
-    await clearConversation(deps.db, msg.from);
-    const phone = normalizePhone(msg.body);
-    const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
-    if (phone && parsed.success) {
-      await saveContact(deps.db, user.id, convo.payload.name, phone);
-      await reply(await prepareMoney(deps, user, { ...parsed.data, counterparty: phone }));
-      return out;
-    }
+/** Replies to "1", a phone number, or NEW after the operator asked a question. */
+async function answerPrompt(
+  deps: BotDeps,
+  user: User,
+  convo: Conversation | null,
+  action: Extract<Action, { do: "confirmNew" | "pick" | "useNumber" }>,
+): Promise<string> {
+  await clearConversation(deps.db, user.phone);
+  if (!convo || convo.state === "awaiting_name") return replies.chatFallback();
+  const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
+  if (!parsed.success) return replies.chatFallback();
+  if (action.do === "confirmNew") return prepareMoney(deps, user, parsed.data, { allowDuplicate: true });
+  if (action.do === "useNumber") {
+    if (convo.state !== "awaiting_duplicate") await saveContact(deps.db, user.id, convo.payload.name, action.phone);
+    return prepareMoney(deps, user, { ...parsed.data, counterparty: action.phone });
   }
+  const handle = convo.state === "awaiting_choice" ? convo.payload.handles[action.index] : undefined;
+  return handle ? prepareMoney(deps, user, { ...parsed.data, counterparty: `@${handle}` }) : replies.chatFallback();
+}
 
-  const turn = await interpret(msg.body, deps.llm);
+async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: string) => Promise<void>): Promise<void> {
+  await clearConversation(deps.db, user.phone);
+  const turn = await interpret(body, deps.llm, await recentHistory(deps.db, user.phone));
   const cmd = turn.command;
   switch (cmd.kind) {
     case "help":
-      await reply(replies.help());
-      break;
+      return reply(replies.help());
     case "chat":
-      await reply(turn.reply ?? replies.chatFallback());
-      break;
+      return reply(turn.reply ?? replies.chatFallback());
     case "balance":
-      await reply(await balanceReply(deps, user));
-      break;
+      return reply(await balanceReply(deps, user));
     case "receive":
-      await reply(await receiveReply(deps, user));
-      break;
+      return reply(await receiveReply(deps, user));
     case "reclaim":
-      await reply(await reclaimExpired(deps, user.id));
-      break;
+      return reply(await reclaimExpired(deps, user.id));
     case "decline":
-      await reply(await declineLatest(deps, user.id));
-      break;
+      return reply(await declineLatest(deps, user.id));
     case "directory": {
       const found = await searchDirectory(deps.db, cmd.query, 3);
-      await reply(replies.directory(cmd.query, found.map(describe)));
-      break;
+      return reply(replies.directory(cmd.query, found.map(describe)));
     }
     case "rename": {
       const name = cleanDisplayName(cmd.name);
       const renamed = name ? await renameUser(deps.db, user.id, name) : null;
-      await reply(renamed && name ? replies.renamed(name, renamed.handle ?? "") : replies.badName());
-      break;
+      return reply(renamed && name ? replies.renamed(name, renamed.handle ?? "") : replies.badName());
     }
     case "whoami":
-      await reply(replies.whoami(displayName(user), user.handle ?? ""));
-      break;
+      return reply(replies.whoami(displayName(user), user.handle ?? ""));
     case "upgrade":
-      await reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
-      break;
+      return reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
     case "send":
     case "request":
     case "invoice":
-      await reply(await prepareMoney(deps, user, cmd));
-      break;
+      return reply(await prepareMoney(deps, user, cmd));
     case "withdraw":
-      await reply(await prepareWithdraw(deps, user, cmd));
-      break;
+      return reply(await prepareWithdraw(deps, user, cmd));
   }
-  return out;
 }
 
 async function welcome(deps: BotDeps, user: User | null): Promise<string> {
@@ -147,16 +199,25 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
   return replies.welcome();
 }
 
-async function handleCode(deps: BotDeps, user: User, code: string): Promise<string[]> {
-  const matches = await matchCode(deps.db, await codeCandidates(deps.db, user.id, deps.now()), code);
-  if (matches.length === 0) return [replies.codeMismatch()];
-  const failures: string[] = [];
+/** A 6-digit reply: approve the payment it belongs to, release an escrow, or explain why not. */
+async function approveByCode(deps: BotDeps, user: User, code: string): Promise<string[]> {
+  const candidates = await codeCandidates(deps.db, user.id, deps.now());
+  const matches = await matchCode(deps.db, candidates, code);
+  if (matches.length === 0) {
+    if (await matchesExpiredCode(deps.db, user.id, code, deps.now())) return [replies.codeExpired()];
+    if (candidates.length === 0) {
+      return [(await hasLockedCode(deps.db, user.id, deps.now())) ? replies.codeMismatch(0) : replies.noCodePending()];
+    }
+    const used = Math.max(...candidates.map((c) => c.codeAttempts)) + 1;
+    return [replies.codeMismatch(Math.max(0, MAX_CODE_ATTEMPTS - used))];
+  }
+  const notes: string[] = [];
   for (const intent of matches) {
     const outcome =
       intent.status === "escrowed" ? await releaseEscrow(deps, intent.id) : await approveIntent(deps, intent.id);
-    if (!outcome.ok && outcome.reason === "not_claimable") failures.push(replies.codeMismatch());
+    if (!outcome.ok && outcome.reason === "not_claimable") notes.push(replies.codeMismatch());
   }
-  return failures;
+  return notes;
 }
 
 async function balanceReply(deps: BotDeps, user: User): Promise<string> {

@@ -1,6 +1,6 @@
 import { chainLabel } from "@/lib/chains";
 import type { Intent } from "@/lib/db/schema";
-import { displayName, getUserById, isClaimed } from "@/lib/identity";
+import { describe, displayName, getUserById, isClaimed } from "@/lib/identity";
 import {
   claimEscrowForRefund,
   claimEscrowForRelease,
@@ -17,6 +17,7 @@ import {
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { open } from "@/lib/secretbox";
+import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
 import { notify } from "./text";
@@ -48,6 +49,14 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
     const wallet = await getWallet(deps.db, intent.senderId, intent.chain);
     if (!wallet) throw new Error("Missing sender wallet");
+    const balance = await adapter.getBalance(wallet.address);
+    if (balance < intent.amount) {
+      await markFailed(deps.db, intent.id, "Insufficient balance at approval");
+      await notify(deps, sender.phone, replies.insufficientNow(formatUsd(balance)));
+      return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
+    }
+    const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
+    await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, chainLabel(intent.chain)));
     result = await adapter.settle({
       fromSecret: await unsealWallet(wallet, deps.walletKey),
       to: intent.recipientAddress,
@@ -67,7 +76,11 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   if (intent.escrowSecretEnc) {
     await markEscrowed(deps.db, intent.id, result, new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS));
     await notify(deps, sender.phone, replies.sentToEscrow(amount, displayName(recipient), deps.escrowTtlDays));
-    await notify(deps, recipient.phone, replies.receivedUnclaimed(amount, displayName(sender), intent.note));
+    if (await isOptedOut(deps.db, recipient.phone)) {
+      await notify(deps, sender.phone, replies.recipientOptedOut(displayName(recipient), deps.escrowTtlDays));
+    } else {
+      await notify(deps, recipient.phone, replies.receivedUnclaimed(amount, displayName(sender), intent.note));
+    }
     return { ok: true, status: "escrowed", ...result };
   }
 

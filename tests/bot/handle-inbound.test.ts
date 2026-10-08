@@ -110,23 +110,29 @@ describe("send to someone on Dial", () => {
     const confirm = await say(ALEX, "send @jeremy $3");
     const right = codeIn(confirm);
     const wrong = right === "000000" ? "111111" : "000000";
-    expect(await say(ALEX, wrong)).toBe("That code didn't match anything waiting on you. Check my last text.");
-    for (let i = 0; i < 4; i++) await say(ALEX, wrong);
-    expect(await say(ALEX, right)).toBe("That code didn't match anything waiting on you. Check my last text.");
+    expect(await say(ALEX, wrong)).toBe("That code didn't match. 4 tries left.");
+    expect(await say(ALEX, wrong)).toBe("That code didn't match. 3 tries left.");
+    for (let i = 0; i < 3; i++) await say(ALEX, wrong);
+    expect(await say(ALEX, right)).toBe(
+      "That code didn't match and that was the last try. Text the payment again for a new code.",
+    );
     expect(sol.settled).toHaveLength(0);
   });
 
   it("can't be approved twice or after it expires", async () => {
     const confirm = await say(ALEX, "send @jeremy $3");
     clock = new Date(clock.getTime() + 11 * 60_000);
-    expect(await say(ALEX, codeIn(confirm))).toBe("That code didn't match anything waiting on you. Check my last text.");
+    expect(await say(ALEX, codeIn(confirm))).toBe(
+      "That code expired, so nothing was sent. Text the payment again for a fresh one.",
+    );
   });
 
   it("enforces per-payment, daily and balance limits", async () => {
     expect(await say(ALEX, "send @jeremy $51")).toBe("Test mode caps payments at $50. Try a smaller amount.");
     deps = { ...deps, perDayCap: 15_000_000n };
     await say(ALEX, codeIn(await say(ALEX, "send @jeremy $10")));
-    expect(await say(ALEX, "send @jeremy $10")).toMatch(/^Text-only accounts can send \$15 a day/);
+    expect(await say(ALEX, "send @jeremy $10")).toBe("You just sent @jeremy $10. Reply NEW if you meant to send another.");
+    expect(await say(ALEX, "new")).toMatch(/^Text-only accounts can send \$15 a day/);
     sol.balances.set((await getWallet(db, (await findUserByPhone(db, JEREMY))!.id, "solana"))!.address, 2_000_000n);
     expect(await say(JEREMY, "send @alex $5")).toBe("You have $2. Not enough for that one.");
   });
@@ -274,7 +280,7 @@ describe("passkey accounts", () => {
     const confirm = await say(ALEX, "send @jeremy $25");
     expect(confirm).toMatch(/^Send \$25 USDC to @jeremy on Solana\? Approve with your passkey: https:\/\/tmc\.test\/a\/pi_/);
     expect(codeIn(confirm)).toBe("");
-    expect(await say(ALEX, "123456")).toBe("That code didn't match anything waiting on you. Check my last text.");
+    expect(await say(ALEX, "123456")).toBe("Nothing is waiting on a code right now.");
   });
 
   it("still allows texted codes for small payments", async () => {
