@@ -62,6 +62,18 @@ export const signupTokens = sqliteTable("signup_tokens", {
   phone: text("phone").notNull(),
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
+  challenge: text("challenge"),
+});
+
+export const passkeys = sqliteTable("passkeys", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  publicKey: text("public_key").notNull(),
+  counter: integer("counter").notNull().default(0),
+  transports: text("transports").notNull().default("[]"),
+  createdAt: ts("created_at").notNull().default(now),
 });
 
 export const intents = sqliteTable("intents", {
@@ -110,3 +122,4 @@ export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
+export type Passkey = typeof passkeys.$inferSelect;

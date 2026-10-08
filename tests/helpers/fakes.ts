@@ -63,6 +63,7 @@ export function testDeps(db: Db, overrides: Partial<BotDeps> = {}): BotDeps {
     walletKey: Buffer.alloc(32, 9).toString("base64"),
     perTxCap: 50_000_000n,
     perDayCap: 200_000_000n,
+    passkeyThreshold: 20_000_000n,
     escrowTtlDays: 7,
     dripAmount: 25_000_000n,
     ...overrides,

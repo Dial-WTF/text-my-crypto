@@ -1,4 +1,6 @@
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
+const approveWith = (code: string | null, link: string, verb = "confirm") =>
+  code ? `Reply ${code} to ${verb}, or tap: ${link}` : `Approve with your passkey: ${link}`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const replies = {
@@ -23,14 +25,18 @@ export const replies = {
   overDaily: (cap: string) => `Text-only accounts can send ${cap} a day. Text "upgrade" to add a passkey for higher limits.`,
   insufficient: (balance: string) => `You have ${balance}. Not enough for that one.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
-  confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string, link: string) =>
-    `Send ${amount} USDC to ${who}${forNote(note)} on ${chain}? Reply ${code} to confirm, or tap: ${link}`,
+  confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
+    `Send ${amount} USDC to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,
   requestSent: (amount: string, who: string) => `Asked ${who} for ${amount}. I'll text you when they pay.`,
   invoiceSent: (amount: string, who: string, link: string) => `Invoice for ${amount} sent to ${who}. Track it: ${link}`,
-  payRequest: (from: string, amount: string, note: string | null, code: string, link: string) =>
-    `${from} is asking you for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Or tap: ${link}`,
-  payInvoice: (from: string, amount: string, note: string | null, code: string, link: string) =>
-    `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`,
+  payRequest: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
+    code
+      ? `${from} is asking you for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Or tap: ${link}`
+      : `${from} is asking you for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
+  payInvoice: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
+    code
+      ? `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
+      : `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
   codeMismatch: () => `That code didn't match anything waiting on you. Check my last text.`,
   balance: (lines: string[]) => `You have ${lines.join(", ")}.`,
   receive: (handle: string, addresses: string[]) =>
@@ -54,8 +60,8 @@ export const replies = {
   nothingToReclaim: (days: number) =>
     `Nothing to reclaim right now. Unclaimed payments can come back after ${plural(days, "day")}.`,
   upgrade: (link: string) => `Add a passkey for one-tap approvals and higher limits: ${link}`,
-  confirmWithdraw: (amount: string, address: string, chain: string, code: string, link: string) =>
-    `Withdraw ${amount} USDC to ${address} on ${chain}? Reply ${code} to confirm, or tap: ${link}`,
+  confirmWithdraw: (amount: string, address: string, chain: string, code: string | null, link: string) =>
+    `Withdraw ${amount} USDC to ${address} on ${chain}? ${approveWith(code, link)}`,
   withdrew: (amount: string, address: string, explorerUrl: string) =>
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,

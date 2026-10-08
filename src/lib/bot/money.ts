@@ -8,6 +8,7 @@ import { createIntent, issueCode, sentSince } from "@/lib/intents";
 import { formatUsd, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
+import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
 import { ensureWallet } from "./accounts";
@@ -32,6 +33,12 @@ async function resolveCounterparty(deps: BotDeps, owner: User, raw: string): Pro
   const phone = normalizePhone(raw) ?? (await findContact(deps.db, owner.id, raw))?.phone ?? null;
   if (!phone) return { askFor: raw };
   return { user: (await findUserByPhone(deps.db, phone)) ?? (await createUnclaimedUser(deps.db, phone)) };
+}
+
+/** Over the threshold, an account with a passkey must use it: no SMS code is issued. */
+async function codeFor(deps: BotDeps, payerId: string, intentId: string, amount: bigint): Promise<string | null> {
+  if (amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
+  return issueCode(deps.db, intentId);
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -98,7 +105,7 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
       },
       deps.now(),
     );
-    const code = await issueCode(deps.db, intent.id);
+    const code = await codeFor(deps, user.id, intent.id, amount);
     return replies.confirmSend(formatUsd(amount), otherName, chainLabel(chain), note, code, `${deps.appUrl}/a/${intent.id}`);
   }
 
@@ -117,7 +124,7 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
     },
     deps.now(),
   );
-  const code = await issueCode(deps.db, intent.id);
+  const code = await codeFor(deps, other.id, intent.id, amount);
   const link = `${deps.appUrl}/a/${intent.id}`;
   if (cmd.kind === "request") {
     await text(deps, other.phone, replies.payRequest(me, formatUsd(amount), note, code, link));
@@ -162,7 +169,7 @@ export async function prepareWithdraw(deps: BotDeps, user: User, cmd: WithdrawCo
     },
     deps.now(),
   );
-  const code = await issueCode(deps.db, intent.id);
+  const code = await codeFor(deps, user.id, intent.id, amount);
   return replies.confirmWithdraw(
     formatUsd(amount),
     shortAddress(cmd.address),

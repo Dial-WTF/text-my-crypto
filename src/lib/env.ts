@@ -13,6 +13,7 @@ const schema = z.object({
   SIGNUP_DRIP_USD: z.string().default("25"),
   PER_TX_CAP_USD: z.string().default("50"),
   PER_DAY_CAP_USD: z.string().default("200"),
+  PASSKEY_THRESHOLD_USD: z.string().default("20"),
   ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
   AI_GATEWAY_API_KEY: z.string().min(1),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),

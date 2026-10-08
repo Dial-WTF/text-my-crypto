@@ -44,11 +44,22 @@ CREATE TABLE `intents` (
 	FOREIGN KEY (`recipient_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `passkeys` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`public_key` text NOT NULL,
+	`counter` integer DEFAULT 0 NOT NULL,
+	`transports` text DEFAULT '[]' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
 CREATE TABLE `signup_tokens` (
 	`token` text PRIMARY KEY NOT NULL,
 	`phone` text NOT NULL,
 	`expires_at` integer NOT NULL,
-	`used_at` integer
+	`used_at` integer,
+	`challenge` text
 );
 --> statement-breakpoint
 CREATE TABLE `sms_log` (

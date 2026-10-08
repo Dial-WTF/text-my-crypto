@@ -6,6 +6,7 @@ import { findUserByPhone } from "@/lib/identity";
 import { getIntent } from "@/lib/intents";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
+import { passkeys } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/db";
 import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
 
@@ -216,6 +217,31 @@ describe("withdraw", () => {
     expect(await say(ALEX, "withdraw $1 to 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb on tempo")).toBe(
       "Tempo isn't switched on yet. Try Solana.",
     );
+  });
+});
+
+describe("passkey accounts", () => {
+  beforeEach(async () => {
+    await signUp(ALEX, "alex");
+    await signUp(JEREMY, "jeremy");
+    const alex = await findUserByPhone(db, ALEX);
+    await db.insert(passkeys).values({ id: "cred1", userId: alex!.id, publicKey: "pk" });
+  });
+
+  it("requires the passkey above the threshold and issues no code", async () => {
+    const confirm = await say(ALEX, "send @jeremy $25");
+    expect(confirm).toMatch(/^Send \$25 USDC to jeremy on Solana\? Approve with your passkey: https:\/\/tmc\.test\/a\/pi_/);
+    expect(codeIn(confirm)).toBe("");
+    expect(await say(ALEX, "123456")).toBe("That code didn't match anything waiting on you. Check my last text.");
+  });
+
+  it("still allows texted codes for small payments", async () => {
+    expect(await say(ALEX, "send @jeremy $5")).toMatch(/Reply \d{6} to confirm/);
+  });
+
+  it("asks a passkey payer to use it for large requests", async () => {
+    await say(JEREMY, "request $30 from @alex");
+    expect(sms.last(ALEX)).toMatch(/^jeremy is asking you for \$30 USDC\. Pay with your passkey or decline: /);
   });
 });
 

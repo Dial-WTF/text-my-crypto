@@ -13,6 +13,7 @@ export type BotDeps = {
   walletKey: string;
   perTxCap: bigint;
   perDayCap: bigint;
+  passkeyThreshold: bigint;
   escrowTtlDays: number;
   dripAmount: bigint;
 };

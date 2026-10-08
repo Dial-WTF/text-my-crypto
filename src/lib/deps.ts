@@ -21,6 +21,7 @@ export function botDeps(): BotDeps {
     walletKey: e.WALLET_ENCRYPTION_KEY,
     perTxCap: usdToBaseUnits(e.PER_TX_CAP_USD),
     perDayCap: usdToBaseUnits(e.PER_DAY_CAP_USD),
+    passkeyThreshold: usdToBaseUnits(e.PASSKEY_THRESHOLD_USD),
     escrowTtlDays: e.ESCROW_TTL_DAYS,
     dripAmount: usdToBaseUnits(e.SIGNUP_DRIP_USD),
   };
