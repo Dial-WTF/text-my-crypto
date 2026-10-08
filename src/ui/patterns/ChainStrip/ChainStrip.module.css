@@ -31,6 +31,7 @@
   border-right: var(--rule-thin) solid var(--color-canvas-rule);
   border-bottom: var(--rule-thin) solid var(--color-canvas-rule);
   min-width: 0;
+  container-type: inline-size;
 }
 
 .mark {
@@ -42,6 +43,11 @@
   min-width: 0;
 }
 
+/* The logo keeps its size; a long name wraps at its space instead of squeezing it. */
+.mark > svg {
+  flex-shrink: 0;
+}
+
 .large {
   --tile-min: 15rem;
   --mark-size: var(--text-3xl);
@@ -49,13 +55,14 @@
 
 .large .name,
 .large .wordmark {
-  font-size: var(--text-2xl);
+  /* Shrinks with the tile so an eleven-letter name still sits on one line beside its logo. */
+  font-size: min(var(--text-2xl), 11cqi);
 }
 
 .name {
-  font: 800 var(--text-xl) / 1 var(--font-display);
+  font: 800 var(--text-xl) / 1.05 var(--font-display);
   text-transform: var(--display-case);
-  white-space: nowrap;
+  min-width: 0;
 }
 
 .wordmark {
