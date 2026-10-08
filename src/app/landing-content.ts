@@ -16,7 +16,7 @@ export const transcript: TranscriptLine[] = [
 
 export const settlesOn: ChainStripItem[] = [
   { name: "Solana", logo: "solana", role: "USDC settlement, memo per payment, per-payment escrow", status: "live", statusLabel: "Live · devnet" },
-  { name: "Tempo", logo: null, role: "Passkey accounts: self-custody for upgraded users", status: "next", statusLabel: "Building" },
+  { name: "Tempo", logo: "tempo", role: "Passkey accounts: self-custody for upgraded users", status: "next", statusLabel: "Building" },
   { name: "Base", logo: "base", role: "USDC on Base", status: "next", statusLabel: "Building" },
   { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo", status: "next", statusLabel: "Building" },
 ];
