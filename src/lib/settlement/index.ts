@@ -5,7 +5,7 @@ import { createEvmAdapter } from "./evm";
 import { EVM_CHAINS, type EvmChainConfig } from "./evm-chains";
 import { createSolanaAdapter } from "./solana";
 import { createTempoAdapter } from "./tempo";
-import type { Adapters } from "./types";
+import { type Adapters, guardAdapter } from "./types";
 
 let cached: Adapters | undefined;
 
@@ -36,6 +36,8 @@ export function getAdapters(): Adapters {
   if (e.TEMPO_TREASURY_KEY) {
     adapters.tempo = createTempoAdapter({ treasuryKey: e.TEMPO_TREASURY_KEY as Hex, rpcUrl: e.TEMPO_RPC_URL, faucet: true });
   }
-  cached = adapters;
-  return adapters;
+  cached = Object.fromEntries(
+    Object.entries(adapters).map(([chain, adapter]) => [chain, adapter ? guardAdapter(adapter) : adapter]),
+  ) as Adapters;
+  return cached;
 }

@@ -1,0 +1,21 @@
+.block {
+  margin: 0;
+  padding: var(--space-sm);
+  overflow-x: auto;
+  background: var(--color-card-2);
+  color: var(--color-on-card);
+  border-radius: var(--radius-sm);
+  font: 400 var(--text-xs) / 1.6 var(--font-mono);
+  white-space: pre;
+  max-width: 100%;
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-on-card-muted);
+}

@@ -32,6 +32,7 @@ import { formatUsd } from "@/lib/money";
 import { cleanDisplayName } from "@/lib/names";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
+import { ChainDownError } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { isBurstRepeat, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
@@ -68,7 +69,15 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   const reply = async (body: string, force = false) => {
     if (await text(deps, msg.from, body, { force })) out.push(body);
   };
-  await act(deps, action, { phone: msg.from, body: msg.body, user, convo: session.convo, reply });
+  try {
+    await act(deps, action, { phone: msg.from, body: msg.body, user, convo: session.convo, reply });
+  } catch (e) {
+    // A chain RPC that won't answer is not worth retrying for minutes: say so now. Anything else retries.
+    if (!(e instanceof ChainDownError)) throw e;
+    console.error("chain down", e.message);
+    await reply(replies.chainDown(chainLabel(e.chain)));
+    return out;
+  }
   // Only now, after the action and its reply succeeded, is the question it answered (or abandoned) used up.
   // If anything above threw, the question is still there for the retry.
   if (loaded && CONSUMES_QUESTION.has(action.do)) await clearConversationIf(deps.db, msg.from, loaded.rev);

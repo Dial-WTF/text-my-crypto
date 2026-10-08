@@ -109,5 +109,6 @@ export const replies = {
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
   nothingToWithdraw: () => `Your balance is $0. Nothing to withdraw.`,
+  chainDown: (chain: string) => `The ${chain} network isn't answering right now. Nothing moved. Try again in a minute.`,
   failed: () => `That payment didn't go through. No funds moved.`,
 } as const;

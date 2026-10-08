@@ -4,6 +4,7 @@ import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { AgentPanel } from "@/ui/patterns/AgentPanel/AgentPanel";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { Marquee } from "@/ui/patterns/Marquee/Marquee";
 import { PoweredBy } from "@/ui/patterns/PoweredBy/PoweredBy";
@@ -14,6 +15,7 @@ import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
+import { agentFacts } from "./agent-content";
 import { runsOn, settlesOn, transcript } from "./landing-content";
 import { StructuredData } from "./StructuredData";
 
@@ -73,7 +75,7 @@ export default async function Home() {
       <PoweredBy
         company="Dial.Work"
         href="https://dial.work"
-        line="The Dial operator is Dial.Work's agentic peer-to-peer crypto payments, reached by SMS. Built for Colosseum's Crypto World's Fair."
+        line="Agentic peer-to-peer crypto payments, by SMS for people and MCP for agents. Built for Colosseum's Crypto World's Fair."
       />
 
       <ChainStrip heading="Settles on" items={settlesOn} size="large" />
@@ -84,6 +86,13 @@ export default async function Home() {
           <QrReceipt number={number} body="hi" />
           <Transcript lines={transcript} label="Example conversation with the Dial operator" />
         </Split>
+      </Section>
+
+      <Section
+        heading="Built for agents too"
+        lede="Any AI agent can pay, request or invoice anyone with a phone number through the Dial operator's MCP server. Agents start payments; a human approves every one from a text."
+      >
+        <AgentPanel {...agentFacts()} />
       </Section>
 
       <Section heading="On the ledger right now">
