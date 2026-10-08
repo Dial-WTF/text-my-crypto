@@ -19,11 +19,18 @@ Update this file as things ship. Checked = done and verified.
 - [ ] you · Merge PR #1 (first deploy from GitHub Actions)
 - [ ] you · Optional: add `AI_GATEWAY_API_KEY` for plain-English understanding
 
+## Prize map (official rules §14)
+
+Solana, Tempo, Hyperliquid, Zcash: $100K each (10 × $10K). Ethereum L1, Base, Arbitrum, Robinhood Chain: $25K each (5 × $5K).
+General: $30K grand, 20 × $15K, $5K public goods, $5K university. Track prizes stack with general awards.
+Judging (rules §8): functionality and code quality, impact, novelty, UX, **open source**, business plan.
+
 ## Tranche 2 · More chains, self-custody, agents
 
+- [ ] build · Generic EVM adapter (viem, USDC transfer + memo log) with configs for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Robinhood Chain testnet → 5 tracks
+- [ ] you · Testnet gas + USDC for the treasury on each EVM chain (faucets)
 - [ ] build · Tempo adapter (Moderato testnet, AlphaUSD, transfer memo) → flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
-- [ ] build · Base adapter (USDC on Base Sepolia) → flip Base to Live
 - [ ] build · MCP server at `/api/mcp` (send / request / invoice / balance / payments) with per-user agent keys
 - [ ] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
 - [ ] build · Solana smart wallet with passkey authority (stretch)
@@ -39,7 +46,8 @@ Update this file as things ship. Checked = done and verified.
 
 - [ ] you · Confirm eligibility with Colosseum (new product; disclose Payphone and Dial as pre-existing work)
 - [ ] you · Ask in Colosseum Discord whether one project can place in multiple ecosystem tracks
-- [ ] you · Repo access: make public, or add hackathon@colosseum.com
+- [ ] you · Make the repo public with a license (open source is a judging criterion; also the public goods award)
+- [ ] you · Confirm no team member is an employee or contractor of a contest sponsor (rules §3b)
 - [ ] you · Weekly 1-minute update video (this week: the live SMS flow)
 - [ ] you · Pitch video, 2–3 min: founder-market fit, Text My Bits lineage, why now, go-to-market
 - [ ] you · Demo video, ≤3 min: real phone, real texts, explorer receipt
