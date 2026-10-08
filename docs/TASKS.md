@@ -20,7 +20,7 @@ Update this file as things ship. Checked = done and verified.
 - [x] build · Durable inbound processing (Cloudflare Queue + retries + dead-letter queue): texts are queued before Payphone gets its 200
 - [x] build · Multi-word names ("send my guy $1") and a helpful reply when a payment can't be parsed
 - [ ] you · Second live test: send to a second phone, claim, request, 411
-- [ ] you · Merge PR #1 (first deploy from GitHub Actions)
+- [x] you · Merge PR #1
 - [ ] you · Optional: add `AI_GATEWAY_API_KEY` for plain-English understanding
 
 ## Prize map (official rules §14)
@@ -31,8 +31,8 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 
 ## Tranche 2 · More chains, self-custody, agents
 
-- [ ] build · Generic EVM adapter (viem, USDC transfer + memo log) with configs for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Robinhood Chain testnet → 5 tracks
-- [ ] you · Testnet gas + USDC for the treasury on each EVM chain (faucets)
+- [x] build · Generic EVM adapter (EIP-3009, treasury pays gas) for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia; Robinhood wired (needs a test token) → enable each with `EVM_CHAINS` once funded
+- [ ] you · Fund EVM treasury `0xcc5583a18a9908b80a20876cd8877048ae792B6f`: gas (Sepolia ETH, Base Sepolia ETH, Arbitrum Sepolia ETH, HyperEVM HYPE) + Circle test USDC on each
 - [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
 - [ ] you · One real Tempo payment by text ("send @someone $1 on tempo") → then flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
@@ -54,7 +54,7 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [ ] you · Make the repo public with a license (open source is a judging criterion; also the public goods award)
 - [ ] you · Confirm no team member is an employee or contractor of a contest sponsor (rules §3b)
 - [ ] you · Weekly 1-minute update video (this week: the live SMS flow)
-- [ ] you · Pitch video, 2–3 min: founder-market fit, Text My Bits lineage, why now, go-to-market
+- [ ] you · Pitch video, 2–3 min: founder-market fit (Dial.Work phone rails), why now, live product, go-to-market
 - [ ] you · Demo video, ≤3 min: real phone, real texts, explorer receipt
 - [ ] you · Form: chains and tools integrated, team, location, logo, GTM, demand validation, prior-work disclosure
 - [ ] build · Help outline the form answers and video scripts (you write the final words)
