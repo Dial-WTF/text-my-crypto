@@ -14,8 +14,11 @@ Update this file as things ship. Checked = done and verified.
 - [x] build · Deployed to Cloudflare (Workers + D1); Payphone line +1 806 607 1387 pointed at production
 - [x] build · CI + deploy workflows; `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets set
 - [x] you · Fund the devnet treasury (SOL + USDC)
-- [ ] you · First live test: text "hi" to +1 806 607 1387, sign up, send to a second phone, claim
-- [ ] build · Fix anything the live test turns up
+- [x] you · First live test: signup by text works on a real phone
+- [x] build · Fix what the live test turned up: any name becomes a profile + handle, 411 directory, pay by name
+- [x] build · State machines (classify → decide → act), STOP/START/HELP, double-tap and repeat-payment handling, code edge cases — see docs/STATES.md
+- [ ] build · Durable inbound processing (Cloudflare Queue + retries): a text sent during a deploy was lost once
+- [ ] you · Second live test: send to a second phone, claim, request, 411
 - [ ] you · Merge PR #1 (first deploy from GitHub Actions)
 - [ ] you · Optional: add `AI_GATEWAY_API_KEY` for plain-English understanding
 
@@ -29,7 +32,8 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 
 - [ ] build · Generic EVM adapter (viem, USDC transfer + memo log) with configs for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Robinhood Chain testnet → 5 tracks
 - [ ] you · Testnet gas + USDC for the treasury on each EVM chain (faucets)
-- [ ] build · Tempo adapter (Moderato testnet, AlphaUSD, transfer memo) → flip Tempo to Live
+- [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
+- [ ] you · One real Tempo payment by text ("send @someone $1 on tempo") → then flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
 - [ ] build · MCP server at `/api/mcp` (send / request / invoice / balance / payments) with per-user agent keys
 - [ ] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
