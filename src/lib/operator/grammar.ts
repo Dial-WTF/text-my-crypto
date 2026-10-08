@@ -24,6 +24,8 @@ export type Command =
   | { kind: "directory"; query: string }
   | { kind: "rename"; name: string }
   | { kind: "whoami" }
+  | { kind: "connect_agent"; label?: string }
+  | { kind: "revoke_agents" }
   | { kind: "help" }
   | { kind: "chat" };
 
@@ -74,6 +76,8 @@ const DECLINE = /^(?:no|nope|decline)$/i;
 const DIRECTORY = /^(?:411|directory|lookup|look up|find|who is|whos|who's)\s+(.{2,40}?)\??$/i;
 const RENAME = /^(?:call me|my name is|rename me to|rename to|rename)\s+(.{1,80})$/i;
 const WHOAMI = /^(?:whoami|who am i|me)\??$/i;
+const CONNECT_AGENT = /^connect\s+(?:an?\s+|my\s+)?agent(?:\s+(?:called\s+|named\s+)?(.+?))?\s*[.!]?$/i;
+const REVOKE_AGENTS = /^(?:revoke|disconnect|remove)\s+(?:all\s+|my\s+)?agents?\s*[.!]?$/i;
 
 /** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
@@ -108,6 +112,9 @@ export function parseCommand(text: string): Command {
   if (dir?.[1]) return { kind: "directory", query: dir[1].trim() };
   const rename = RENAME.exec(t);
   if (rename?.[1]) return { kind: "rename", name: rename[1].trim() };
+  if (REVOKE_AGENTS.test(t)) return { kind: "revoke_agents" };
+  const agent = CONNECT_AGENT.exec(t);
+  if (agent) return agent[1] ? { kind: "connect_agent", label: agent[1] } : { kind: "connect_agent" };
   const w = WITHDRAW.exec(t);
   if (w?.[1] && w[2]) {
     const rawAmount = w[1].replace(/^\$/, "");

@@ -31,6 +31,7 @@ import { isBurstRepeat, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains, offerWaiting } from "./accounts";
+import { connectAgentReply, revokeAgentsReply } from "./agents";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
@@ -182,6 +183,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(replies.whoami(displayName(user), user.handle ?? ""));
     case "upgrade":
       return reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+    case "connect_agent":
+      return reply(await connectAgentReply(deps, user, cmd.label));
+    case "revoke_agents":
+      return reply(await revokeAgentsReply(deps, user));
     case "send":
     case "request":
     case "invoice":
