@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { safeEqual } from "@/lib/runtime";
-import { getAdapters } from "@/lib/settlement";
+import { activeChains, getAdapters } from "@/lib/settlement";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +44,10 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/sms/[secret]/he
     const address = chain === "solana" ? probe : "0x000000000000000000000000000000000000dEaD";
     checks[`${chain}Balance`] = await timed(async () => `${await adapter.getBalance(address)}`);
   }
+  // Which RPC each chain resolved to. Host only: keyed URLs carry their key in the path or query.
+  const rpcs = Object.fromEntries(
+    activeChains(e).map(({ chain, entry, rpc }) => [chain, `${entry.id} via ${rpc.source} (${new URL(rpc.url).host})`]),
+  );
   const ok = Object.values(checks).every((c) => c.ok);
-  return Response.json({ ok, checks }, { status: ok ? 200 : 503 });
+  return Response.json({ ok, network: e.NETWORK, rpcs, checks }, { status: ok ? 200 : 503 });
 }

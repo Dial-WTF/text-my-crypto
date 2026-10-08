@@ -1,43 +1,61 @@
 import type { Hex } from "viem";
-import { env } from "@/lib/env";
+import { type Chain, CHAINS } from "@/lib/chains";
+import { type Env, env, rpcOverrides } from "@/lib/env";
 import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
-import { EVM_CHAINS, type EvmChainConfig } from "./evm-chains";
+import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc } from "./registry";
 import { createSolanaAdapter } from "./solana";
 import { createTempoAdapter } from "./tempo";
-import { type Adapters, guardAdapter } from "./types";
+import { type Adapters, guardAdapter, type SettlementAdapter } from "./types";
+
+/** What runs for one chain: its registry entry and the RPC it resolved to. */
+export type ActiveChain = { chain: Chain; entry: NetworkEntry; rpc: { url: string; source: RpcSource } };
+
+/** The chains listed in CHAINS that have a registry entry and a stablecoin on the selected network. */
+export function activeChains(e: Env = env(), overrides: Record<string, string> = rpcOverrides()): ActiveChain[] {
+  const wanted = new Set(e.CHAINS.split(",").map((s) => s.trim()));
+  return CHAINS.flatMap((chain) => {
+    const entry = REGISTRY[chain][e.NETWORK];
+    if (!wanted.has(chain) || !entry || (entry.kind !== "solana" && !entry.token)) return [];
+    return [{ chain, entry, rpc: resolveRpc(entry, { alchemyKey: e.ALCHEMY_API_KEY, overrides }) }];
+  });
+}
+
+function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | null {
+  switch (entry.kind) {
+    case "solana":
+      return createSolanaAdapter({
+        rpcUrl: rpc.url,
+        mint: entry.mint,
+        explorerTx: entry.explorerTx,
+        treasurySeed: b64ToBytes(e.SOLANA_TREASURY_SEED),
+      });
+    case "tempo":
+      if (!e.TEMPO_TREASURY_KEY || !entry.token) return null;
+      return createTempoAdapter({
+        treasuryKey: e.TEMPO_TREASURY_KEY as Hex,
+        rpcUrl: rpc.url,
+        token: entry.token,
+        viem: entry.viem,
+        explorerTx: entry.explorerTx,
+        faucet: entry.faucet,
+      });
+    case "evm":
+      if (!e.EVM_TREASURY_KEY) return null;
+      return createEvmAdapter({ ...entry, chain, rpcUrl: rpc.url, treasuryKey: e.EVM_TREASURY_KEY as Hex });
+  }
+}
 
 let cached: Adapters | undefined;
-
-function enabledEvmChains(list: string): EvmChainConfig[] {
-  return list
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s): s is EvmChainConfig["chain"] => s in EVM_CHAINS)
-    .map((id) => EVM_CHAINS[id])
-    .filter((c) => c.token !== null);
-}
 
 export function getAdapters(): Adapters {
   if (cached) return cached;
   const e = env();
-  const adapters: Adapters = {
-    solana: createSolanaAdapter({
-      rpcUrl: e.SOLANA_RPC_URL,
-      mint: e.SOLANA_USDC_MINT,
-      treasurySeed: b64ToBytes(e.SOLANA_TREASURY_SEED),
-    }),
-  };
-  if (e.EVM_TREASURY_KEY) {
-    for (const cfg of enabledEvmChains(e.EVM_CHAINS)) {
-      adapters[cfg.chain] = createEvmAdapter({ ...cfg, treasuryKey: e.EVM_TREASURY_KEY as Hex });
-    }
+  const adapters: Adapters = {};
+  for (const active of activeChains(e)) {
+    const adapter = build(e, active);
+    if (adapter) adapters[active.chain] = guardAdapter(adapter);
   }
-  if (e.TEMPO_TREASURY_KEY) {
-    adapters.tempo = createTempoAdapter({ treasuryKey: e.TEMPO_TREASURY_KEY as Hex, rpcUrl: e.TEMPO_RPC_URL, faucet: true });
-  }
-  cached = Object.fromEntries(
-    Object.entries(adapters).map(([chain, adapter]) => [chain, adapter ? guardAdapter(adapter) : adapter]),
-  ) as Adapters;
+  cached = adapters;
   return cached;
 }

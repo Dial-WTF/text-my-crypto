@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { b64ToBytes } from "@/lib/secretbox";
+import { REGISTRY, type SolanaNetwork } from "@/lib/settlement/registry";
 import { createSolanaAdapter } from "@/lib/settlement/solana";
 
 const run = process.env.SOLANA_INT === "1";
+const devnet = REGISTRY.solana.testnet as SolanaNetwork;
 
 describe.runIf(run)("solana adapter (devnet)", () => {
   it("funds a new wallet, then settles a transfer with a memo", { timeout: 120_000 }, async () => {
     const adapter = createSolanaAdapter({
-      rpcUrl: process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
-      mint: process.env.SOLANA_USDC_MINT ?? "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      rpcUrl: process.env.RPC_SOLANA_DEVNET ?? devnet.publicRpc,
+      mint: devnet.mint,
+      explorerTx: devnet.explorerTx,
       treasurySeed: b64ToBytes(process.env.SOLANA_TREASURY_SEED ?? ""),
     });
     const a = await adapter.createWallet();
@@ -25,8 +28,9 @@ describe.runIf(run)("solana adapter (devnet)", () => {
 describe.runIf(run)("solana escrow (devnet)", () => {
   it("funds an escrow, releases it and closes the escrow token account", { timeout: 120_000 }, async () => {
     const adapter = createSolanaAdapter({
-      rpcUrl: process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
-      mint: process.env.SOLANA_USDC_MINT ?? "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      rpcUrl: process.env.RPC_SOLANA_DEVNET ?? devnet.publicRpc,
+      mint: devnet.mint,
+      explorerTx: devnet.explorerTx,
       treasurySeed: b64ToBytes(process.env.SOLANA_TREASURY_SEED ?? ""),
     });
     const escrow = await adapter.createWallet();

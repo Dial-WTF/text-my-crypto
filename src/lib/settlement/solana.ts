@@ -28,11 +28,11 @@ import type { SettlementAdapter, SettleResult } from "./types";
 
 const DECIMALS = 6;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const explorer = (sig: string) => `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
 
 export function createSolanaAdapter(cfg: {
   rpcUrl: string;
   mint: string;
+  explorerTx: (sig: string) => string;
   treasurySeed: Uint8Array<ArrayBuffer>;
 }): SettlementAdapter {
   const rpc = createSolanaRpc(cfg.rpcUrl);
@@ -85,7 +85,7 @@ export function createSolanaAdapter(cfg: {
       instructions.push(getCloseAccountInstruction({ account: source, destination: feePayer.address, owner: from }));
     }
     const sig = await sendAndConfirm(instructions);
-    return { txHash: sig, explorerUrl: explorer(sig) };
+    return { txHash: sig, explorerUrl: cfg.explorerTx(sig) };
   }
 
   return {

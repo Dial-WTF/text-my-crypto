@@ -1,5 +1,5 @@
 import { type Address, bytesToHex, type Hex, isAddress, isAddressEqual, keccak256, type Log, pad, parseEventLogs, size, stringToHex } from "viem";
-import { tempoModerato } from "viem/chains";
+import { tempo, tempoModerato } from "viem/chains";
 import { Abis, Account, createClient, http } from "viem/tempo";
 import { withRateLimitRetry as rl } from "./retry";
 import type { SettlementAdapter, SettleResult } from "./types";
@@ -39,6 +39,9 @@ export type TempoConfig = {
   treasuryKey: Hex;
   rpcUrl?: string;
   token?: Address;
+  /** Moderato unless the registry says otherwise. */
+  viem?: typeof tempoModerato | typeof tempo;
+  explorerTx?: (hash: string) => string;
   /** Top the treasury up from the testnet faucet when it runs short. Testnet only. */
   faucet?: boolean;
 };
@@ -49,11 +52,12 @@ export type TempoConfig = {
  */
 export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
   const token = cfg.token ?? ALPHA_USD;
-  const transport = http(cfg.rpcUrl ?? tempoModerato.rpcUrls.default.http[0]);
+  const chain = cfg.viem ?? tempoModerato;
+  const transport = http(cfg.rpcUrl ?? chain.rpcUrls.default.http[0]);
   const treasury = Account.fromSecp256k1(cfg.treasuryKey);
-  const client = createClient({ chain: tempoModerato, feeToken: token, transport, account: treasury });
+  const client = createClient({ chain, feeToken: token, transport, account: treasury });
 
-  const explorerTx = (hash: string) => `${TEMPO_EXPLORER}/tx/${hash}`;
+  const explorerTx = cfg.explorerTx ?? ((hash: string) => `${TEMPO_EXPLORER}/tx/${hash}`);
 
   const balanceOf = async (owner: Address) =>
     (await rl(() => client.token.getBalance({ account: owner, token }))).amount;

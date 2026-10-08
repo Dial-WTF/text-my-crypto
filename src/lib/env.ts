@@ -7,21 +7,26 @@ const schema = z.object({
   DIAL_OPERATOR_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/),
   SMS_WEBHOOK_SECRET: z.string().min(32),
   WALLET_ENCRYPTION_KEY: z.string().min(40),
-  SOLANA_RPC_URL: z.url().default("https://api.devnet.solana.com"),
-  SOLANA_USDC_MINT: z.string().default("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"),
+  /** Which column of the chain registry runs. Mainnet also needs ALLOW_MAINNET=yes. */
+  NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
+  ALLOW_MAINNET: z.literal("yes").optional(),
+  /** Comma-separated chains to settle on. A chain also needs its treasury key and a stablecoin in the registry. */
+  CHAINS: z.string().default("solana,tempo"),
+  /** One key for every network Alchemy serves. RPC_<NETWORK ID> secrets override single networks. */
+  ALCHEMY_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   SOLANA_TREASURY_SEED: z.string().min(40),
   EVM_TREASURY_KEY: z
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
-  /** Comma-separated EVM chains to settle on, e.g. "base,arbitrum,hyperevm". Only list funded chains. */
-  EVM_CHAINS: z.string().default(""),
-  /** Tempo Moderato treasury: funds signups and co-signs every transfer as fee payer. Tempo is off when unset. */
+  /** Tempo treasury: funds signups and co-signs every transfer as fee payer. Tempo is off when unset. */
   TEMPO_TREASURY_KEY: z
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
-  TEMPO_RPC_URL: z.url().default("https://rpc.moderato.tempo.xyz"),
   SIGNUP_DRIP_USD: z.string().default("25"),
   PER_TX_CAP_USD: z.string().default("50"),
   PER_DAY_CAP_USD: z.string().default("200"),
@@ -30,6 +35,9 @@ const schema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   SMS_MODE: z.enum(["log", "payphone"]).default("log"),
+}).refine((e) => e.NETWORK === "testnet" || e.ALLOW_MAINNET === "yes", {
+  message: "NETWORK=mainnet moves real money; set ALLOW_MAINNET=yes to confirm",
+  path: ["ALLOW_MAINNET"],
 });
 
 export type Env = z.infer<typeof schema>;
@@ -43,6 +51,17 @@ export function env(): Env {
 
 export function resetEnvForTests(): void {
   cached = undefined;
+}
+
+const rpcOverrideKey = /^RPC_[A-Z0-9_]+$/;
+
+/** RPC_<NETWORK ID> secrets (e.g. RPC_SOLANA_DEVNET), each pointing one network at a keyed RPC. */
+export function rpcOverrides(source: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (rpcOverrideKey.test(key) && value) out[key] = z.url().parse(value);
+  }
+  return out;
 }
 
 const publicSchema = z.object({

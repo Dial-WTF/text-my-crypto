@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createTempoAdapter } from "@/lib/settlement/tempo";
 
 const run = process.env.TEMPO_INT === "1";
-const rpcUrl = process.env.TEMPO_RPC_URL ?? "https://rpc.moderato.tempo.xyz";
+const rpcUrl = process.env.RPC_TEMPO_MODERATO ?? "https://rpc.moderato.tempo.xyz";
 
 describe.runIf(run)("tempo adapter (moderato)", () => {
   it("funds a new wallet, then settles a sponsored transfer with a memo", { timeout: 180_000 }, async () => {

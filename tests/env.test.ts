@@ -17,10 +17,26 @@ describe("env", () => {
   it("parses a valid environment and applies defaults", () => {
     Object.assign(process.env, base);
     const e = env();
-    expect(e.SOLANA_RPC_URL).toBe("https://api.devnet.solana.com");
-    expect(e.SOLANA_USDC_MINT).toBe("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+    expect(e.NETWORK).toBe("testnet");
+    expect(e.CHAINS).toBe("solana,tempo");
     expect(e.PER_TX_CAP_USD).toBe("50");
     expect(e.SMS_MODE).toBe("log");
+  });
+
+  it("refuses mainnet without the explicit go-ahead", () => {
+    Object.assign(process.env, base, { NETWORK: "mainnet" });
+    expect(() => env()).toThrow(/ALLOW_MAINNET/);
+    resetEnvForTests();
+    Object.assign(process.env, { ALLOW_MAINNET: "yes" });
+    expect(env().NETWORK).toBe("mainnet");
+    delete process.env.NETWORK;
+    delete process.env.ALLOW_MAINNET;
+  });
+
+  it("treats an empty Alchemy key as unset", () => {
+    Object.assign(process.env, base, { ALCHEMY_API_KEY: "" });
+    expect(env().ALCHEMY_API_KEY).toBeUndefined();
+    delete process.env.ALCHEMY_API_KEY;
   });
 
   it("rejects a bad bot number", () => {

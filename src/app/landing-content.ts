@@ -30,5 +30,5 @@ export const settlesOn: ChainStripItem[] = [
 
 export const runsOn: ChainStripItem[] = [
   { name: "Cloudflare", logo: "cloudflare", role: "Workers + D1 run the operator", status: "live", statusLabel: "Live" },
-  { name: "Payphone", logo: null, role: "The phone line: +1 806 607 1387", status: "live", statusLabel: "Live" },
+  { name: "Payphone", logo: "payphone", role: "The phone line: +1 806 607 1387", status: "live", statusLabel: "Live" },
 ];

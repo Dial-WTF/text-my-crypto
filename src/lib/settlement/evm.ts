@@ -13,7 +13,8 @@ import {
   stringToHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { EvmChainConfig } from "./evm-chains";
+import type { Chain } from "@/lib/chains";
+import type { EvmNetwork } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
 import type { SettlementAdapter, SettleResult } from "./types";
 
@@ -65,10 +66,12 @@ export async function signTransferAuthorization(args: {
 }
 
 /**
- * USDC on an EVM testnet. Users never hold gas: they sign an EIP-3009 authorization and the
+ * USDC on an EVM chain. Users never hold gas: they sign an EIP-3009 authorization and the
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
-export function createEvmAdapter(cfg: EvmChainConfig & { treasuryKey: Hex; rpcUrl?: string }): SettlementAdapter {
+export function createEvmAdapter(
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
   const transport = http(cfg.rpcUrl);

@@ -31,9 +31,11 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 
 ## Tranche 2 · More chains, self-custody, agents
 
-- [x] build · Generic EVM adapter (EIP-3009, treasury pays gas) for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia; Robinhood wired (needs a test token) → enable each with `EVM_CHAINS` once funded
+- [x] build · Generic EVM adapter (EIP-3009, treasury pays gas) for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia; Robinhood wired (needs a test token) → enable each by adding it to `CHAINS` once funded
 - [ ] you · Fund EVM treasury `0xcc5583a18a9908b80a20876cd8877048ae792B6f`: gas (Sepolia ETH, Base Sepolia ETH, Arbitrum Sepolia ETH, HyperEVM HYPE) + Circle test USDC on each
 - [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
+- [x] build · Chain registry (`src/lib/settlement/registry.ts`): testnet and mainnet per chain, `NETWORK` picks one, mainnet needs `ALLOW_MAINNET=yes`. RPC order: `RPC_<NETWORK>` secret, then `ALCHEMY_API_KEY`, then public. Secrets live in `.env.production.local` and go up with `pnpm secrets:push`
+- [ ] you · Enable Tempo Moderato, HyperEVM testnet and Robinhood testnet on the Alchemy app (Workers can't use Tempo's public RPC)
 - [ ] you · One real Tempo payment by text ("send @someone $1 on tempo") → then flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
 - [x] build · MCP server at `/api/mcp` (send / request / invoice / withdraw / balance / payments) with per-user agent keys
