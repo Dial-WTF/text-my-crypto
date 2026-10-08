@@ -9,7 +9,7 @@ import {
   isClaimed,
   uniqueHandle,
 } from "@/lib/identity";
-import { escrowedTo, issueSharedCode } from "@/lib/intents";
+import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
@@ -44,7 +44,8 @@ export type SignupResult = { ok: true; user: User; reply: string } | { ok: false
 
 /**
  * Turns a phone number into a named account: claims an unclaimed user (someone already sent them money)
- * or creates a new one, opens wallets on every enabled chain, drops test funds, and offers any waiting escrows.
+ * or creates a new one, opens wallets on every enabled chain and drops test funds. The caller sends the
+ * welcome first, then `offerWaiting` for anything that was waiting on this number.
  */
 export async function completeSignup(deps: BotDeps, phone: string, rawName: string): Promise<SignupResult> {
   const name = cleanDisplayName(rawName);
@@ -71,7 +72,6 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
     }
   }
 
-  await offerEscrowClaims(deps, user);
   return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
 }
 
@@ -90,4 +90,26 @@ export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void
     if (s) senders.add(displayName(s));
   }
   await notify(deps, user.phone, replies.claimOffer(formatUsd(total), [...senders].join(", "), code));
+}
+
+/** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */
+export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
+  for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
+    const requester = await getUserById(deps.db, intent.recipientId);
+    if (!requester) continue;
+    const code = await issueCode(deps.db, intent.id);
+    const link = `${deps.appUrl}/a/${intent.id}`;
+    const amount = formatUsd(intent.amount);
+    const body =
+      intent.kind === "invoice"
+        ? replies.payInvoice(displayName(requester), amount, intent.note, code, link)
+        : replies.payRequest(displayName(requester), amount, intent.note, code, link);
+    await notify(deps, user.phone, body);
+  }
+}
+
+/** After the welcome: escrows to claim and requests to pay that arrived before this person joined. */
+export async function offerWaiting(deps: BotDeps, user: User): Promise<void> {
+  await offerEscrowClaims(deps, user);
+  await offerPendingRequests(deps, user);
 }

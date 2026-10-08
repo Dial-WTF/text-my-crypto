@@ -275,6 +275,121 @@ export async function latestSettledTo(db: Db, userId: string): Promise<Intent | 
   return row ?? null;
 }
 
+/** An unapproved, unexpired intent that matches this one: the person asked twice. */
+export async function findPendingDuplicate(
+  db: Db,
+  q: { senderId: string; recipientId: string; kind: IntentKind; amount: bigint; chain: Chain },
+  now: Date,
+): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, q.senderId),
+        eq(intents.recipientId, q.recipientId),
+        eq(intents.kind, q.kind),
+        eq(intents.amount, q.amount),
+        eq(intents.chain, q.chain),
+        eq(intents.status, "pending"),
+        gt(intents.expiresAt, now),
+      ),
+    )
+    .orderBy(desc(intents.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The same payment already went out moments ago. */
+export async function findRecentCompletedDuplicate(
+  db: Db,
+  q: { senderId: string; recipientId: string; amount: bigint; chain: Chain },
+  since: Date,
+): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, q.senderId),
+        eq(intents.recipientId, q.recipientId),
+        eq(intents.amount, q.amount),
+        eq(intents.chain, q.chain),
+        eq(intents.kind, "send"),
+        inArray(intents.status, ["settling", "settled", "escrowed"]),
+        gte(intents.createdAt, since),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Does this code belong to one of the user's payments that has already expired? */
+export async function matchesExpiredCode(db: Db, userId: string, code: string, now: Date): Promise<boolean> {
+  const expired = await db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.senderId, userId), eq(intents.status, "pending"), lt(intents.expiresAt, now), isNotNull(intents.codeHash)));
+  for (const i of expired) if (i.codeHash === (await hashCode(i.id, code))) return true;
+  return false;
+}
+
+export async function hasAwaitingApproval(db: Db, userId: string, now: Date): Promise<boolean> {
+  return (await codeCandidates(db, userId, now)).length > 0;
+}
+
+/** Cancels everything the user started but never approved. Returns how many were cancelled. */
+export async function cancelUnapproved(db: Db, userId: string, now: Date): Promise<number> {
+  const rows = await db
+    .update(intents)
+    .set({ status: "declined", codeHash: null })
+    .where(
+      and(
+        eq(intents.createdBy, userId),
+        eq(intents.senderId, userId),
+        eq(intents.status, "pending"),
+        gt(intents.expiresAt, now),
+      ),
+    )
+    .returning({ id: intents.id });
+  return rows.length;
+}
+
+/** Requests and invoices waiting on this payer. */
+export async function pendingRequestsFor(db: Db, payerId: string, now: Date): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, payerId),
+        eq(intents.status, "pending"),
+        inArray(intents.kind, ["request", "invoice"]),
+        gt(intents.expiresAt, now),
+      ),
+    )
+    .orderBy(intents.createdAt)
+    .limit(3);
+}
+
+/** The user has a live payment whose code was locked by too many wrong tries. */
+export async function hasLockedCode(db: Db, userId: string, now: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: intents.id })
+    .from(intents)
+    .where(
+      and(
+        eq(intents.senderId, userId),
+        eq(intents.status, "pending"),
+        gt(intents.expiresAt, now),
+        isNotNull(intents.codeHash),
+        gte(intents.codeAttempts, MAX_CODE_ATTEMPTS),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 /** Payments a user is part of (paying, being paid, or asked for), newest first. */
 export async function intentsFor(db: Db, userId: string, limit: number): Promise<Intent[]> {
   return db

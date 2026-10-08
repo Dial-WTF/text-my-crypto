@@ -12,7 +12,7 @@ import {
   isClaimed,
   searchDirectory,
 } from "@/lib/identity";
-import { createIntent, issueCode, sentSince } from "@/lib/intents";
+import { createIntent, findPendingDuplicate, findRecentCompletedDuplicate, issueCode, sentSince } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
@@ -44,7 +44,8 @@ export type MoneyError = {
     | "unknown_recipient"
     | "self"
     | "bad_address"
-    | "nothing_to_withdraw";
+    | "nothing_to_withdraw"
+    | "duplicate";
   message: string;
 };
 
@@ -75,6 +76,7 @@ export async function resolveCounterparty(deps: BotDeps, owner: User, raw: strin
     return u ? { user: u } : { error: replies.unknownHandle(raw) };
   }
   const phone = normalizePhone(raw) ?? (await findContact(deps.db, owner.id, raw))?.phone ?? null;
+  if (phone === deps.operatorNumber) return { error: replies.thatsMyNumber() };
   if (phone) return { user: (await findUserByPhone(deps.db, phone)) ?? (await createUnclaimedUser(deps.db, phone)) };
 
   const exact = await findUserByHandle(deps.db, raw);
@@ -104,7 +106,7 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
   const adapter = deps.adapters[chain];
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
-  if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.help() } };
+  if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.badAmount(formatUsd(deps.perTxCap)) } };
   if (amount > deps.perTxCap) return { ok: false, error: { code: "over_cap", message: replies.overCap(formatUsd(deps.perTxCap)) } };
   return { ok: true, chain, adapter, amount };
 }
@@ -112,6 +114,43 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
 async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
+}
+
+const JUST_SENT_MS = 3 * 60_000;
+
+export type Duplicate = { pending: Intent } | { justSent: Intent } | null;
+
+/** The same payment is already waiting for approval, or (for a send) went out moments ago. */
+export async function findDuplicate(
+  deps: BotDeps,
+  user: User,
+  other: User,
+  kind: MoneyCommand["kind"],
+  amount: bigint,
+  chain: Chain,
+): Promise<Duplicate> {
+  const isSend = kind === "send";
+  const pending = await findPendingDuplicate(
+    deps.db,
+    { senderId: isSend ? user.id : other.id, recipientId: isSend ? other.id : user.id, kind, amount, chain },
+    deps.now(),
+  );
+  if (pending) return { pending };
+  if (!isSend) return null;
+  const since = new Date(deps.now().getTime() - JUST_SENT_MS);
+  const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: other.id, amount, chain }, since);
+  return done ? { justSent: done } : null;
+}
+
+/** SMS answer to a repeat: the pending one gets a fresh code; a just-sent one is pointed out. */
+async function repeatReply(deps: BotDeps, user: User, other: User, kind: MoneyCommand["kind"], dup: Duplicate): Promise<string | null> {
+  if (!dup) return null;
+  const otherName = describe(other);
+  if ("justSent" in dup) return replies.justSent(formatUsd(dup.justSent.amount), otherName);
+  const { pending } = dup;
+  if (kind !== "send") return replies.alreadyRequested(formatUsd(pending.amount), otherName);
+  const code = await codeFor(deps, user.id, pending.id, pending.amount);
+  return replies.alreadyPending(formatUsd(pending.amount), otherName, code, `${deps.appUrl}/a/${pending.id}`);
 }
 
 /**
@@ -241,8 +280,17 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
   }
 }
 
-/** SMS path for send/request/invoice. Returns the reply for the person who texted. */
-export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand): Promise<string> {
+/**
+ * SMS path for send/request/invoice. Returns the reply for the person who texted.
+ * A repeat of something already waiting (or just sent) is answered conversationally instead of creating a
+ * second payment; `allowDuplicate` is set once the person has confirmed with NEW.
+ */
+export async function prepareMoney(
+  deps: BotDeps,
+  user: User,
+  cmd: MoneyCommand,
+  opts: { allowDuplicate?: boolean } = {},
+): Promise<string> {
   const checked = checkMoney(deps, user, cmd);
   if (!checked.ok) return checked.error.message;
 
@@ -274,7 +322,19 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
     return replies.askNumber(resolved.askFor);
   }
 
-  const r = await createMoneyIntent(deps, user, cmd, resolved.user);
+  const other = resolved.user;
+  if (other.id === user.id) return replies.selfSend();
+
+  if (!opts.allowDuplicate) {
+    const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain);
+    const repeat = await repeatReply(deps, user, other, cmd.kind, dup);
+    if (repeat) {
+      await setConversation(deps.db, user.phone, { state: "awaiting_duplicate", payload: { command: JSON.stringify(cmd) } }, deps.now());
+      return repeat;
+    }
+  }
+
+  const r = await createMoneyIntent(deps, user, cmd, other);
   return r.ok ? announce(deps, user, r.prepared) : r.error.message;
 }
 

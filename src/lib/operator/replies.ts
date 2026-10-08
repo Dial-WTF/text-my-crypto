@@ -1,7 +1,8 @@
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
 const approveWith = (code: string | null, link: string, verb = "confirm") =>
   code ? `Reply ${code} to ${verb}, or tap: ${link}` : `Approve with your passkey: ${link}`;
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n: number, word: string) =>
+  `${n} ${n === 1 ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`}`;
 
 export const replies = {
   welcome: () =>
@@ -24,7 +25,26 @@ export const replies = {
     `I found ${options.length} people for "${name}": ${options.map((o, i) => `${i + 1}) ${o}`).join("  ")}. Reply ${options.map((_, i) => i + 1).join(" or ")}, or their number.`,
   claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${amount} USDC. Reply ${code} to claim it.`,
   help: () =>
-    `Operator here. Try "send @jeremy $10", "request $25 from adam for pizza", "invoice sam $200 for logo design", "411 jeremy", "balance", "receive" or "call me <name>".`,
+    `Dial operator by Dial.Work. Try "send @jeremy $10", "request $25 from adam", "411 jeremy", "balance" or "call me <name>". Reply STOP to stop texts. Testnet only.`,
+  optedOut: () => `You're unsubscribed from the Dial operator. No more texts. Reply START to come back.`,
+  optedIn: () => `Welcome back. The Dial operator is texting you again. Reply HELP for commands, STOP to stop.`,
+  codeHint: () => `To confirm, reply with the 6-digit code from my last text. It keeps anyone else from spending your money.`,
+  cancelled: (n: number) => (n > 0 ? `OK, cancelled. Nothing was sent.` : `OK, forgot about it.`),
+  sending: (amount: string, who: string, chain: string) => `Sending ${amount} to ${who} on ${chain}…`,
+  insufficientNow: (balance: string) => `You only have ${balance} now, so I didn't send it. Nothing moved.`,
+  codeExpired: () => `That code expired, so nothing was sent. Text the payment again for a fresh one.`,
+  noCodePending: () => `Nothing is waiting on a code right now.`,
+  alreadyPending: (amount: string, who: string, code: string | null, link: string) =>
+    code
+      ? `You already asked to send ${amount} to ${who}. Reply ${code} to confirm that one, or NEW to make it a second payment.`
+      : `You already asked to send ${amount} to ${who}. Approve it here: ${link}, or reply NEW for a second payment.`,
+  justSent: (amount: string, who: string) =>
+    `You just sent ${who} ${amount}. Reply NEW if you meant to send another.`,
+  alreadyRequested: (amount: string, who: string) => `You already asked ${who} for ${amount}. I'll text you when they pay.`,
+  thatsMyNumber: () => `That's my number. Who should get the money?`,
+  badAmount: (cap: string) => `Amounts can be from $0.01 to ${cap}.`,
+  recipientOptedOut: (who: string, days: number) =>
+    `${who} has turned off texts from me, so I couldn't tell them. The money waits for them for ${plural(days, "day")}.`,
   chatFallback: () => `I'm the Dial operator. I move money by text. Try "send jeremy $10".`,
   askNumber: (name: string) => `What's ${name}'s number?`,
   unknownHandle: (handle: string) => `There's no Dial user called ${handle}. Send their phone number instead.`,
@@ -45,7 +65,12 @@ export const replies = {
     code
       ? `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
       : `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
-  codeMismatch: () => `That code didn't match anything waiting on you. Check my last text.`,
+  codeMismatch: (triesLeft?: number) =>
+    triesLeft === undefined
+      ? `That code didn't match anything waiting on you. Check my last text.`
+      : triesLeft > 0
+        ? `That code didn't match. ${plural(triesLeft, "try")} left.`
+        : `That code didn't match and that was the last try. Text the payment again for a new code.`,
   balance: (lines: string[]) => `You have ${lines.join(", ")}.`,
   receive: (handle: string, addresses: string[]) =>
     `People can text me "send ${handle} $5". Or send USDC to ${addresses.join(" | ")}`,

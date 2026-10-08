@@ -59,6 +59,7 @@ export function testDeps(db: Db, overrides: Partial<BotDeps> = {}): BotDeps {
     llm: silentLlm,
     adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) },
     appUrl: "https://tmc.test",
+    operatorNumber: "+18066071387",
     now: () => new Date("2026-10-09T12:00:00Z"),
     walletKey: Buffer.alloc(32, 9).toString("base64"),
     perTxCap: 50_000_000n,

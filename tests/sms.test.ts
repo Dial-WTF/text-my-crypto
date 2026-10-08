@@ -45,7 +45,7 @@ describe("logInbound", () => {
     const db = await createTestDb();
     const m = await parseInbound({ phoneNumber: "+18066071387", sender: "+15550000001", message: "hi", date: 1 });
     if (!m) throw new Error("parse failed");
-    expect(await logInbound(db, m)).toBe(true);
-    expect(await logInbound(db, m)).toBe(false);
+    expect(await logInbound(db, m)).toMatch(/^sms_/);
+    expect(await logInbound(db, m)).toBeNull();
   });
 });

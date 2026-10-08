@@ -9,6 +9,8 @@ export type BotDeps = {
   llm: LlmInterpreter;
   adapters: Adapters;
   appUrl: string;
+  /** The operator's own line, so nobody sends money to it. */
+  operatorNumber: string;
   now: () => Date;
   walletKey: string;
   perTxCap: bigint;
