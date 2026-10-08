@@ -15,6 +15,7 @@ body {
   font-family: var(--font-body);
   font-size: var(--text-md);
   line-height: 1.5;
+  text-shadow: var(--text-glow);
   -webkit-font-smoothing: antialiased;
 }
 
