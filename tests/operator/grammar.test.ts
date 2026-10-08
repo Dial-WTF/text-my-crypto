@@ -5,7 +5,7 @@ describe("parseCommand: send", () => {
   it.each([
     ["send jeremy $10", { kind: "send", counterparty: "jeremy", amountUsd: "10" }],
     ["Send Jeremy 10", { kind: "send", counterparty: "jeremy", amountUsd: "10" }],
-    ["pay @jeremy $10.50", { kind: "send", counterparty: "jeremy", amountUsd: "10.50" }],
+    ["pay @jeremy $10.50", { kind: "send", counterparty: "@jeremy", amountUsd: "10.50" }],
     ["send $5 to alex", { kind: "send", counterparty: "alex", amountUsd: "5" }],
     ["send 5 bucks to alex", { kind: "send", counterparty: "alex", amountUsd: "5" }],
     ["send jeremy $10 on sol", { kind: "send", counterparty: "jeremy", amountUsd: "10", chain: "solana" }],
@@ -50,6 +50,16 @@ describe("parseCommand: other", () => {
 
   it.each(["receive", "my address", "address", "deposit"])("%s → receive", (t) => {
     expect(parseCommand(t)).toEqual({ kind: "receive" });
+  });
+
+  it.each([
+    ["reclaim", "reclaim"],
+    ["Refund", "reclaim"],
+    ["upgrade", "upgrade"],
+    ["no", "decline"],
+    ["Decline", "decline"],
+  ])("%s → %s", (t, kind) => {
+    expect(parseCommand(t)).toEqual({ kind });
   });
 
   it.each(["help", "?", "commands"])("%s → help", (t) => {

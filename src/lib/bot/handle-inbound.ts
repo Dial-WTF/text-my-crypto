@@ -1,55 +1,68 @@
-import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
-import type { Db } from "@/lib/db/client";
+import { chainLabel } from "@/lib/chains";
+import { CODE_RE } from "@/lib/codes";
+import { saveContact } from "@/lib/contacts";
+import { clearConversation, getConversation, setConversation } from "@/lib/conversations";
 import type { User } from "@/lib/db/schema";
-import {
-  createSignupToken,
-  createUnclaimedUser,
-  displayName,
-  findUserByPhone,
-  getUserById,
-  isClaimed,
-  resolveRecipient,
-} from "@/lib/identity";
-import { createIntent, latestSettledTo } from "@/lib/intents";
-import { formatUsd, usdToBaseUnits } from "@/lib/money";
-import { interpret, type LlmInterpreter } from "@/lib/operator/brain";
-import type { MoneyCommand } from "@/lib/operator/grammar";
+import { createSignupToken, displayName, findUserByPhone, getUserById, isClaimed } from "@/lib/identity";
+import { codeCandidates, latestSettledTo, matchCode } from "@/lib/intents";
+import { formatUsd } from "@/lib/money";
+import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
 import { normalizePhone } from "@/lib/phone";
-import type { Adapters, SettlementAdapter } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
-import { logInbound, logOutbound } from "@/lib/sms/log";
-import type { SendSms } from "@/lib/sms/payphone";
-import { addWallet, getWallet } from "@/lib/wallets";
+import { logInbound } from "@/lib/sms/log";
+import { getWallet } from "@/lib/wallets";
+import { completeSignup, enabledChains } from "./accounts";
+import { moneyCommandSchema, prepareMoney } from "./money";
+import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { text } from "./text";
+import type { BotDeps } from "./types";
 
-export type BotDeps = {
-  db: Db;
-  sendSms: SendSms;
-  llm: LlmInterpreter;
-  adapters: Adapters;
-  appUrl: string;
-  now: () => Date;
-  perTxCap: bigint;
-  walletKey: string;
-};
+export type { BotDeps } from "./types";
 
 export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<string[]> {
   if (!(await logInbound(deps.db, msg))) return [];
 
   const out: string[] = [];
-  const reply = async (text: string) => {
-    out.push(text);
-    await text_(deps, msg.from, text);
+  const reply = async (body: string) => {
+    out.push(body);
+    await text(deps, msg.from, body);
   };
 
   const user = await findUserByPhone(deps.db, msg.from);
+  const convo = await getConversation(deps.db, msg.from, deps.now());
+
   if (!user || !isClaimed(user)) {
-    await reply(await welcome(deps, msg.from, user));
+    if (convo?.state === "awaiting_name" && !CODE_RE.test(msg.body)) {
+      const result = await completeSignup(deps, msg.from, msg.body);
+      if (result.ok) await clearConversation(deps.db, msg.from);
+      await reply(result.ok ? result.reply : result.error);
+      return out;
+    }
+    await setConversation(deps.db, msg.from, { state: "awaiting_name", payload: {} }, deps.now());
+    await reply(await welcome(deps, user));
     return out;
   }
 
+  if (CODE_RE.test(msg.body)) {
+    for (const r of await handleCode(deps, user, msg.body)) await reply(r);
+    return out;
+  }
+
+  if (convo?.state === "awaiting_number") {
+    await clearConversation(deps.db, msg.from);
+    const phone = normalizePhone(msg.body);
+    const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
+    if (phone && parsed.success) {
+      await saveContact(deps.db, user.id, convo.payload.name, phone);
+      await reply(await prepareMoney(deps, user, { ...parsed.data, counterparty: phone }));
+      return out;
+    }
+  }
+
   const turn = await interpret(msg.body, deps.llm);
-  switch (turn.command.kind) {
+  const cmd = turn.command;
+  switch (cmd.kind) {
     case "help":
       await reply(replies.help());
       break;
@@ -62,35 +75,43 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
     case "receive":
       await reply(await receiveReply(deps, user));
       break;
+    case "reclaim":
+      await reply(await reclaimExpired(deps, user.id));
+      break;
+    case "decline":
+      await reply(await declineLatest(deps, user.id));
+      break;
+    case "upgrade":
+      await reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+      break;
     case "send":
     case "request":
     case "invoice":
-      await reply(await prepareMoney(deps, user, turn.command));
+      await reply(await prepareMoney(deps, user, cmd));
       break;
   }
   return out;
 }
 
-async function text_(deps: BotDeps, phone: string, body: string): Promise<void> {
-  await deps.sendSms(phone, body);
-  await logOutbound(deps.db, phone, body);
-}
-
-async function welcome(deps: BotDeps, phone: string, user: User | null): Promise<string> {
-  const link = `${deps.appUrl}/s/${await createSignupToken(deps.db, phone, deps.now())}`;
+async function welcome(deps: BotDeps, user: User | null): Promise<string> {
   if (user) {
     const waiting = await latestSettledTo(deps.db, user.id);
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender), link);
+    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender));
   }
-  return replies.welcome(link);
+  return replies.welcome();
 }
 
-function enabledChains(deps: BotDeps): Array<[Chain, SettlementAdapter]> {
-  return CHAINS.flatMap((c) => {
-    const a = deps.adapters[c];
-    return a ? [[c, a] as [Chain, SettlementAdapter]] : [];
-  });
+async function handleCode(deps: BotDeps, user: User, code: string): Promise<string[]> {
+  const matches = await matchCode(deps.db, await codeCandidates(deps.db, user.id, deps.now()), code);
+  if (matches.length === 0) return [replies.codeMismatch()];
+  const failures: string[] = [];
+  for (const intent of matches) {
+    const outcome =
+      intent.status === "escrowed" ? await releaseEscrow(deps, intent.id) : await approveIntent(deps, intent.id);
+    if (!outcome.ok && outcome.reason === "not_claimable") failures.push(replies.codeMismatch());
+  }
+  return failures;
 }
 
 async function balanceReply(deps: BotDeps, user: User): Promise<string> {
@@ -109,67 +130,4 @@ async function receiveReply(deps: BotDeps, user: User): Promise<string> {
     if (w) addresses.push(`${chainLabel(chain)}: ${w.address}`);
   }
   return replies.receive(user.handle ?? displayName(user), addresses);
-}
-
-async function ensureWallet(deps: BotDeps, userId: string, chain: Chain, adapter: SettlementAdapter) {
-  const existing = await getWallet(deps.db, userId, chain);
-  if (existing) return existing;
-  const w = await adapter.createWallet();
-  await addWallet(deps.db, { userId, chain, address: w.address, secret: w.secret, keyB64: deps.walletKey });
-  const created = await getWallet(deps.db, userId, chain);
-  if (!created) throw new Error("wallet creation failed");
-  return created;
-}
-
-async function resolveOrCreate(deps: BotDeps, raw: string): Promise<User | null> {
-  const found = await resolveRecipient(deps.db, raw);
-  if (found) return found;
-  const phone = normalizePhone(raw);
-  return phone ? createUnclaimedUser(deps.db, phone) : null;
-}
-
-async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand): Promise<string> {
-  const chain = cmd.chain ?? user.defaultChain;
-  const adapter = deps.adapters[chain];
-  if (!adapter) return replies.chainUnavailable(chainLabel(chain));
-
-  const amount = usdToBaseUnits(cmd.amountUsd);
-  if (amount <= 0n) return replies.help();
-  if (amount > deps.perTxCap) return replies.overCap(formatUsd(deps.perTxCap));
-
-  const other = await resolveOrCreate(deps, cmd.counterparty);
-  if (!other) return replies.unknownRecipient(cmd.counterparty);
-  if (other.id === user.id) return replies.selfSend();
-
-  const [mine, theirs] = await Promise.all([
-    ensureWallet(deps, user.id, chain, adapter),
-    ensureWallet(deps, other.id, chain, adapter),
-  ]);
-  const note = cmd.note ?? null;
-  const otherName = displayName(other);
-
-  if (cmd.kind === "send") {
-    const balance = await adapter.getBalance(mine.address);
-    if (balance < amount) return replies.insufficient(formatUsd(balance));
-    const intent = await createIntent(
-      deps.db,
-      { kind: "send", createdBy: user.id, senderId: user.id, recipientId: other.id, chain, token: adapter.tokenId, recipientAddress: theirs.address, amount, note },
-      deps.now(),
-    );
-    return replies.confirmSend(formatUsd(amount), otherName, chainLabel(chain), note, `${deps.appUrl}/a/${intent.id}`);
-  }
-
-  const intent = await createIntent(
-    deps.db,
-    { kind: cmd.kind, createdBy: user.id, senderId: other.id, recipientId: user.id, chain, token: adapter.tokenId, recipientAddress: mine.address, amount, note },
-    deps.now(),
-  );
-  const link = `${deps.appUrl}/a/${intent.id}`;
-  const me = displayName(user);
-  if (cmd.kind === "request") {
-    await text_(deps, other.phone, replies.payRequest(me, formatUsd(amount), note, link));
-    return replies.requestSent(formatUsd(amount), otherName);
-  }
-  await text_(deps, other.phone, replies.payInvoice(me, formatUsd(amount), note, link));
-  return replies.invoiceSent(formatUsd(amount), otherName, link);
 }

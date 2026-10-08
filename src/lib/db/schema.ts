@@ -1,11 +1,19 @@
-import { bigint, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { CHAINS } from "@/lib/chains";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 
 export const chainEnum = pgEnum("chain", CHAINS);
-export const intentStatus = pgEnum("intent_status", ["pending", "settling", "settled", "failed", "declined"]);
 export const intentKind = pgEnum("intent_kind", ["send", "request", "invoice"]);
+export const intentStatus = pgEnum("intent_status", [
+  "pending",
+  "settling",
+  "escrowed",
+  "settled",
+  "refunded",
+  "failed",
+  "declined",
+]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -28,6 +36,26 @@ export const wallets = pgTable(
   },
   (t) => [uniqueIndex("wallets_user_chain").on(t.userId, t.chain)],
 );
+
+export const contacts = pgTable(
+  "contacts",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.ownerId, t.name] })],
+);
+
+export const conversations = pgTable("conversations", {
+  phone: text("phone").primaryKey(),
+  state: text("state", { enum: ["awaiting_name", "awaiting_number"] }).notNull(),
+  payload: text("payload").notNull().default("{}"),
+  expiresAt: ts("expires_at").notNull(),
+});
 
 export const signupTokens = pgTable("signup_tokens", {
   token: text("token").primaryKey(),
@@ -56,10 +84,17 @@ export const intents = pgTable("intents", {
   nonce: text("nonce").notNull(),
   expiresAt: ts("expires_at").notNull(),
   status: intentStatus("status").notNull().default("pending"),
+  codeHash: text("code_hash"),
+  codeAttempts: integer("code_attempts").notNull().default(0),
+  escrowSecretEnc: text("escrow_secret_enc"),
+  escrowExpiresAt: ts("escrow_expires_at"),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),
+  releaseTxHash: text("release_tx_hash"),
+  releaseExplorerUrl: text("release_explorer_url"),
   error: text("error"),
   createdAt: ts("created_at").notNull().defaultNow(),
+  settledAt: ts("settled_at"),
 });
 
 export const smsLog = pgTable("sms_log", {
@@ -74,3 +109,4 @@ export const smsLog = pgTable("sms_log", {
 export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;
+export type Contact = typeof contacts.$inferSelect;

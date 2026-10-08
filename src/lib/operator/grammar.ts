@@ -11,7 +11,15 @@ export type MoneyCommand = {
   chain?: Chain;
 };
 
-export type Command = MoneyCommand | { kind: "balance" } | { kind: "receive" } | { kind: "help" } | { kind: "chat" };
+export type Command =
+  | MoneyCommand
+  | { kind: "balance" }
+  | { kind: "receive" }
+  | { kind: "reclaim" }
+  | { kind: "upgrade" }
+  | { kind: "decline" }
+  | { kind: "help" }
+  | { kind: "chat" };
 
 const WHO = String.raw`@?[a-z][a-z0-9_]{1,19}|\+?[\d\s().-]{10,}?`;
 const AMT = String.raw`\$?(\d{1,7}(?:\.\d+)?)\s*(?:usdc?|dollars?|bucks)?`;
@@ -46,10 +54,14 @@ const PATTERNS: Pattern[] = [
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
 const RECEIVE = /^(?:receive|my address|address|deposit|wallet)\??$/i;
 const HELP = /^(?:help|\?|commands)$/i;
+const RECLAIM = /^(?:reclaim|refund)$/i;
+const UPGRADE = /^(?:upgrade|passkey)$/i;
+const DECLINE = /^(?:no|nope|decline)$/i;
 
+/** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
   const t = raw.trim();
-  return /^\+?[\d\s().-]+$/.test(t) ? t : t.replace(/^@/, "").toLowerCase();
+  return /^\+?[\d\s().-]+$/.test(t) ? t : t.toLowerCase();
 }
 
 function build(pat: Pattern, m: RegExpExecArray): Command | null {
@@ -71,6 +83,9 @@ export function parseCommand(text: string): Command {
   if (BALANCE.test(t)) return { kind: "balance" };
   if (RECEIVE.test(t)) return { kind: "receive" };
   if (HELP.test(t)) return { kind: "help" };
+  if (RECLAIM.test(t)) return { kind: "reclaim" };
+  if (UPGRADE.test(t)) return { kind: "upgrade" };
+  if (DECLINE.test(t)) return { kind: "decline" };
   for (const pat of PATTERNS) {
     const m = pat.re.exec(t);
     if (!m) continue;

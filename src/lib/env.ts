@@ -13,6 +13,8 @@ const schema = z.object({
   SOLANA_TREASURY_SEED: z.string().min(40),
   SIGNUP_DRIP_USD: z.string().default("25"),
   PER_TX_CAP_USD: z.string().default("50"),
+  PER_DAY_CAP_USD: z.string().default("200"),
+  ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
   AI_GATEWAY_API_KEY: z.string().min(1),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   DEV_APPROVE: z.enum(["0", "1"]).default("0"),

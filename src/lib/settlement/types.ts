@@ -7,7 +7,14 @@ export interface SettlementAdapter {
   tokenId: string;
   createWallet(): Promise<{ address: string; secret: Uint8Array<ArrayBuffer> }>;
   getBalance(address: string): Promise<bigint>;
-  settle(args: { fromSecret: Uint8Array<ArrayBuffer>; to: string; amount: bigint; memo: string }): Promise<SettleResult>;
+  /** Moves `amount` from the wallet behind `fromSecret` to `to`. `closeSource` empties and closes the source token account (escrow release/refund). */
+  settle(args: {
+    fromSecret: Uint8Array<ArrayBuffer>;
+    to: string;
+    amount: bigint;
+    memo: string;
+    closeSource?: boolean;
+  }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
 }
 

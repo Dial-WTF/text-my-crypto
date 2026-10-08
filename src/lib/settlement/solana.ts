@@ -17,6 +17,7 @@ import {
 import { getAddMemoInstruction } from "@solana-program/memo";
 import {
   findAssociatedTokenPda,
+  getCloseAccountInstruction,
   getCreateAssociatedTokenIdempotentInstruction,
   getTransferCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
@@ -65,14 +66,24 @@ export function createSolanaAdapter(cfg: {
     throw new Error(`Solana tx ${sig} not confirmed in time`);
   }
 
-  async function transfer(from: KeyPairSigner, to: Address, amount: bigint, memo: string): Promise<SettleResult> {
+  async function transfer(
+    from: KeyPairSigner,
+    to: Address,
+    amount: bigint,
+    memo: string,
+    closeSource = false,
+  ): Promise<SettleResult> {
     const feePayer = await treasury;
     const [source, destination] = await Promise.all([ataOf(from.address), ataOf(to)]);
-    const sig = await sendAndConfirm([
+    const instructions: Instruction[] = [
       getCreateAssociatedTokenIdempotentInstruction({ payer: feePayer, ata: destination, owner: to, mint }),
       getTransferCheckedInstruction({ source, mint, destination, authority: from, amount, decimals: DECIMALS }),
       getAddMemoInstruction({ memo }),
-    ]);
+    ];
+    if (closeSource) {
+      instructions.push(getCloseAccountInstruction({ account: source, destination: feePayer.address, owner: from }));
+    }
+    const sig = await sendAndConfirm(instructions);
     return { txHash: sig, explorerUrl: explorer(sig) };
   }
 
@@ -91,9 +102,9 @@ export function createSolanaAdapter(cfg: {
       const bal = await rpc.getTokenAccountBalance(ata).send();
       return BigInt(bal.value.amount);
     },
-    async settle({ fromSecret, to, amount, memo }) {
+    async settle({ fromSecret, to, amount, memo, closeSource }) {
       const from = await createKeyPairSignerFromPrivateKeyBytes(fromSecret);
-      return transfer(from, address(to), amount, memo);
+      return transfer(from, address(to), amount, memo, closeSource);
     },
     async fund(to, amount) {
       return transfer(await treasury, address(to), amount, "dial signup drip");
