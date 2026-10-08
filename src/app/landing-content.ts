@@ -1,3 +1,4 @@
+import type { ChainStripItem } from "@/ui/patterns/ChainStrip/ChainStrip";
 import type { ComparisonRow } from "@/ui/patterns/ComparisonSheet/ComparisonSheet";
 import type { TranscriptLine } from "@/ui/patterns/Transcript/Transcript";
 
@@ -21,4 +22,16 @@ export const comparison: ComparisonRow[] = [
   { aspect: "What you can do", before: "Send, redeem, balance", after: "Send, request, invoice, receive, withdraw, reclaim" },
   { aspect: "Where money lives", before: "One admin-controlled contract ledger", after: "Your own on-chain address, visible on any explorer" },
   { aspect: "Chains", before: "Rootstock", after: "Solana now; Tempo, Base and Zcash next" },
+];
+
+export const settlesOn: ChainStripItem[] = [
+  { name: "Solana", logo: "solana", role: "USDC settlement, memo per payment, per-payment escrow", status: "live", statusLabel: "Live · devnet" },
+  { name: "Tempo", logo: null, role: "Passkey accounts: self-custody for upgraded users", status: "next", statusLabel: "Building" },
+  { name: "Base", logo: "base", role: "USDC on Base", status: "next", statusLabel: "Building" },
+  { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo", status: "next", statusLabel: "Building" },
+];
+
+export const runsOn: ChainStripItem[] = [
+  { name: "Cloudflare", logo: "cloudflare", role: "Workers + D1 run the operator", status: "live", statusLabel: "Live" },
+  { name: "Payphone", logo: null, role: "The phone line: +1 806 607 1387", status: "live", statusLabel: "Live" },
 ];

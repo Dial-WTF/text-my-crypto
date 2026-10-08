@@ -4,6 +4,7 @@ import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { ComparisonSheet } from "@/ui/patterns/ComparisonSheet/ComparisonSheet";
 import { Marquee } from "@/ui/patterns/Marquee/Marquee";
 import { type FeedEntry, PaymentFeed } from "@/ui/patterns/PaymentFeed/PaymentFeed";
@@ -13,7 +14,7 @@ import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
-import { comparison, transcript } from "./landing-content";
+import { comparison, runsOn, settlesOn, transcript } from "./landing-content";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,9 @@ export default async function Home() {
         href={`sms:${number}?&body=hi`}
         line="Send, request and invoice crypto by text. No app. No wallet address. Works on any phone."
       />
+
+      <ChainStrip heading="Settles on" items={settlesOn} size="large" />
+      <ChainStrip heading="Runs on" items={runsOn} />
 
       <Section heading="Say hi. That's the signup.">
         <Split>
