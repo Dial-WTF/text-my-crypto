@@ -75,6 +75,17 @@ describe("parseCommand: other", () => {
     expect(parseCommand(t)).toEqual({ kind });
   });
 
+  it.each([
+    ["411 jp", { kind: "directory", query: "jp" }],
+    ["who is jeremy?", { kind: "directory", query: "jeremy" }],
+    ["find @jpmeyer", { kind: "directory", query: "@jpmeyer" }],
+    ["call me J. P.", { kind: "rename", name: "J. P." }],
+    ["my name is Sam Altman", { kind: "rename", name: "Sam Altman" }],
+    ["who am i?", { kind: "whoami" }],
+  ])("%s", (t, expected) => {
+    expect(parseCommand(t)).toEqual(expected);
+  });
+
   it.each(["help", "?", "commands"])("%s → help", (t) => {
     expect(parseCommand(t)).toEqual({ kind: "help" });
   });

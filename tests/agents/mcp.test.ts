@@ -125,7 +125,7 @@ describe("MCP over Streamable HTTP", () => {
 
     const ownerText = sms.last(ALEX);
     expect(ownerText).toMatch(
-      new RegExp(`^From your agent "claude": Send \\$5 USDC to jeremy \\(lunch\\) on Solana\\? Reply \\d{6} to confirm, or tap: https://tmc.test/a/${intentId}$`),
+      new RegExp(`^From your agent "claude": Send \\$5 USDC to @jeremy \\(lunch\\) on Solana\\? Reply \\d{6} to confirm, or tap: https://tmc.test/a/${intentId}$`),
     );
     expect((await getIntent(db, intentId))?.status).toBe("pending");
     expect(sol.settled).toHaveLength(0);
@@ -155,9 +155,9 @@ describe("MCP over Streamable HTTP", () => {
   it("request_payment texts the payer and gives the owner a heads-up", async () => {
     const key = await connectAgent(ALEX, "claude");
     const r = await call(key, "request_payment", { from: "@jeremy", amountUsd: "25", note: "pizza" });
-    expect(r.data).toMatchObject({ status: "awaiting_approval", approver: "jeremy", kind: "request" });
+    expect(r.data).toMatchObject({ status: "awaiting_approval", approver: "@jeremy", kind: "request" });
     expect(sms.last(JEREMY)).toMatch(/^alex is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay or NO to decline/);
-    expect(sms.last(ALEX)).toBe('From your agent "claude": Asked jeremy for $25. I\'ll text you when they pay.');
+    expect(sms.last(ALEX)).toBe('From your agent "claude": Asked @jeremy for $25. I\'ll text you when they pay.');
   });
 
   it("returns validation and business errors as tool errors without creating anything", async () => {
@@ -229,6 +229,18 @@ describe("MCP over Streamable HTTP", () => {
     expect((await rpc(key, "tools/list")).status).toBe(200);
     expect(await say(ALEX, "revoke agents")).toBe('Revoked 1 agent key. Text "connect agent" to connect one again.');
     expect((await rpc(key, "tools/list")).status).toBe(401);
+  });
+
+  it("finds people in the directory, and asks which one when a name is ambiguous", async () => {
+    const key = await connectAgent(ALEX);
+    expect((await call(key, "resolve_recipient", { to: "jeremy" })).data).toMatchObject({ found: true, via: "directory" });
+    await signUp("+15550000013", "jeremiah");
+    const before = sms.sent.length;
+    const r = await call(key, "send_payment", { to: "jere", amountUsd: "5" });
+    expect(r.data).toMatchObject({ error: "ambiguous_recipient" });
+    expect(String(r.data.message)).toMatch(/@jeremy.*@jeremiah|@jeremiah.*@jeremy/);
+    expect((await call(key, "resolve_recipient", { to: "jere" })).data).toMatchObject({ error: "ambiguous_recipient" });
+    expect(sms.sent.length).toBe(before);
   });
 
   it("hides chain failures behind a plain tool error", async () => {

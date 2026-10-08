@@ -54,7 +54,7 @@ describe("official MCP client against /api/mcp", () => {
     const out = result.structuredContent as { intentId: string; status: string };
     expect(out.status).toBe("awaiting_approval");
     expect((await getIntent(deps.db, out.intentId))?.status).toBe("pending");
-    expect(sms.last(ALEX)).toMatch(/^From your agent "test client": Send \$2\.50 USDC to jeremy on Solana\? Reply \d{6}/);
+    expect(sms.last(ALEX)).toMatch(/^From your agent "test client": Send \$2\.50 USDC to @jeremy on Solana\? Reply \d{6}/);
 
     const polled = await client.callTool({ name: "get_payment", arguments: { intentId: out.intentId } });
     expect(polled.structuredContent).toMatchObject({ status: "awaiting_approval", approver: "you" });

@@ -8,6 +8,10 @@ export const CONVERSATION_TTL_MS = 15 * 60_000;
 const conversationSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("awaiting_name"), payload: z.object({}).strict() }),
   z.object({ state: z.literal("awaiting_number"), payload: z.object({ name: z.string(), command: z.string() }) }),
+  z.object({
+    state: z.literal("awaiting_choice"),
+    payload: z.object({ name: z.string(), command: z.string(), handles: z.array(z.string()).min(2).max(5) }),
+  }),
 ]);
 
 export type Conversation = z.infer<typeof conversationSchema>;

@@ -3,10 +3,21 @@ import { CODE_RE } from "@/lib/codes";
 import { saveContact } from "@/lib/contacts";
 import { clearConversation, getConversation, setConversation } from "@/lib/conversations";
 import type { User } from "@/lib/db/schema";
-import { createSignupToken, displayName, findUserByPhone, getUserById, isClaimed } from "@/lib/identity";
+import {
+  createSignupToken,
+  describe,
+  displayName,
+  findUserByPhone,
+  getUserById,
+  isClaimed,
+  renameUser,
+  searchDirectory,
+} from "@/lib/identity";
 import { codeCandidates, latestSettledTo, matchCode } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { cleanDisplayName } from "@/lib/names";
 import { interpret } from "@/lib/operator/brain";
+import { parseCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { normalizePhone } from "@/lib/phone";
 import type { InboundSms } from "@/lib/sms/inbound";
@@ -35,6 +46,10 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
 
   if (!user || !isClaimed(user)) {
     if (convo?.state === "awaiting_name" && !CODE_RE.test(msg.body)) {
+      if (parseCommand(msg.body).kind !== "chat") {
+        await reply(replies.nameFirst());
+        return out;
+      }
       const result = await completeSignup(deps, msg.from, msg.body);
       if (result.ok) await clearConversation(deps.db, msg.from);
       await reply(result.ok ? result.reply : result.error);
@@ -48,6 +63,19 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   if (CODE_RE.test(msg.body)) {
     for (const r of await handleCode(deps, user, msg.body)) await reply(r);
     return out;
+  }
+
+  if (convo?.state === "awaiting_choice") {
+    await clearConversation(deps.db, msg.from);
+    const pick = /^\s*([1-5])\s*$/.exec(msg.body)?.[1];
+    const handle = pick ? convo.payload.handles[Number(pick) - 1] : undefined;
+    const phone = normalizePhone(msg.body);
+    const parsed = moneyCommandSchema.safeParse(JSON.parse(convo.payload.command));
+    if (parsed.success && (handle || phone)) {
+      if (phone) await saveContact(deps.db, user.id, convo.payload.name, phone);
+      await reply(await prepareMoney(deps, user, { ...parsed.data, counterparty: handle ? `@${handle}` : (phone ?? "") }));
+      return out;
+    }
   }
 
   if (convo?.state === "awaiting_number") {
@@ -81,6 +109,20 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
       break;
     case "decline":
       await reply(await declineLatest(deps, user.id));
+      break;
+    case "directory": {
+      const found = await searchDirectory(deps.db, cmd.query, 3);
+      await reply(replies.directory(cmd.query, found.map(describe)));
+      break;
+    }
+    case "rename": {
+      const name = cleanDisplayName(cmd.name);
+      const renamed = name ? await renameUser(deps.db, user.id, name) : null;
+      await reply(renamed && name ? replies.renamed(name, renamed.handle ?? "") : replies.badName());
+      break;
+    }
+    case "whoami":
+      await reply(replies.whoami(displayName(user), user.handle ?? ""));
       break;
     case "upgrade":
       await reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));

@@ -14,7 +14,15 @@ import type { BotDeps } from "@/lib/bot/types";
 import { CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import type { Intent, User } from "@/lib/db/schema";
-import { displayName, findUserByHandle, findUserByPhone, getUserById, isClaimed } from "@/lib/identity";
+import {
+  describe,
+  displayName,
+  findUserByHandle,
+  findUserByPhone,
+  getUserById,
+  isClaimed,
+  searchDirectory,
+} from "@/lib/identity";
 import { getIntent, intentsFor } from "@/lib/intents";
 import { formatUsd, isUsdAmount } from "@/lib/money";
 import type { MoneyKind } from "@/lib/operator/grammar";
@@ -85,7 +93,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set(["send_payment", "requ
 // ---------------------------------------------------------------------------------------------
 
 export type ToolError = {
-  error: MoneyError["code"] | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
+  error: MoneyError["code"] | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
 export type ToolResult = { ok: true; data: Record<string, unknown> } | { ok: false; error: ToolError };
@@ -114,7 +122,7 @@ function machineStatus(i: Intent, now: Date): AgentPaymentStatus {
 /** Who has to approve: the payer. "you" when that's the account owner. */
 function approverOf(i: Intent, owner: User, payer: User | null): string {
   if (i.senderId === owner.id) return "you";
-  return payer ? displayName(payer) : "the payer";
+  return payer ? describe(payer) : "the payer";
 }
 
 async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record<string, unknown>> {
@@ -155,7 +163,7 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     intentId: i.id,
     status: "awaiting_approval",
     approveUrl: p.approveUrl,
-    approver: payerIsOwner ? "you" : displayName(p.counterparty),
+    approver: payerIsOwner ? "you" : describe(p.counterparty),
     approveBy: i.expiresAt.toISOString(),
     kind: i.kind,
     amountUsd: usd(i.amount),
@@ -163,7 +171,7 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     chain: i.chain,
     message: payerIsOwner
       ? `Texted the owner to approve ${formatUsd(i.amount)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
-      : `Texted ${displayName(p.counterparty)} to pay ${formatUsd(i.amount)}. They approve or decline from their phone. Poll get_payment for the result.`,
+      : `Texted ${describe(p.counterparty)} to pay ${formatUsd(i.amount)}. They approve or decline from their phone. Poll get_payment for the result.`,
   });
 }
 
@@ -213,22 +221,30 @@ async function getReceiveAddress(deps: BotDeps, agent: Agent): Promise<ToolResul
   return ok({ handle, byText: `Anyone can text the Dial operator "send ${handle} $5".`, addresses });
 }
 
+const notFound = (raw: string) =>
+  `No contact or Dial user matches "${raw}". Use their phone number (e.g. +15551234567) or Dial @handle.`;
+const ambiguous = (raw: string, users: User[]) =>
+  `"${raw}" matches ${users.map(describe).join(", ")}. Ask which one and pass their @handle.`;
+
 async function resolveRecipient(deps: BotDeps, agent: Agent, input: ToolInput<"resolve_recipient">): Promise<ToolResult> {
   const raw = input.to;
   const escrowNote = "Not on Dial yet: a payment waits in escrow until they claim it by text, or comes back after it expires.";
   if (raw.startsWith("@")) {
     const u = await findUserByHandle(deps.db, raw.slice(1).toLowerCase());
     if (!u) return err("unknown_handle", replies.unknownHandle(raw));
-    return ok({ found: true, via: "handle", name: displayName(u), onDial: true });
+    return ok({ found: true, via: "handle", name: describe(u), onDial: true });
   }
   const phone = normalizePhone(raw);
   const contact = phone ? null : await findContact(deps.db, agent.user.id, raw);
   const target = phone ?? contact?.phone ?? null;
   if (!target) {
-    return err(
-      "unknown_recipient",
-      `"${raw}" isn't in the owner's contacts. Use their phone number (e.g. +15551234567) or Dial @handle.`,
-    );
+    const exact = await findUserByHandle(deps.db, raw.toLowerCase());
+    const matches = exact ? [exact] : await searchDirectory(deps.db, raw, 6);
+    const others = matches.filter((u) => u.id !== agent.user.id).slice(0, 5);
+    const [only] = others;
+    if (others.length === 1 && only) return ok({ found: true, via: "directory", name: describe(only), onDial: true });
+    if (others.length > 1) return err("ambiguous_recipient", ambiguous(raw, others));
+    return err("unknown_recipient", notFound(raw));
   }
   if (target === agent.user.phone) return err("self", replies.selfSend());
   const u = await findUserByPhone(deps.db, target);
@@ -236,7 +252,7 @@ async function resolveRecipient(deps: BotDeps, agent: Agent, input: ToolInput<"r
   return ok({
     found: true,
     via: phone ? "phone" : "contact",
-    name: onDial && u ? displayName(u) : contact ? contact.name : displayName({ handle: null, phone: target }),
+    name: onDial && u ? describe(u) : contact ? contact.name : displayName({ handle: null, phone: target }),
     onDial,
     ...(onDial ? {} : { note: escrowNote }),
   });
@@ -254,12 +270,8 @@ async function moneyTool(
   if (!checked.ok) return err(checked.error.code, checked.error.message);
   const resolved = await resolveCounterparty(deps, user, input.counterparty);
   if ("error" in resolved) return err("unknown_handle", resolved.error);
-  if ("askFor" in resolved) {
-    return err(
-      "unknown_recipient",
-      `"${resolved.askFor}" isn't in the owner's contacts. Use their phone number (e.g. +15551234567) or Dial @handle.`,
-    );
-  }
+  if ("choose" in resolved) return err("ambiguous_recipient", ambiguous(input.counterparty, resolved.choose));
+  if ("askFor" in resolved) return err("unknown_recipient", notFound(resolved.askFor));
   const r = await createMoneyIntent(deps, user, cmd, resolved.user);
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }

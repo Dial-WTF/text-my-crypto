@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, like, or, sql } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
 import { signupTokens, type User, users } from "@/lib/db/schema";
 import { newId, randomToken } from "@/lib/ids";
@@ -28,7 +28,11 @@ export async function resolveRecipient(db: Db, raw: string): Promise<User | null
   return findUserByHandle(db, raw.trim().replace(/^@/, "").toLowerCase());
 }
 
-export async function createUser(db: Db, input: { phone: string; handle: string }, now = new Date()): Promise<User> {
+export async function createUser(
+  db: Db,
+  input: { phone: string; handle: string; name?: string | null },
+  now = new Date(),
+): Promise<User> {
   const [u] = await db
     .insert(users)
     .values({ id: newId("usr"), ...input, claimedAt: now })
@@ -43,10 +47,16 @@ export async function createUnclaimedUser(db: Db, phone: string): Promise<User> 
   return u;
 }
 
-export async function claimUser(db: Db, userId: string, handle: string, now: Date): Promise<User | null> {
+export async function claimUser(
+  db: Db,
+  userId: string,
+  handle: string,
+  now: Date,
+  name: string | null = null,
+): Promise<User | null> {
   const [u] = await db
     .update(users)
-    .set({ handle, claimedAt: now })
+    .set({ handle, name, claimedAt: now })
     .where(and(eq(users.id, userId), isNull(users.claimedAt)))
     .returning();
   return u ?? null;
@@ -56,8 +66,51 @@ export function isClaimed(u: User): boolean {
   return u.claimedAt !== null && u.handle !== null;
 }
 
-export function displayName(u: Pick<User, "handle" | "phone">): string {
-  return u.handle ?? `${u.phone.slice(0, -4).replace(/\d/g, "•")}${u.phone.slice(-4)}`;
+function maskedPhone(phone: string): string {
+  return `${phone.slice(0, -4).replace(/\d/g, "•")}${phone.slice(-4)}`;
+}
+
+/** Short name for messages: the display name, else the handle, else a masked number. */
+export function displayName(u: Pick<User, "handle" | "phone"> & { name?: string | null }): string {
+  return u.name ?? u.handle ?? maskedPhone(u.phone);
+}
+
+/** Unambiguous name for confirmations: "@jpmeyer (J. P. Meyer)". */
+export function describe(u: Pick<User, "handle" | "phone"> & { name?: string | null }): string {
+  if (u.handle && u.name && u.name.toLowerCase() !== u.handle) return `@${u.handle} (${u.name})`;
+  if (u.handle) return `@${u.handle}`;
+  return maskedPhone(u.phone);
+}
+
+/** First free handle: base, base2, base3… kept within the 20-character limit. */
+export async function uniqueHandle(db: Db, base: string): Promise<string> {
+  for (let n = 1; n < 1000; n++) {
+    const suffix = n === 1 ? "" : String(n);
+    const candidate = `${base.slice(0, 20 - suffix.length)}${suffix}`;
+    if (!(await findUserByHandle(db, candidate))) return candidate;
+  }
+  throw new Error("No free handle");
+}
+
+/** The directory: claimed users whose handle starts with, or name contains, the query. */
+export async function searchDirectory(db: Db, query: string, limit = 5): Promise<User[]> {
+  const q = query.trim().replace(/^@/, "").toLowerCase().replace(/[%_]/g, "");
+  if (q.length < 2) return [];
+  return db
+    .select()
+    .from(users)
+    .where(
+      and(
+        isNotNull(users.claimedAt),
+        or(like(users.handle, `${q}%`), like(sql`lower(${users.name})`, `%${q}%`)),
+      ),
+    )
+    .limit(limit);
+}
+
+export async function renameUser(db: Db, userId: string, name: string): Promise<User | null> {
+  const [u] = await db.update(users).set({ name }).where(eq(users.id, userId)).returning();
+  return u ?? null;
 }
 
 export async function createSignupToken(db: Db, phone: string, now: Date): Promise<string> {

@@ -21,6 +21,9 @@ export type Command =
   | { kind: "reclaim" }
   | { kind: "upgrade" }
   | { kind: "decline" }
+  | { kind: "directory"; query: string }
+  | { kind: "rename"; name: string }
+  | { kind: "whoami" }
   | { kind: "connect_agent"; label?: string }
   | { kind: "revoke_agents" }
   | { kind: "help" }
@@ -68,6 +71,9 @@ const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
 const DECLINE = /^(?:no|nope|decline)$/i;
+const DIRECTORY = /^(?:411|directory|lookup|look up|find|who is|whos|who's)\s+(.{2,40}?)\??$/i;
+const RENAME = /^(?:call me|my name is|rename me to|rename to|rename)\s+(.{1,80})$/i;
+const WHOAMI = /^(?:whoami|who am i|me)\??$/i;
 const CONNECT_AGENT = /^connect\s+(?:an?\s+|my\s+)?agent(?:\s+(?:called\s+|named\s+)?(.+?))?\s*[.!]?$/i;
 const REVOKE_AGENTS = /^(?:revoke|disconnect|remove)\s+(?:all\s+|my\s+)?agents?\s*[.!]?$/i;
 
@@ -99,6 +105,11 @@ export function parseCommand(text: string): Command {
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
+  if (WHOAMI.test(t)) return { kind: "whoami" };
+  const dir = DIRECTORY.exec(t);
+  if (dir?.[1]) return { kind: "directory", query: dir[1].trim() };
+  const rename = RENAME.exec(t);
+  if (rename?.[1]) return { kind: "rename", name: rename[1].trim() };
   if (REVOKE_AGENTS.test(t)) return { kind: "revoke_agents" };
   const agent = CONNECT_AGENT.exec(t);
   if (agent) return agent[1] ? { kind: "connect_agent", label: agent[1] } : { kind: "connect_agent" };

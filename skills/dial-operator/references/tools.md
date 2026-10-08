@@ -16,7 +16,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 | `get_payment` | `intentId` (`pi_…`) |
 | `list_payments` | `limit?` (1 to 50, default 10) |
 
-- `to` / `from`: phone number in any common format, `@handle`, or a contact name. 2 to 64 characters.
+- `to` / `from`: phone number in any common format, `@handle`, or a name (owner's contacts first, then the Dial directory). 2 to 64 characters.
 - `amountUsd`: decimal string, up to 2 decimals, no `$`. Settles as USDC.
 - `note`: up to 120 characters, shown to both people.
 - `chain`: `solana` (default), `tempo`, `base`, `ethereum`, `arbitrum`, `hyperevm`, `robinhood`, `zcash`. Only chains listed by `whoami` work.
@@ -57,7 +57,8 @@ Tool errors come back with `isError: true` and a JSON body `{ "error": "<code>",
 
 | Code | What to do |
 |---|---|
-| `unknown_recipient` | Name isn't in the owner's contacts. Ask for a phone number or @handle |
+| `unknown_recipient` | No contact or directory match. Ask for a phone number or @handle |
+| `ambiguous_recipient` | Several people match; the message lists them. Ask which one and pass the @handle |
 | `unknown_handle` | No Dial user with that handle |
 | `self` | That's the owner |
 | `bad_amount` | Amount must be more than 0 |

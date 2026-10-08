@@ -19,6 +19,7 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull().unique(),
   handle: text("handle").unique(),
+  name: text("name"),
   claimedAt: ts("claimed_at"),
   defaultChain: text("default_chain", { enum: CHAINS }).notNull().default("solana"),
   createdAt: ts("created_at").notNull().default(now),
@@ -52,7 +53,7 @@ export const contacts = sqliteTable(
 
 export const conversations = sqliteTable("conversations", {
   phone: text("phone").primaryKey(),
-  state: text("state", { enum: ["awaiting_name", "awaiting_number"] }).notNull(),
+  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice"] }).notNull(),
   payload: text("payload").notNull().default("{}"),
   expiresAt: ts("expires_at").notNull(),
 });

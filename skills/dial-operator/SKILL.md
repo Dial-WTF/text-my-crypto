@@ -38,7 +38,7 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `whoami` | Account handle, enabled chains, limits, passkey yes/no |
 | `get_balance` | USDC balance per chain |
 | `get_receive_address` | Handle and USDC address per chain, for getting paid |
-| `resolve_recipient` | Check who `to` points at and whether they're on Dial. Read-only |
+| `resolve_recipient` | Check who `to` points at (contacts, then directory) and whether they're on Dial. Read-only |
 | `send_payment` | `{ to, amountUsd, note?, chain? }` Start a payment from the owner |
 | `request_payment` | `{ from, amountUsd, note?, chain? }` Ask someone to pay the owner |
 | `create_invoice` | `{ to, amountUsd, note?, chain? }` Bill someone; the link renders as an invoice |
@@ -50,7 +50,7 @@ Full arguments, statuses and error codes: [references/tools.md](references/tools
 
 ## How to make a payment
 
-1. If you aren't sure who the person is, call `resolve_recipient`. Recipients are a phone number (`+15551234567`), a Dial handle (`@alex`), or a name from the owner's contacts (`alex`). Unknown names fail; ask the user for a number.
+1. If you aren't sure who the person is, call `resolve_recipient`. Recipients are a phone number (`+15551234567`), a Dial handle (`@alex`), or a name. A name is looked up in the owner's contacts, then the Dial directory. If several people match you get `ambiguous_recipient` with the candidates: ask the user which one and pass the @handle. If nobody matches, ask for a phone number.
 2. Call `send_payment` (or `request_payment` / `create_invoice`). Amounts are dollar strings: `"10"`, `"2.50"`.
 3. You get back `{ intentId, status: "awaiting_approval", approveUrl, approver, approveBy }`. Tell the user what you started and that `approver` will get a text. For a send that's the owner ("you"); for a request or invoice it's the other person.
 4. Poll `get_payment` every 10 seconds or so until the status is no longer `awaiting_approval`, or until `approveBy` passes. Sends wait 10 minutes; requests and invoices wait 7 days, so for those, check back later instead of polling.
