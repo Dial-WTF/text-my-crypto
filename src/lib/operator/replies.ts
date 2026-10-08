@@ -13,7 +13,9 @@ export const replies = {
   nameFirst: () => `First things first: what name should people use to pay you?`,
   joined: (name: string, handle: string, drip: string | null) =>
     `You're in, ${name}. Your Dial name is @${handle}, so people can text me "send @${handle} $5".` +
-    (drip ? ` I dropped ${drip} of test USDC in your wallet.` : "") +
+    (drip
+      ? ` Dial is on testnet for now, so I put ${drip} of test USDC in your wallet to try it. It's play money, not real dollars.`
+      : ` Dial is on testnet for now: the USDC here is play money.`) +
     ` Text 411 and a name to find anyone.`,
   renamed: (name: string, handle: string) => `Done. You're ${name} now, still @${handle}.`,
   whoami: (name: string, handle: string) => `You're ${name}, @${handle}. People can text me "send @${handle} $5".`,
@@ -53,8 +55,10 @@ export const replies = {
   selfSend: () => `That's you. Pick someone else.`,
   overCap: (cap: string) => `Test mode caps payments at ${cap}. Try a smaller amount.`,
   overDaily: (cap: string) => `Text-only accounts can send ${cap} a day. Text "upgrade" to add a passkey for higher limits.`,
-  insufficient: (balance: string) => `You have ${balance}. Not enough for that one.`,
-  dripped: (amount: string) => `I dropped ${amount} of test USDC in your wallet.`,
+  insufficient: (balance: string) =>
+    `You have ${balance} in test USDC, not enough for that one. Text "receive" for your address to top up from a testnet faucet.`,
+  dripped: (amount: string) =>
+    `Dial is on testnet for now, so I put ${amount} of test USDC in your wallet to try it. It's play money, not real dollars.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
   confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
     `Send ${amount} USDC to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,

@@ -173,10 +173,12 @@ describe("test-funds drip", () => {
 
     broke.fund = fund;
     expect(await say(NEWBIE, "send @alex $1")).toMatch(/^Send \$1 USDC to @alex/);
-    expect(sms.to(NEWBIE)).toContain("I dropped $25 of test USDC in your wallet.");
+    expect(sms.to(NEWBIE)).toContain(
+      "Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It's play money, not real dollars.",
+    );
     expect(broke.funded).toHaveLength(1);
 
-    expect(await say(NEWBIE, "send @jeremy $30")).toBe("You have $0. Not enough for that one.");
+    expect(await say(NEWBIE, "send @jeremy $30")).toMatch(/^You have \$0 in test USDC, not enough for that one\./);
     expect(broke.funded).toHaveLength(1);
   });
 });

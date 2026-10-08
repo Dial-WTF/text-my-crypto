@@ -48,7 +48,7 @@ describe("signup over SMS", () => {
       "hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?",
     );
     expect(await say(JEREMY, "Jeremy")).toBe(
-      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". I dropped $25 of test USDC in your wallet. Text 411 and a name to find anyone.',
+      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It\'s play money, not real dollars. Text 411 and a name to find anyone.',
     );
     const u = await findUserByPhone(db, JEREMY);
     expect(u?.handle).toBe("jeremy");
@@ -134,7 +134,7 @@ describe("send to someone on Dial", () => {
     expect(await say(ALEX, "send @jeremy $10")).toBe("You just sent @jeremy $10. Reply NEW if you meant to send another.");
     expect(await say(ALEX, "new")).toMatch(/^Text-only accounts can send \$15 a day/);
     sol.balances.set((await getWallet(db, (await findUserByPhone(db, JEREMY))!.id, "solana"))!.address, 2_000_000n);
-    expect(await say(JEREMY, "send @alex $5")).toBe("You have $2. Not enough for that one.");
+    expect(await say(JEREMY, "send @alex $5")).toMatch(/^You have \$2 in test USDC, not enough for that one\./);
   });
 
   it("says when a chain isn't on yet", async () => {
