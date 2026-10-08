@@ -20,7 +20,7 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 ## Non-goals (for the hackathon)
 
 - Mainnet funds, fiat on/off-ramp, KYC.
-- Thread unlocks, fiat on/off-ramp (pitch-deck roadmap only).
+- Thread unlocks (pitch-deck roadmap only).
 - Dial chat / Matrix channel (SMS only; channel interface leaves room).
 - Native mobile app.
 
