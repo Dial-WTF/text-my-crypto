@@ -18,9 +18,9 @@
 }
 
 .waiting {
-  color: var(--color-paper-muted);
+  color: var(--color-on-card-muted);
 }
 
 .bad {
-  color: var(--color-danger-on-paper);
+  color: var(--color-danger-on-card);
 }

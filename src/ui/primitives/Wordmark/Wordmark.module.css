@@ -1,7 +1,7 @@
 .wordmark {
   font: 800 var(--text-xl) / 1 var(--font-display);
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: var(--display-case);
   text-decoration: none;
 }
 

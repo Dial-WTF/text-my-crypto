@@ -9,8 +9,9 @@ export async function QrReceipt({ number, body }: { number: string; body: string
     type: "svg",
     margin: 0,
     errorCorrectionLevel: "M",
-    color: { dark: "#1c1b17", light: "#0000" },
+    color: { dark: "#000000ff", light: "#00000000" },
   });
+  const themed = svg.replaceAll("#000000", "currentColor");
   return (
     <Receipt title="Dial operator · start here">
       <ReceiptLine label="Text">“{body}”</ReceiptLine>
@@ -18,7 +19,7 @@ export async function QrReceipt({ number, body }: { number: string; body: string
       <ReceiptLine label="Works on">any phone</ReceiptLine>
       <ReceiptRule />
       <div className={styles.qr}>
-        <div className={styles.code} role="img" aria-label={`QR code that texts ${formatPhone(number)}`} dangerouslySetInnerHTML={{ __html: svg }} />
+        <div className={styles.code} role="img" aria-label={`QR code that texts ${formatPhone(number)}`} dangerouslySetInnerHTML={{ __html: themed }} />
         <p className={styles.caption}>Scan to open your messages</p>
       </div>
     </Receipt>

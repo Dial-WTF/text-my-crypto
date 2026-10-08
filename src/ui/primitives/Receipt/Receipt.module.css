@@ -2,13 +2,12 @@
   position: relative;
   width: min(100%, var(--receipt-width));
   padding: var(--space-lg) var(--space-md);
-  background: var(--color-paper);
-  color: var(--color-paper-ink);
+  background: var(--color-card);
+  color: var(--color-on-card);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  mask:
-    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x,
-    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x;
+  border: var(--card-border);
+  mask: var(--card-edge);
 }
 
 .printing {
@@ -21,7 +20,7 @@
   font-size: var(--text-xs);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-paper-muted);
+  color: var(--color-on-card-muted);
 }
 
 .body {
@@ -33,7 +32,7 @@
 .rule {
   margin: var(--space-sm) 0;
   border: 0;
-  border-top: var(--rule-thin) dashed var(--color-paper-rule);
+  border-top: var(--rule-thin) dashed var(--color-card-rule);
 }
 
 .line {
@@ -45,13 +44,13 @@
 
 .label {
   flex: none;
-  color: var(--color-paper-muted);
+  color: var(--color-on-card-muted);
 }
 
 .leader {
   flex: 1;
   min-width: var(--space-sm);
-  border-bottom: var(--rule-thin) dotted var(--color-paper-rule);
+  border-bottom: var(--rule-thin) dotted var(--color-card-rule);
   transform: translateY(-0.3em);
 }
 
@@ -68,7 +67,7 @@
 }
 
 .total .label {
-  color: var(--color-paper-ink);
+  color: var(--color-on-card);
 }
 
 @keyframes print {

@@ -9,7 +9,7 @@
   max-width: 22ch;
   margin: 0;
   font: 800 var(--text-3xl) / 0.95 var(--font-display);
-  text-transform: uppercase;
+  text-transform: var(--display-case);
   overflow-wrap: anywhere;
   min-width: 0;
 }
@@ -17,7 +17,7 @@
 .lede {
   max-width: var(--measure);
   margin: 0;
-  color: var(--color-on-carbon-muted);
+  color: var(--color-on-canvas-muted);
 }
 
 .split {

@@ -6,6 +6,7 @@
 }
 
 .code {
+  color: var(--color-on-card);
   width: min(11rem, 60%);
   aspect-ratio: 1;
 }
@@ -19,5 +20,5 @@
 .caption {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--color-paper-muted);
+  color: var(--color-on-card-muted);
 }

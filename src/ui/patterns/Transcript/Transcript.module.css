@@ -28,8 +28,8 @@
 
 .operator {
   justify-self: start;
-  background: var(--color-carbon-2);
-  border: var(--rule-thin) solid var(--color-carbon-rule);
+  background: var(--color-canvas-2);
+  border: var(--rule-thin) solid var(--color-canvas-rule);
   border-bottom-left-radius: var(--radius-sm);
 }
 

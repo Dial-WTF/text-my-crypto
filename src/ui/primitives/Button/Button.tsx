@@ -5,14 +5,14 @@ export type ButtonState = "idle" | "loading" | "error" | "success";
 
 type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & {
   variant?: "solid" | "outline";
-  surface?: "paper" | "carbon";
+  surface?: "card" | "canvas";
   state?: ButtonState;
   full?: boolean;
 };
 
 export function Button({
   variant = "solid",
-  surface = "paper",
+  surface = "card",
   state = "idle",
   full = false,
   disabled,
@@ -22,7 +22,7 @@ export function Button({
   const classes = [
     styles.button,
     styles[variant],
-    surface === "paper" ? styles.onPaper : styles.onCarbon,
+    surface === "card" ? styles.onCard : styles.onCanvas,
     full ? styles.full : "",
   ].join(" ");
   return (

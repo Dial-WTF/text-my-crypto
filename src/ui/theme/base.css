@@ -4,15 +4,14 @@ body {
 }
 
 html {
-  color-scheme: dark;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100dvh;
-  background: var(--color-carbon);
-  color: var(--color-on-carbon);
+  background: var(--color-canvas);
+  color: var(--color-on-canvas);
   font-family: var(--font-body);
   font-size: var(--text-md);
   line-height: 1.5;

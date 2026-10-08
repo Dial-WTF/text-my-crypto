@@ -1,0 +1,29 @@
+/* Theme · matrix — phosphor on black, mono everywhere, terminal panels instead of paper. */
+[data-theme="matrix"] {
+  color-scheme: dark;
+  --color-canvas: oklch(9% 0.02 150);
+  --color-canvas-2: oklch(13% 0.03 150);
+  --color-canvas-rule: oklch(32% 0.08 148);
+  --color-on-canvas: oklch(86% 0.2 145);
+  --color-on-canvas-muted: oklch(62% 0.13 145);
+
+  --color-card: oklch(12% 0.03 150);
+  --color-card-2: oklch(16% 0.04 150);
+  --color-card-rule: oklch(36% 0.09 148);
+  --color-on-card: oklch(88% 0.21 145);
+  --color-on-card-muted: oklch(64% 0.13 145);
+
+  --color-accent: oklch(90% 0.22 145);
+  --color-accent-ink: oklch(12% 0.03 150);
+  --color-focus: oklch(92% 0.23 145);
+  --color-danger: oklch(70% 0.2 30);
+  --color-danger-on-card: oklch(72% 0.19 30);
+
+  --font-display: var(--family-mono);
+  --font-body: var(--family-mono);
+  --font-mono: var(--family-mono);
+  --display-case: none;
+
+  --card-edge: none;
+  --card-border: var(--rule-thin) solid var(--color-card-rule);
+}

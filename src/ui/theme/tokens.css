@@ -1,0 +1,59 @@
+/* Hallmark · macrostructure: Marquee Hero · tone: utilitarian · anchor hue: 128 (signal green)
+ * theme: custom, skinnable · themes: dark (default) · light · matrix · see ./themes/
+ * vibe: "thermal receipt, carbon ink, after-hours payphone signal"
+ * display: Big Shoulders · body: Geist · numerals: Geist Mono (matrix: mono everywhere)
+ * nav: N9 edge-aligned · footer: Ft4 dense colophon
+ *
+ * Contract: components use ONLY the role tokens below. Themes (./themes/*.css) assign values to the
+ * --color-*, --font-* and --card-* roles; nothing else in the kit knows which theme is active.
+ */
+
+:root {
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.5rem;
+  --text-3xl: clamp(2.5rem, 6vw, 4.5rem);
+  --text-marquee: clamp(3rem, 12.4vw, 13rem);
+
+  /* 4pt spacing */
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --gutter: clamp(1rem, 4vw, 3rem);
+
+  /* Shape */
+  --measure: 62ch;
+  --receipt-width: 26rem;
+  --radius-sm: 3px;
+  --rule-thin: 1px;
+  --rule-thick: 6px;
+  --tooth: 10px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-print: 900ms;
+
+  /* Shared receipt edge, used by themes that print on paper */
+  --edge-torn:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x,
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x;
+
+  /* Font families (loaded in app/layout.tsx) */
+  --family-display: var(--font-big-shoulders), "Arial Narrow", sans-serif;
+  --family-body: var(--font-geist-sans), system-ui, sans-serif;
+  --family-mono: var(--font-geist-mono), ui-monospace, monospace;
+}

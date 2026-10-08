@@ -1,0 +1,29 @@
+/* Theme · light — daylight counter, the same receipts, a deeper green for contrast on white. */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: oklch(96% 0.008 95);
+  --color-canvas-2: oklch(92% 0.01 95);
+  --color-canvas-rule: oklch(82% 0.012 95);
+  --color-on-canvas: oklch(20% 0.012 140);
+  --color-on-canvas-muted: oklch(44% 0.014 130);
+
+  --color-card: oklch(99.2% 0.004 95);
+  --color-card-2: oklch(95% 0.008 95);
+  --color-card-rule: oklch(80% 0.012 95);
+  --color-on-card: oklch(20% 0.012 95);
+  --color-on-card-muted: oklch(46% 0.014 95);
+
+  --color-accent: oklch(52% 0.16 140);
+  --color-accent-ink: oklch(98% 0.01 130);
+  --color-focus: oklch(50% 0.19 140);
+  --color-danger: oklch(55% 0.19 32);
+  --color-danger-on-card: oklch(50% 0.18 32);
+
+  --font-display: var(--family-display);
+  --font-body: var(--family-body);
+  --font-mono: var(--family-mono);
+  --display-case: uppercase;
+
+  --card-edge: var(--edge-torn);
+  --card-border: none;
+}

@@ -1,9 +1,17 @@
 .nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-md) var(--gutter);
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .cta {
@@ -15,7 +23,7 @@
 }
 
 .cta:hover {
-  color: var(--color-accent);
+  text-decoration-thickness: 2px;
 }
 
 .main {
@@ -25,11 +33,11 @@
 .colophon {
   margin-top: var(--space-3xl);
   padding: var(--space-xl) var(--gutter) var(--space-2xl);
-  border-top: var(--rule-thin) solid var(--color-carbon-rule);
+  border-top: var(--rule-thin) solid var(--color-canvas-rule);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.7;
-  color: var(--color-on-carbon-muted);
+  color: var(--color-on-canvas-muted);
 }
 
 .colophon p {

@@ -16,19 +16,19 @@
     transform var(--dur-fast) var(--ease-out);
 }
 
-.onPaper {
-  --button-ink: var(--color-paper-ink);
-  --button-paper: var(--color-paper);
+.onCard {
+  --button-ink: var(--color-on-card);
+  --button-fill-ink: var(--color-card);
 }
 
-.onCarbon {
-  --button-ink: var(--color-on-carbon);
-  --button-paper: var(--color-carbon);
+.onCanvas {
+  --button-ink: var(--color-on-canvas);
+  --button-fill-ink: var(--color-canvas);
 }
 
 .solid {
   background: var(--button-ink);
-  color: var(--button-paper);
+  color: var(--button-fill-ink);
 }
 
 .outline {
@@ -42,7 +42,7 @@
 
 .outline:hover:not(:disabled) {
   background: var(--button-ink);
-  color: var(--button-paper);
+  color: var(--button-fill-ink);
 }
 
 .button:active:not(:disabled) {
@@ -59,7 +59,7 @@
 }
 
 .button[data-state="error"] {
-  border-color: var(--color-danger-on-paper);
+  border-color: var(--color-danger-on-card);
 }
 
 .button[data-state="success"] {

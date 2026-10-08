@@ -1,0 +1,17 @@
+.notice {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.info {
+  color: var(--color-on-card-muted);
+}
+
+.error {
+  color: var(--color-danger-on-card);
+}
+
+.success {
+  color: var(--color-on-card);
+  font-weight: 600;
+}
