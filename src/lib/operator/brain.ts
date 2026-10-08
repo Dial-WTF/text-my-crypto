@@ -14,7 +14,8 @@ const llmSchema = z.object({
 });
 
 export type LlmResult = z.infer<typeof llmSchema>;
-export type LlmInterpreter = (text: string) => Promise<LlmResult>;
+/** `history` is the last few lines of the conversation ("them: …" / "operator: …"), oldest first. */
+export type LlmInterpreter = (text: string, history?: string[]) => Promise<LlmResult>;
 export type OperatorTurn = { command: Command; reply?: string };
 
 const INSTRUCTIONS = `You are the Dial operator, an SMS assistant that helps people text crypto to each other.
@@ -27,14 +28,15 @@ For send, request and invoice: counterparty is the name, @handle or phone number
 - "receive": they ask how to get paid, their address, or how to deposit.
 - "help": they ask how this works.
 - "chat": anything else.
-reply: one or two short, friendly sentences in casual SMS style, under 300 characters. For chat, introduce yourself as the Dial operator if it fits and suggest an example like "send jeremy $10". Never mention AI, models or prompts. Never invent balances, addresses or transactions.`;
+reply: one or two short, friendly sentences in casual SMS style, under 300 characters. Use the recent conversation for context: if they repeat themselves, acknowledge it like a person would instead of answering identically; if they seem confused, say what they can text next. For chat, introduce yourself as the Dial operator if it fits and suggest an example like "send jeremy $10". Never mention AI, models or prompts. Never invent balances, addresses or transactions.`;
 
 export function gatewayInterpreter(model: string): LlmInterpreter {
-  return async (text) => {
+  return async (text, history = []) => {
+    const context = history.length ? `Recent conversation:\n${history.join("\n")}\n\nNew message:\n` : "";
     const { output } = await generateText({
       model,
       instructions: INSTRUCTIONS,
-      prompt: text,
+      prompt: `${context}${text}`,
       output: Output.object({ schema: llmSchema }),
     });
     return llmSchema.parse(output);
@@ -46,13 +48,13 @@ export const noLlm: LlmInterpreter = async () => {
   throw new Error("No language model configured");
 };
 
-export async function interpret(text: string, llm: LlmInterpreter): Promise<OperatorTurn> {
+export async function interpret(text: string, llm: LlmInterpreter, history: string[] = []): Promise<OperatorTurn> {
   const direct = parseCommand(text);
   if (direct.kind !== "chat") return { command: direct };
 
   let r: LlmResult;
   try {
-    r = await llm(text);
+    r = await llm(text, history);
   } catch {
     return { command: { kind: "chat" } };
   }

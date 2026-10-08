@@ -53,7 +53,7 @@ export const contacts = sqliteTable(
 
 export const conversations = sqliteTable("conversations", {
   phone: text("phone").primaryKey(),
-  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice"] }).notNull(),
+  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice", "awaiting_duplicate"] }).notNull(),
   payload: text("payload").notNull().default("{}"),
   expiresAt: ts("expires_at").notNull(),
 });
@@ -108,6 +108,12 @@ export const intents = sqliteTable("intents", {
   error: text("error"),
   createdAt: ts("created_at").notNull().default(now),
   settledAt: ts("settled_at"),
+});
+
+/** Numbers that texted STOP. Nothing is sent to them until they text START. */
+export const smsOptOuts = sqliteTable("sms_opt_outs", {
+  phone: text("phone").primaryKey(),
+  optedOutAt: ts("opted_out_at").notNull(),
 });
 
 export const smsLog = sqliteTable("sms_log", {

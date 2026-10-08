@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
 import { smsLog } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -6,24 +6,25 @@ import type { InboundSms } from "./inbound";
 import { INBOUND_LEASE_MS } from "./lease";
 
 /**
- * Records an inbound text and says whether the caller should handle it.
+ * Records an inbound text. Returns its log id, or null if the caller should not handle it.
  * Without a claim, only the first delivery is handled. With a claim (from claimInbound), the
- * claim holder handles it until it is marked handled.
+ * claim holder gets the existing row's id until the text is marked handled.
  */
-export async function logInbound(db: Db, msg: InboundSms): Promise<boolean> {
+export async function logInbound(db: Db, msg: InboundSms, now = new Date()): Promise<string | null> {
+  const id = newId("sms");
   const rows = await db
     .insert(smsLog)
-    .values({ id: newId("sms"), direction: "in", phone: msg.from, body: msg.body, dedupeKey: msg.dedupeKey })
+    .values({ id, direction: "in", phone: msg.from, body: msg.body, dedupeKey: msg.dedupeKey, createdAt: now })
     .onConflictDoNothing({ target: smsLog.dedupeKey })
     .returning({ id: smsLog.id });
-  if (rows.length > 0) return true;
-  if (!msg.claim) return false;
-  const mine = await db
+  if (rows.length > 0) return id;
+  if (!msg.claim) return null;
+  const [mine] = await db
     .select({ id: smsLog.id })
     .from(smsLog)
     .where(and(eq(smsLog.dedupeKey, msg.dedupeKey), eq(smsLog.claimId, msg.claim), isNull(smsLog.handledAt)))
     .limit(1);
-  return mine.length > 0;
+  return mine?.id ?? null;
 }
 
 export type InboundClaim = { kind: "claimed"; claimId: string } | { kind: "handled" } | { kind: "busy" };
@@ -45,6 +46,7 @@ export async function claimInbound(db: Db, msg: InboundSms, now: Date): Promise<
       dedupeKey: msg.dedupeKey,
       claimId,
       claimedAt: now,
+      createdAt: now,
     })
     .onConflictDoNothing({ target: smsLog.dedupeKey })
     .returning({ id: smsLog.id });
@@ -88,6 +90,37 @@ export async function releaseInbound(db: Db, dedupeKey: string, claimId: string)
     .where(and(eq(smsLog.dedupeKey, dedupeKey), eq(smsLog.claimId, claimId), isNull(smsLog.handledAt)));
 }
 
-export async function logOutbound(db: Db, phone: string, body: string): Promise<void> {
-  await db.insert(smsLog).values({ id: newId("sms"), direction: "out", phone, body });
+export async function logOutbound(db: Db, phone: string, body: string, now = new Date()): Promise<void> {
+  await db.insert(smsLog).values({ id: newId("sms"), direction: "out", phone, body, createdAt: now });
+}
+
+/** Insertion order. Timestamps can tie; SQLite's rowid never does. */
+const inserted = sql`rowid`;
+
+const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * A double-tap: the previous message in this conversation (either direction) is the same text from the
+ * same phone, inside the window, with no reply from the operator in between. If the operator answered
+ * in between, a repeat is deliberate and gets handled like any other text.
+ */
+export async function isBurstRepeat(db: Db, logId: string, phone: string, body: string, since: Date): Promise<boolean> {
+  const [previous] = await db
+    .select({ direction: smsLog.direction, body: smsLog.body, createdAt: smsLog.createdAt })
+    .from(smsLog)
+    .where(and(eq(smsLog.phone, phone), sql`rowid < (select rowid from sms_log where id = ${logId})`))
+    .orderBy(desc(inserted))
+    .limit(1);
+  return Boolean(previous && previous.direction === "in" && previous.createdAt >= since && norm(previous.body) === norm(body));
+}
+
+/** The last few lines of the conversation, oldest first, for conversational replies. */
+export async function recentHistory(db: Db, phone: string, limit = 6): Promise<string[]> {
+  const rows = await db
+    .select({ direction: smsLog.direction, body: smsLog.body })
+    .from(smsLog)
+    .where(eq(smsLog.phone, phone))
+    .orderBy(desc(inserted))
+    .limit(limit);
+  return rows.reverse().map((r) => `${r.direction === "in" ? "them" : "operator"}: ${r.body.slice(0, 200)}`);
 }

@@ -17,6 +17,7 @@ export function botDeps(): BotDeps {
     llm: e.AI_GATEWAY_API_KEY ? gatewayInterpreter(e.DIAL_OPERATOR_MODEL) : noLlm,
     adapters: getAdapters(),
     appUrl: e.APP_URL,
+    operatorNumber: e.DIAL_OPERATOR_NUMBER,
     now: () => new Date(),
     walletKey: e.WALLET_ENCRYPTION_KEY,
     perTxCap: usdToBaseUnits(e.PER_TX_CAP_USD),

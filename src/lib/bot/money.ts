@@ -12,7 +12,7 @@ import {
   isClaimed,
   searchDirectory,
 } from "@/lib/identity";
-import { createIntent, issueCode, sentSince } from "@/lib/intents";
+import { createIntent, findPendingDuplicate, findRecentCompletedDuplicate, issueCode, sentSince } from "@/lib/intents";
 import { formatUsd, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
@@ -44,6 +44,7 @@ async function resolveCounterparty(deps: BotDeps, owner: User, raw: string): Pro
     return u ? { user: u } : { error: replies.unknownHandle(raw) };
   }
   const phone = normalizePhone(raw) ?? (await findContact(deps.db, owner.id, raw))?.phone ?? null;
+  if (phone === deps.operatorNumber) return { error: replies.thatsMyNumber() };
   if (phone) return { user: (await findUserByPhone(deps.db, phone)) ?? (await createUnclaimedUser(deps.db, phone)) };
 
   const exact = await findUserByHandle(deps.db, raw);
@@ -61,18 +62,57 @@ async function codeFor(deps: BotDeps, payerId: string, intentId: string, amount:
   return issueCode(deps.db, intentId);
 }
 
+async function repeatReply(
+  deps: BotDeps,
+  user: User,
+  otherId: string,
+  kind: MoneyCommand["kind"],
+  amount: bigint,
+  chain: MoneyCommand["chain"] & string,
+  otherName: string,
+): Promise<string | null> {
+  const isSend = kind === "send";
+  const pending = await findPendingDuplicate(
+    deps.db,
+    { senderId: isSend ? user.id : otherId, recipientId: isSend ? otherId : user.id, kind, amount, chain },
+    deps.now(),
+  );
+  if (pending) {
+    if (!isSend) return replies.alreadyRequested(formatUsd(amount), otherName);
+    const code = await codeFor(deps, user.id, pending.id, amount);
+    return replies.alreadyPending(formatUsd(amount), otherName, code, `${deps.appUrl}/a/${pending.id}`);
+  }
+  if (isSend) {
+    const since = new Date(deps.now().getTime() - JUST_SENT_MS);
+    const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: otherId, amount, chain }, since);
+    if (done) return replies.justSent(formatUsd(amount), otherName);
+  }
+  return null;
+}
+
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-/** Validates a send/request/invoice and creates its PaymentIntent. Returns the reply for the person who texted. */
-export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand): Promise<string> {
+const JUST_SENT_MS = 3 * 60_000;
+
+/**
+ * Validates a send/request/invoice and creates its PaymentIntent. Returns the reply for the person who texted.
+ * A repeat of something already waiting (or just sent) is answered conversationally instead of creating a
+ * second payment; `allowDuplicate` is set once the person has confirmed with NEW.
+ */
+export async function prepareMoney(
+  deps: BotDeps,
+  user: User,
+  cmd: MoneyCommand,
+  opts: { allowDuplicate?: boolean } = {},
+): Promise<string> {
   const chain = cmd.chain ?? user.defaultChain;
   const adapter = deps.adapters[chain];
   if (!adapter) return replies.chainUnavailable(chainLabel(chain));
 
   const amount = usdToBaseUnits(cmd.amountUsd);
-  if (amount <= 0n) return replies.help();
+  if (amount <= 0n) return replies.badAmount(formatUsd(deps.perTxCap));
   if (amount > deps.perTxCap) return replies.overCap(formatUsd(deps.perTxCap));
 
   const resolved = await resolveCounterparty(deps, user, cmd.counterparty);
@@ -109,6 +149,14 @@ export async function prepareMoney(deps: BotDeps, user: User, cmd: MoneyCommand)
   const note = cmd.note ?? null;
   const otherName = describe(other);
   const me = displayName(user);
+
+  if (!opts.allowDuplicate) {
+    const repeat = await repeatReply(deps, user, other.id, cmd.kind, amount, chain, otherName);
+    if (repeat) {
+      await setConversation(deps.db, user.phone, { state: "awaiting_duplicate", payload: { command: JSON.stringify(cmd) } }, deps.now());
+      return repeat;
+    }
+  }
 
   if (cmd.kind === "send") {
     const balance = await adapter.getBalance(mine.address);
