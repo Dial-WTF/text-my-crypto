@@ -27,15 +27,15 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 ## User flows
 
 ### 1. Start from a text (single landing page)
-1. The site is one page: "Text here to start", the Dial AI phone number, and a QR code that opens the phone's SMS app with an `sms:` link prefilled (`sms:+1XXXXXXXXXX?&body=hi`). Below it, a looping SMS-thread mock of the full flow.
+1. The site is one page: "Text here to start", the Dial operator phone number, and a QR code that opens the phone's SMS app with an `sms:` link prefilled (`sms:+1XXXXXXXXXX?&body=hi`). Below it, a looping SMS-thread mock of the full flow.
 2. The first text from an unknown number gets a reply with a one-time signup link (`/s/<token>`, 15 min). The link is delivered to that phone, so opening it proves control of the number. No separate OTP step.
 3. Signup page: create a passkey, pick a handle ("jeremy"). A server-held wallet is created per chain, and the passkey gates every spend from it. Testnet funds are dropped automatically on signup.
 4. Bot texts: `You're in, jeremy. Try: send alex $5`.
 
 ### 2. Send (SMS)
-1. User texts the Dial AI number: `send jeremy $10`.
+1. User texts the Dial operator number: `send jeremy $10`.
 2. Payphone forwards the inbound SMS to our webhook. We look up the sender by phone. Unknown sender → flow 1.
-3. Dial AI reads the message. Small talk gets a short friendly reply (first contact: `hi, I'm Dial. Text me something like "send jeremy $10" and I'll handle it.`). When it detects a payment, it parses to `{ action: "send", amount: "10", asset: "USD", recipient: "jeremy", chain?: "solana" }`.
+3. The Dial operator reads the message. Small talk gets a short friendly reply (first contact: `hi, I'm the Dial operator. I can help you text your crypto. Try "send jeremy $10".`). The bot persona is **the Dial operator** everywhere. When it detects a payment, it parses to `{ action: "send", amount: "10", asset: "USD", recipient: "jeremy", chain?: "solana" }`.
 4. Deterministic validation: amount > 0 and ≤ per-tx cap, recipient resolves, sender has balance. Any failure → plain-English SMS reply, no intent created.
 5. Server creates a **PaymentIntent** (immutable: sender, recipient address, chain, token, amount in base units, nonce, expiresAt = now + 10 min) and texts back:
    `Send 10 USDC to jeremy on Solana? Approve: https://<host>/a/<intentId>`
@@ -53,7 +53,7 @@ If the recipient is a phone number with no account, funds go to a per-intent esc
 Payphone line ──► /api/sms/[secret] (secret-path webhook)
                    │
                    ▼
-           Dial AI intent parser  (LLM → typed object; never sees keys)
+           the Dial operator intent parser  (LLM → typed object; never sees keys)
                    │
                    ▼
            Validator + Identity resolver (Postgres directory)
@@ -149,7 +149,7 @@ Custom, not a component-kit default. Payments end in a receipt, so the UI is bui
 ## Schedule
 | Day | Deliverable |
 |---|---|
-| Oct 9 | Scaffold, landing page + QR, DB, Payphone webhook + reply, Dial AI conversation + parser, identity, intents, Solana adapter. Text → settled on Solana devnet (approval stubbed). |
+| Oct 9 | Scaffold, landing page + QR, DB, Payphone webhook + reply, the Dial operator conversation + parser, identity, intents, Solana adapter. Text → settled on Solana devnet (approval stubbed). |
 | Oct 10 | Passkey onboarding + intent-bound approval. Tempo adapter. Receipt UI. |
 | Oct 11 | Base adapter, Zcash sidecar if green, demo seed data, record both videos. |
 | Oct 12 | Buffer, claim-link stretch if green, submit before 11:59pm PDT. |
