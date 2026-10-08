@@ -82,7 +82,7 @@ Payphone line ──► /api/sms/[secret] (secret-path webhook)
 | Unit | Responsibility | Depends on |
 |---|---|---|
 | `channels/sms` | Accept Payphone inbound forwards (`{ phoneNumber, sender, message, date }`) on a secret path, normalize to `{ from, body }`, send outbound via Payphone `POST /api/v1/sms/send` with `from` = our line | Payphone.wtf |
-| `agent/parse` | Text → `ParsedCommand` (zod schema) via AI Gateway structured output. Also handles `balance`, `help` | AI SDK |
+| `agent/parse` | Text → `ParsedCommand` (zod schema) via AI SDK structured output through Vercel AI Gateway (`AI_GATEWAY_API_KEY`). Also handles `balance`, `help` | AI SDK |
 | `identity` | Users, handles, phones, per-chain addresses; resolve `"jeremy"` or `+1555…` → `Recipient` | DB |
 | `intents` | Create, fetch, canonical hash, state machine `pending → approved → settling → settled \| failed \| expired` | DB |
 | `auth/passkey` | WebAuthn registration and intent-bound assertions (SimpleWebAuthn) | DB |
@@ -98,6 +98,13 @@ interface SettlementAdapter {
 }
 ```
 
+### Hosting
+- Next.js 16 on **Cloudflare Workers via OpenNext** (`@opennextjs/cloudflare`), Workers Paid plan. No `runtime = "edge"`; background work after a webhook response uses `getCloudflareContext().ctx.waitUntil`.
+- Secrets via `wrangler secret put`; local dev reads `.dev.vars` / `.env.local`.
+- Postgres on **Neon** via `@neondatabase/serverless` HTTP driver (fetch-based, Worker-friendly). Tests use PGlite.
+- Everything on the request path uses WebCrypto and `fetch` (no Node-only crypto, no WebSocket subscriptions). Solana confirmation polls `getSignatureStatuses`.
+- **Cloudflare Containers** only if needed: the Zcash wallet sidecar.
+
 ### Data model (Postgres)
 - `users(id, phone_e164 unique, handle unique, default_chain, created_at)`
 - `wallets(user_id, chain, address, custody: "passkey" | "server", encrypted_secret null)`
@@ -110,7 +117,7 @@ interface SettlementAdapter {
 - **Solana** (primary, main demo): devnet, `@solana/kit` + `@solana-program/token`, Circle devnet USDC (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, 6 decimals). Server-held keypair per user, passkey-gated. A treasury wallet pays all SOL fees and ATA rent, so users never hold SOL, and drips test USDC to new users.
 - **Tempo**: Moderato testnet (chain 42431), `viem/tempo` client, AlphaUSD (`0x20c0000000000000000000000000000000000001`, 6 decimals) as transfer and fee token, `token.transferSync` with memo = intent id, faucet `fundSync` on signup. Verify the Transfer event recipient, since blocked transfers can succeed at the tx level.
 - **Base**: Base Sepolia, viem, USDC test token. Server-held key per user, passkey-gated.
-- **Zcash** (stretch): testnet, shielded send with the intent id in the encrypted memo. Needs a light-client wallet process (e.g. zingo-cli against a testnet lightwalletd) on a small VPS, called by the app over an authenticated HTTP API. Built only after Solana and Tempo settle end to end.
+- **Zcash** (stretch): testnet, shielded send with the intent id in the encrypted memo. Needs a light-client wallet process (e.g. zingo-cli against a testnet lightwalletd) in a Cloudflare Container, called by the app over an authenticated HTTP API. Built only after Solana and Tempo settle end to end.
 
 Server-held secrets are encrypted at rest with a key from env. The pitch says plainly that hackathon wallets are server-held and passkey-gated on every chain, with a smart-account roadmap for the latter.
 
