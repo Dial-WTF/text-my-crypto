@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents } from "@/lib/db/schema";
@@ -91,4 +91,14 @@ export async function markFailed(db: Db, id: string, error: string): Promise<voi
     .update(intents)
     .set({ status: "failed", error: error.slice(0, 500) })
     .where(eq(intents.id, id));
+}
+
+export async function latestSettledTo(db: Db, userId: string): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.recipientId, userId), eq(intents.status, "settled")))
+    .orderBy(desc(intents.createdAt))
+    .limit(1);
+  return row ?? null;
 }
