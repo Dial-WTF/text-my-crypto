@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "text-my-crypto",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
@@ -23,5 +23,20 @@
       "database_id": "f66d243f-6966-45d5-9f57-f0b88ef98e44",
       "migrations_dir": "drizzle"
     }
-  ]
+  ],
+  // Inbound texts are queued by the webhook and handled by the consumer in worker.ts.
+  // Create once per account: `wrangler queues create sms-inbound` and `wrangler queues create sms-inbound-dlq`.
+  "queues": {
+    "producers": [{ "binding": "SMS_INBOUND", "queue": "sms-inbound" }],
+    "consumers": [
+      {
+        "queue": "sms-inbound",
+        "max_batch_size": 10,
+        "max_batch_timeout": 0,
+        "max_retries": 8,
+        "retry_delay": 30,
+        "dead_letter_queue": "sms-inbound-dlq"
+      }
+    ]
+  }
 }

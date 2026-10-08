@@ -1,10 +1,15 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
 import { smsLog } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import type { InboundSms } from "./inbound";
+import { INBOUND_LEASE_MS } from "./lease";
 
-/** Records an inbound text. Returns its log id, or null if this exact delivery was already seen. */
+/**
+ * Records an inbound text. Returns its log id, or null if the caller should not handle it.
+ * Without a claim, only the first delivery is handled. With a claim (from claimInbound), the
+ * claim holder gets the existing row's id until the text is marked handled.
+ */
 export async function logInbound(db: Db, msg: InboundSms, now = new Date()): Promise<string | null> {
   const id = newId("sms");
   const rows = await db
@@ -12,7 +17,77 @@ export async function logInbound(db: Db, msg: InboundSms, now = new Date()): Pro
     .values({ id, direction: "in", phone: msg.from, body: msg.body, dedupeKey: msg.dedupeKey, createdAt: now })
     .onConflictDoNothing({ target: smsLog.dedupeKey })
     .returning({ id: smsLog.id });
-  return rows.length > 0 ? id : null;
+  if (rows.length > 0) return id;
+  if (!msg.claim) return null;
+  const [mine] = await db
+    .select({ id: smsLog.id })
+    .from(smsLog)
+    .where(and(eq(smsLog.dedupeKey, msg.dedupeKey), eq(smsLog.claimId, msg.claim), isNull(smsLog.handledAt)))
+    .limit(1);
+  return mine?.id ?? null;
+}
+
+export type InboundClaim = { kind: "claimed"; claimId: string } | { kind: "handled" } | { kind: "busy" };
+
+/**
+ * Takes the claim on an inbound text before handling it. Claims a new message, or an unhandled one
+ * whose previous claim was released or went stale (a crashed attempt). Reports "handled" when it
+ * was already fully handled and "busy" when another attempt holds a live claim.
+ */
+export async function claimInbound(db: Db, msg: InboundSms, now: Date): Promise<InboundClaim> {
+  const claimId = newId("clm");
+  const inserted = await db
+    .insert(smsLog)
+    .values({
+      id: newId("sms"),
+      direction: "in",
+      phone: msg.from,
+      body: msg.body,
+      dedupeKey: msg.dedupeKey,
+      claimId,
+      claimedAt: now,
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: smsLog.dedupeKey })
+    .returning({ id: smsLog.id });
+  if (inserted.length > 0) return { kind: "claimed", claimId };
+
+  const staleBefore = new Date(now.getTime() - INBOUND_LEASE_MS);
+  const taken = await db
+    .update(smsLog)
+    .set({ claimId, claimedAt: now })
+    .where(
+      and(
+        eq(smsLog.dedupeKey, msg.dedupeKey),
+        isNull(smsLog.handledAt),
+        or(isNull(smsLog.claimedAt), lte(smsLog.claimedAt, staleBefore)),
+      ),
+    )
+    .returning({ id: smsLog.id });
+  if (taken.length > 0) return { kind: "claimed", claimId };
+
+  const [row] = await db
+    .select({ handledAt: smsLog.handledAt })
+    .from(smsLog)
+    .where(eq(smsLog.dedupeKey, msg.dedupeKey))
+    .limit(1);
+  return row?.handledAt ? { kind: "handled" } : { kind: "busy" };
+}
+
+/** Marks a claimed inbound text as fully handled so later deliveries skip it. */
+export async function finishInbound(db: Db, dedupeKey: string, claimId: string, now: Date): Promise<void> {
+  await db
+    .update(smsLog)
+    .set({ handledAt: now })
+    .where(and(eq(smsLog.dedupeKey, dedupeKey), eq(smsLog.claimId, claimId)));
+}
+
+/** Gives up a claim after a failed attempt so the next delivery can retry right away. */
+export async function releaseInbound(db: Db, dedupeKey: string, claimId: string): Promise<void> {
+  await db
+    .update(smsLog)
+    .set({ claimId: null, claimedAt: null })
+    .where(and(eq(smsLog.dedupeKey, dedupeKey), eq(smsLog.claimId, claimId), isNull(smsLog.handledAt)));
 }
 
 export async function logOutbound(db: Db, phone: string, body: string, now = new Date()): Promise<void> {

@@ -24,6 +24,20 @@ describe("parseCommand: send", () => {
   });
 });
 
+describe("parseCommand: multi-word names", () => {
+  it.each([
+    ["send my guy $1", { kind: "send", counterparty: "my guy", amountUsd: "1" }],
+    ["send my brother jake $20", { kind: "send", counterparty: "my brother jake", amountUsd: "20" }],
+    ["send $5 to my guy", { kind: "send", counterparty: "my guy", amountUsd: "5" }],
+    ["send $5 to alex for pizza", { kind: "send", counterparty: "alex", amountUsd: "5", note: "pizza" }],
+    ["send $5 to my guy for pizza", { kind: "send", counterparty: "my guy", amountUsd: "5", note: "pizza" }],
+    ["request $10 from my mom", { kind: "request", counterparty: "my mom", amountUsd: "10" }],
+    ["send jeremy $10 for pizza", { kind: "send", counterparty: "jeremy", amountUsd: "10", note: "pizza" }],
+  ])("%s", (text, expected) => {
+    expect(parseCommand(text)).toEqual(expected);
+  });
+});
+
 describe("parseCommand: request and invoice", () => {
   it.each([
     ["request $25 from adam", { kind: "request", counterparty: "adam", amountUsd: "25" }],

@@ -77,10 +77,19 @@ pnpm dev --port 3100
 node --env-file=.env.local scripts/sim.mjs +15550001111 "hi"
 ```
 
-Local runs use `SMS_MODE=log`: replies are printed, never sent. Tests use an in-memory SMS stub and SQLite (`pnpm test`); `SOLANA_INT=1 pnpm test` also runs the devnet settlement tests.
+Local runs use `SMS_MODE=log`: replies are printed, never sent. `pnpm dev` handles inbound texts inline because `next dev` has no queue consumer; `pnpm run preview` runs the real worker (`worker.ts`) with a local queue, so it exercises the webhook → queue → consumer path. Preview reads secrets from `.dev.vars`. Tests use an in-memory SMS stub and SQLite (`pnpm test`); `SOLANA_INT=1 pnpm test` also runs the devnet settlement tests.
 
 ## Deploy
 
 Pushes to `main` run `.github/workflows/deploy.yml`: checks, D1 migrations, then `opennextjs-cloudflare deploy`. It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KEY`, `SOLANA_TREASURY_SEED`, optional `AI_GATEWAY_API_KEY`) live in the Worker via `wrangler secret`.
+
+Inbound SMS goes through a Cloudflare Queue (bindings in `wrangler.jsonc`). The queues must exist before the first deploy that uses them:
+
+```bash
+pnpm wrangler queues create sms-inbound
+pnpm wrangler queues create sms-inbound-dlq
+```
+
+Texts that still fail after 8 retries land in `sms-inbound-dlq`, which has no consumer. Inspect them in the Cloudflare dashboard under Queues → sms-inbound-dlq. Every inbound text logs JSON lines with `"evt":"sms_inbound"`, a hashed key prefix, the stage, outcome and attempt.
 
 Testnet only. Wallets are held by Dial and encrypted at rest; tranche 2 moves passkey accounts to self-custody.

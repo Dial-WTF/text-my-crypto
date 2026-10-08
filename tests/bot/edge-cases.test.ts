@@ -4,6 +4,7 @@ import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
 import { getIntent } from "@/lib/intents";
+import { noLlm } from "@/lib/operator/brain";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
@@ -142,6 +143,19 @@ describe("cancelling and bad targets", () => {
   it("refuses the operator's own number and zero amounts", async () => {
     expect(await say(ALEX, "send $5 to (806) 607-1387")).toBe("That's my number. Who should get the money?");
     expect(await say(ALEX, "send @jeremy $0")).toBe("Amounts can be from $0.01 to $50.");
+  });
+});
+
+describe("things the operator can't parse", () => {
+  it("asks for the number of a multi-word name", async () => {
+    expect(await say(ALEX, "send my guy $1")).toBe("What's my guy's number?");
+  });
+
+  it("explains the format when a payment can't be understood and no model is configured", async () => {
+    deps = { ...deps, llm: noLlm };
+    expect(await say(ALEX, "send some money to that guy from yesterday")).toBe(
+      'I didn\'t catch who or how much. Try "send @jeremy $5", "send $5 to +1 555 123 4567" or "request $10 from alex".',
+    );
   });
 });
 

@@ -29,7 +29,9 @@ export type Command =
   | { kind: "help" }
   | { kind: "chat" };
 
-const WHO = String.raw`@?[a-z][a-z0-9_]{1,19}|\+?[\d\s().-]{10,}?`;
+// A handle, up to three plain words ("my guy", "my brother jake"), or a phone number. Lazy, so a trailing
+// "for pizza" or "on tempo" is never swallowed into the name.
+const WHO = String.raw`@?[a-z][a-z0-9_']{1,19}(?:\s[a-z][a-z0-9_']{0,19}){0,2}?|\+?[\d\s().-]{10,}?`;
 const AMT = String.raw`\$?(\d{1,7}(?:\.\d+)?)\s*(?:usdc?|dollars?|bucks)?`;
 const FOR = String.raw`(?:\s+for\s+(.+?))?`;
 const ON = String.raw`(?:\s+on\s+([a-z]+))?`;

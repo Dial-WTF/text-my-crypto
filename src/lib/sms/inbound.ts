@@ -9,7 +9,14 @@ const payload = z.object({
   date: z.union([z.string(), z.number()]),
 });
 
-export type InboundSms = { to: string; from: string; body: string; dedupeKey: string };
+export type InboundSms = {
+  to: string;
+  from: string;
+  body: string;
+  dedupeKey: string;
+  /** Set by the queue processor once it holds the claim on this message (see claimInbound). */
+  claim?: string;
+};
 
 export async function parseInbound(json: unknown): Promise<InboundSms | null> {
   const p = payload.safeParse(json);
