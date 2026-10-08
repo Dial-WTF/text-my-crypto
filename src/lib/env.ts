@@ -10,6 +10,12 @@ const schema = z.object({
   SOLANA_RPC_URL: z.url().default("https://api.devnet.solana.com"),
   SOLANA_USDC_MINT: z.string().default("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"),
   SOLANA_TREASURY_SEED: z.string().min(40),
+  EVM_TREASURY_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
+  /** Comma-separated EVM chains to settle on, e.g. "base,arbitrum,hyperevm". Only list funded chains. */
+  EVM_CHAINS: z.string().default(""),
   SIGNUP_DRIP_USD: z.string().default("25"),
   PER_TX_CAP_USD: z.string().default("50"),
   PER_DAY_CAP_USD: z.string().default("200"),

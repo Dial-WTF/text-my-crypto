@@ -8,6 +8,10 @@ describe("chains", () => {
     expect(parseChain("zec")).toBe("zcash");
     expect(parseChain("tempo")).toBe("tempo");
     expect(parseChain("base")).toBe("base");
+    expect(parseChain("arb")).toBe("arbitrum");
+    expect(parseChain("Hyperliquid")).toBe("hyperevm");
+    expect(parseChain("eth")).toBe("ethereum");
+    expect(parseChain("hood")).toBe("robinhood");
     expect(parseChain("dogecoin")).toBeNull();
   });
 
