@@ -21,7 +21,7 @@ describe("env", () => {
     expect(e.SOLANA_RPC_URL).toBe("https://api.devnet.solana.com");
     expect(e.SOLANA_USDC_MINT).toBe("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
     expect(e.PER_TX_CAP_USD).toBe("50");
-    expect(e.DEV_APPROVE).toBe("0");
+    expect(e.SMS_MODE).toBe("log");
   });
 
   it("rejects a bad bot number", () => {

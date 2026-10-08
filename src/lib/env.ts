@@ -17,7 +17,7 @@ const schema = z.object({
   ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
   AI_GATEWAY_API_KEY: z.string().min(1),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
-  DEV_APPROVE: z.enum(["0", "1"]).default("0"),
+  SMS_MODE: z.enum(["log", "payphone"]).default("log"),
 });
 
 export type Env = z.infer<typeof schema>;

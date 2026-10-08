@@ -4,13 +4,16 @@ import { env } from "@/lib/env";
 import { usdToBaseUnits } from "@/lib/money";
 import { gatewayInterpreter } from "@/lib/operator/brain";
 import { getAdapters } from "@/lib/settlement";
-import { payphoneSender } from "@/lib/sms/payphone";
+import { logSender, payphoneSender } from "@/lib/sms/payphone";
 
 export function botDeps(): BotDeps {
   const e = env();
   return {
     db: getDb(),
-    sendSms: payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER }),
+    sendSms:
+      e.SMS_MODE === "payphone"
+        ? payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER })
+        : logSender,
     llm: gatewayInterpreter(e.DIAL_OPERATOR_MODEL),
     adapters: getAdapters(),
     appUrl: e.APP_URL,

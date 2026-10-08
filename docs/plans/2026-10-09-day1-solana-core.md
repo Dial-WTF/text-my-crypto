@@ -1696,13 +1696,7 @@ export async function logOutbound(db: Db, phone: string, body: string): Promise<
 
 - [ ] **Step 4: Run, expect PASS** — `pnpm test tests/sms.test.ts && pnpm typecheck`
 
-- [ ] **Step 5: Live send check (Jeremy's phone)** — with `.env.local` loaded:
-
-```bash
-set -a; . ./.env.local; set +a
-curl -sS -X POST "$PAYPHONE_BASE_URL/api/v1/sms/send" -H "Authorization: Bearer $PAYPHONE_API_KEY" -H "Content-Type: application/json" -d "{\"to\":\"$TEST_PHONE\",\"message\":\"hi, I'm the Dial operator. test.\",\"from\":\"$DIAL_OPERATOR_NUMBER\"}"
-```
-Expected: `success: true` and the text arrives. If it returns 402/403, the key lacks `sms:send` scope or the line needs credits; fix in Payphone before Task 13.
+- [ ] **Step 5: No live SMS in tests.** Automated tests use the in-memory sink. Local dev uses `SMS_MODE=log` (default), which only logs. Only production sets `SMS_MODE=payphone`.
 
 - [ ] **Step 6: Commit**
 
