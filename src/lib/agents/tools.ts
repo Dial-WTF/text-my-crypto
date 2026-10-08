@@ -5,6 +5,7 @@ import {
   checkMoney,
   createMoneyIntent,
   createWithdrawIntent,
+  findDuplicate,
   type MoneyError,
   type PreparedIntent,
   resolveCounterparty,
@@ -156,9 +157,10 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
 async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<ToolResult> {
   const { user } = agent;
   const ownerText = await announce(deps, user, p);
-  await text(deps, user.phone, replies.fromAgent(agent.key.label, ownerText));
+  const ownerTexted = await text(deps, user.phone, replies.fromAgent(agent.key.label, ownerText));
   const i = p.intent;
   const payerIsOwner = i.senderId === user.id;
+  const paused = "The owner has paused texts from Dial (STOP), so no code went out: they can approve at approveUrl with their passkey, or text START first.";
   return ok({
     intentId: i.id,
     status: "awaiting_approval",
@@ -169,7 +171,9 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     amountUsd: usd(i.amount),
     asset: "USDC",
     chain: i.chain,
-    message: payerIsOwner
+    message: payerIsOwner && !ownerTexted
+      ? paused
+      : payerIsOwner
       ? `Texted the owner to approve ${formatUsd(i.amount)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
       : `Texted ${describe(p.counterparty)} to pay ${formatUsd(i.amount)}. They approve or decline from their phone. Poll get_payment for the result.`,
   });
@@ -272,7 +276,17 @@ async function moneyTool(
   if ("error" in resolved) return err("unknown_handle", resolved.error);
   if ("choose" in resolved) return err("ambiguous_recipient", ambiguous(input.counterparty, resolved.choose));
   if ("askFor" in resolved) return err("unknown_recipient", notFound(resolved.askFor));
-  const r = await createMoneyIntent(deps, user, cmd, resolved.user);
+  const other = resolved.user;
+  if (other.id === user.id) return err("self", replies.selfSend());
+  const dup = await findDuplicate(deps, user, other, kind, checked.amount, checked.chain);
+  if (dup && "pending" in dup) {
+    return err(
+      "duplicate",
+      `The same ${kind} is already waiting for approval as ${dup.pending.id}. Poll get_payment instead of asking again.`,
+    );
+  }
+  if (dup) return err("duplicate", `The same payment to ${describe(other)} went out minutes ago (${dup.justSent.id}). Check get_payment.`);
+  const r = await createMoneyIntent(deps, user, cmd, other);
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }
 

@@ -60,6 +60,7 @@ Full arguments, statuses and error codes: [references/tools.md](references/tools
 
 - Never ask the user for their approval code, and never try to enter one. The person approves on their own phone or on the `approveUrl` page.
 - Confirm the recipient and amount with the user before calling a money tool. Each call texts a real person.
-- Don't retry a money tool to "fix" a pending payment. A new call makes a second payment request.
+- Don't retry a money tool to "fix" a pending payment. An identical call while one is waiting returns `duplicate` with the existing id; poll that one.
+- If the owner has texted STOP to Dial, no code goes out. The tool's `message` says so; they can still approve with a passkey at `approveUrl`.
 - Testnet for now: limits are $50 per payment and $200 per day. Accounts with a passkey need it for payments over $20.
 - Rate limits: 60 tool calls a minute and 20 money calls an hour per key. Over that you get `rate_limited`.

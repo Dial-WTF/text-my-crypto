@@ -66,6 +66,7 @@ Tool errors come back with `isError: true` and a JSON body `{ "error": "<code>",
 | `insufficient` | Not enough balance; the message says how much there is |
 | `chain_unavailable` | That chain isn't switched on |
 | `bad_address` / `nothing_to_withdraw` | Withdraw problems |
+| `duplicate` | The same payment is already waiting (the message has its id) or just went out. Poll `get_payment` |
 | `not_found` | No such payment on this account |
 | `rate_limited` | Slow down |
 | `unavailable` | Dial or the chain hiccuped. Try again in a minute |

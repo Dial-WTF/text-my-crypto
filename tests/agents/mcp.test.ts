@@ -243,6 +243,27 @@ describe("MCP over Streamable HTTP", () => {
     expect(sms.sent.length).toBe(before);
   });
 
+  it("won't start the same payment twice while one is waiting", async () => {
+    const key = await connectAgent(ALEX);
+    const first = await call(key, "send_payment", { to: "@jeremy", amountUsd: "4" });
+    const texts = sms.sent.length;
+    const again = await call(key, "send_payment", { to: "@jeremy", amountUsd: "4" });
+    expect(again.data).toMatchObject({ error: "duplicate" });
+    expect(String(again.data.message)).toContain(String(first.data.intentId));
+    expect(sms.sent.length).toBe(texts);
+    expect((await call(key, "send_payment", { to: "@jeremy", amountUsd: "4.01" })).isError).toBe(false);
+  });
+
+  it("tells the agent when the owner has paused texts", async () => {
+    const key = await connectAgent(ALEX);
+    await say(ALEX, "STOP");
+    const texts = sms.sent.length;
+    const r = await call(key, "send_payment", { to: "@jeremy", amountUsd: "3" });
+    expect(r.data).toMatchObject({ status: "awaiting_approval" });
+    expect(String(r.data.message)).toMatch(/paused texts/);
+    expect(sms.sent.length).toBe(texts);
+  });
+
   it("hides chain failures behind a plain tool error", async () => {
     const key = await connectAgent(ALEX);
     sol.getBalance = async () => {
@@ -264,10 +285,10 @@ describe("MCP over Streamable HTTP", () => {
 
   it("rate-limits money tools per key", async () => {
     const key = await connectAgent(ALEX);
-    for (let i = 0; i < 20; i++) {
-      expect((await call(key, "request_payment", { from: "@jeremy", amountUsd: "1" })).isError).toBe(false);
+    for (let i = 1; i <= 20; i++) {
+      expect((await call(key, "request_payment", { from: "@jeremy", amountUsd: String(i) })).isError).toBe(false);
     }
-    expect((await call(key, "request_payment", { from: "@jeremy", amountUsd: "1" })).data).toMatchObject({
+    expect((await call(key, "request_payment", { from: "@jeremy", amountUsd: "21" })).data).toMatchObject({
       error: "rate_limited",
     });
     // Reads still work.
