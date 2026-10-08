@@ -17,7 +17,8 @@ Update this file as things ship. Checked = done and verified.
 - [x] you · First live test: signup by text works on a real phone
 - [x] build · Fix what the live test turned up: any name becomes a profile + handle, 411 directory, pay by name
 - [x] build · State machines (classify → decide → act), STOP/START/HELP, double-tap and repeat-payment handling, code edge cases — see docs/STATES.md
-- [ ] build · Durable inbound processing (Cloudflare Queue + retries): a text sent during a deploy was lost once
+- [x] build · Durable inbound processing (Cloudflare Queue + retries + dead-letter queue): texts are queued before Payphone gets its 200
+- [x] build · Multi-word names ("send my guy $1") and a helpful reply when a payment can't be parsed
 - [ ] you · Second live test: send to a second phone, claim, request, 411
 - [ ] you · Merge PR #1 (first deploy from GitHub Actions)
 - [ ] you · Optional: add `AI_GATEWAY_API_KEY` for plain-English understanding
