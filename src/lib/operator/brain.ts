@@ -41,6 +41,11 @@ export function gatewayInterpreter(model: string): LlmInterpreter {
   };
 }
 
+/** Used when no model is configured: the grammar still handles every money command. */
+export const noLlm: LlmInterpreter = async () => {
+  throw new Error("No language model configured");
+};
+
 export async function interpret(text: string, llm: LlmInterpreter): Promise<OperatorTurn> {
   const direct = parseCommand(text);
   if (direct.kind !== "chat") return { command: direct };

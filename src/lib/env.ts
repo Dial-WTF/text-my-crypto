@@ -15,7 +15,7 @@ const schema = z.object({
   PER_DAY_CAP_USD: z.string().default("200"),
   PASSKEY_THRESHOLD_USD: z.string().default("20"),
   ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
-  AI_GATEWAY_API_KEY: z.string().min(1),
+  AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   SMS_MODE: z.enum(["log", "payphone"]).default("log"),
 });
