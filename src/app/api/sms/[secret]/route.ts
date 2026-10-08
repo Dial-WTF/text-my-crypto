@@ -1,16 +1,20 @@
-import { handleInbound } from "@/lib/bot/handle-inbound";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { botDeps } from "@/lib/deps";
 import { env } from "@/lib/env";
-import { safeEqual, waitUntil } from "@/lib/runtime";
-import { parseInbound } from "@/lib/sms/inbound";
+import type { InboundSms } from "@/lib/sms/inbound";
+import { processInbound } from "@/lib/sms/process";
+import { receiveInbound } from "@/lib/sms/webhook";
 
 export async function POST(req: Request, ctx: RouteContext<"/api/sms/[secret]">): Promise<Response> {
   const { secret } = await ctx.params;
-  if (!safeEqual(secret, env().SMS_WEBHOOK_SECRET)) return new Response("Not found", { status: 404 });
+  return receiveInbound(req, secret, { webhookSecret: env().SMS_WEBHOOK_SECRET, enqueue });
+}
 
-  const msg = await parseInbound(await req.json().catch(() => null));
-  if (!msg) return Response.json({ ok: false }, { status: 400 });
-
-  waitUntil(handleInbound(botDeps(), msg).catch((e: unknown) => console.error("handleInbound failed", e)));
-  return Response.json({ ok: true });
+async function enqueue(msg: InboundSms): Promise<void> {
+  // `next dev` runs no queue consumer, so texts are handled inline there.
+  if (process.env.NODE_ENV === "development") {
+    await processInbound(botDeps(), msg);
+    return;
+  }
+  await getCloudflareContext().env.SMS_INBOUND.send(msg);
 }
