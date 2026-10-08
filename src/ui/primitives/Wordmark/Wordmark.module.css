@@ -1,10 +1,27 @@
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  text-decoration: none;
+}
+
+.name {
   font: 800 var(--text-xl) / 1 var(--font-display);
   letter-spacing: 0.02em;
   text-transform: var(--display-case);
-  text-decoration: none;
+}
+
+.mark {
+  font-size: var(--text-xl);
 }
 
 .dot {
   color: var(--color-accent);
+}
+
+.by {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-on-canvas-muted);
+  white-space: nowrap;
 }

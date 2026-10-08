@@ -41,10 +41,6 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 
 Commands: `send jeremy $10`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `help`.
 
-## Lineage
-
-Text My Bits (2020, Rootstock) proved money could move over SMS with bearer codes. This is that idea rebuilt with phone-bound approvals, single-use payments, real per-user addresses and escrow that can't get stuck. The comparison is on the home page.
-
 ## Stack
 
 Next.js 16 on Cloudflare Workers (OpenNext) · D1 · Drizzle · `@solana/kit` · SimpleWebAuthn · AI SDK · Payphone for SMS. TypeScript throughout; Rust for the on-chain escrow program in tranche 3. See [docs/ROADMAP.md](docs/ROADMAP.md).

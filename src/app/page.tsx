@@ -5,8 +5,8 @@ import { formatUsd } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
-import { ComparisonSheet } from "@/ui/patterns/ComparisonSheet/ComparisonSheet";
 import { Marquee } from "@/ui/patterns/Marquee/Marquee";
+import { PoweredBy } from "@/ui/patterns/PoweredBy/PoweredBy";
 import { type FeedEntry, PaymentFeed } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 import { QrReceipt } from "@/ui/patterns/QrReceipt/QrReceipt";
 import { Section, Split } from "@/ui/patterns/Section/Section";
@@ -14,7 +14,7 @@ import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
-import { comparison, runsOn, settlesOn, transcript } from "./landing-content";
+import { runsOn, settlesOn, transcript } from "./landing-content";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +56,8 @@ export default async function Home() {
             Wallets are held by Dial and every movement needs a one-time code texted to your phone, or your passkey. Text
             “withdraw all to &lt;address&gt;” to take your money anywhere.
           </p>
-          <p>Text My Bits (2020) → the Dial operator (2026). Texts run on Payphone.</p>
+          <p>Texts run on Payphone.</p>
+          <p>© 2026 Dial.Work · dial.work</p>
         </>
       }
     >
@@ -65,6 +66,12 @@ export default async function Home() {
         number={formatPhone(number)}
         href={`sms:${number}?&body=hi`}
         line="Send, request and invoice crypto by text. No app. No wallet address. Works on any phone."
+      />
+
+      <PoweredBy
+        company="Dial.Work"
+        href="https://dial.work"
+        line="The Dial operator is Dial.Work's agentic peer-to-peer crypto payments, reached by SMS. Built for Colosseum's Crypto World's Fair."
       />
 
       <ChainStrip heading="Settles on" items={settlesOn} size="large" />
@@ -90,12 +97,6 @@ export default async function Home() {
         </Stack>
       </Section>
 
-      <Section
-        heading="Text My Bits, rebuilt"
-        lede="In 2020, Text My Bits proved money could move over SMS. Here is what changed."
-      >
-        <ComparisonSheet caption="Text My Bits compared with the Dial operator" beforeLabel="Text My Bits · 2020" afterLabel="Dial operator · 2026" rows={comparison} />
-      </Section>
     </SiteShell>
   );
 }

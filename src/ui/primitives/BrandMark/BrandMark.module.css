@@ -1,0 +1,9 @@
+.mark {
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background: currentColor;
+  mask: url("/brand/dialwork-mark.png") center / contain no-repeat;
+  vertical-align: -0.12em;
+}

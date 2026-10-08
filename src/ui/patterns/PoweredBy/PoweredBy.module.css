@@ -1,0 +1,47 @@
+.band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  padding: var(--space-lg) var(--gutter) 0;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  text-decoration: none;
+}
+
+.mark {
+  font-size: var(--text-2xl);
+}
+
+.label {
+  display: grid;
+  gap: var(--space-3xs);
+}
+
+.small {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-on-canvas-muted);
+}
+
+.company {
+  font: 800 var(--text-xl) / 1 var(--font-display);
+  text-transform: var(--display-case);
+}
+
+.link:hover .company {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.line {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--color-on-canvas-muted);
+}

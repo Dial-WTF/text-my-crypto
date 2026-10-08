@@ -12,7 +12,7 @@ const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 const terminal = Share_Tech_Mono({ variable: "--font-share-tech-mono", subsets: ["latin"], weight: "400", preload: false });
 
 export const metadata: Metadata = {
-  title: "Dial operator: text money to anyone",
+  title: "Dial operator by Dial.Work: text money to anyone",
   description: "Text the Dial operator to send, request and invoice in USDC. No app, no wallet address. Works on any phone.",
 };
 
