@@ -10,7 +10,8 @@ export const intentKind = pgEnum("intent_kind", ["send", "request", "invoice"]);
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull().unique(),
-  handle: text("handle").notNull().unique(),
+  handle: text("handle").unique(),
+  claimedAt: ts("claimed_at"),
   defaultChain: chainEnum("default_chain").notNull().default("solana"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });

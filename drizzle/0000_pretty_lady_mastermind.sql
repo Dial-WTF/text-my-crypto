@@ -41,7 +41,8 @@ CREATE TABLE "sms_log" (
 CREATE TABLE "users" (
 	"id" text PRIMARY KEY NOT NULL,
 	"phone" text NOT NULL,
-	"handle" text NOT NULL,
+	"handle" text,
+	"claimed_at" timestamp with time zone,
 	"default_chain" "chain" DEFAULT 'solana' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_phone_unique" UNIQUE("phone"),

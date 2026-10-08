@@ -28,13 +28,36 @@ export async function resolveRecipient(db: Db, raw: string): Promise<User | null
   return findUserByHandle(db, raw.trim().replace(/^@/, "").toLowerCase());
 }
 
-export async function createUser(db: Db, input: { phone: string; handle: string }): Promise<User> {
+export async function createUser(db: Db, input: { phone: string; handle: string }, now = new Date()): Promise<User> {
   const [u] = await db
     .insert(users)
-    .values({ id: newId("usr"), ...input })
+    .values({ id: newId("usr"), ...input, claimedAt: now })
     .returning();
   if (!u) throw new Error("createUser returned no row");
   return u;
+}
+
+export async function createUnclaimedUser(db: Db, phone: string): Promise<User> {
+  const [u] = await db.insert(users).values({ id: newId("usr"), phone }).returning();
+  if (!u) throw new Error("createUnclaimedUser returned no row");
+  return u;
+}
+
+export async function claimUser(db: Db, userId: string, handle: string, now: Date): Promise<User | null> {
+  const [u] = await db
+    .update(users)
+    .set({ handle, claimedAt: now })
+    .where(and(eq(users.id, userId), isNull(users.claimedAt)))
+    .returning();
+  return u ?? null;
+}
+
+export function isClaimed(u: User): boolean {
+  return u.claimedAt !== null && u.handle !== null;
+}
+
+export function displayName(u: Pick<User, "handle" | "phone">): string {
+  return u.handle ?? `${u.phone.slice(0, -4).replace(/\d/g, "•")}${u.phone.slice(-4)}`;
 }
 
 export async function createSignupToken(db: Db, phone: string, now: Date): Promise<string> {

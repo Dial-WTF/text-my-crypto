@@ -1,5 +1,5 @@
 {
-  "id": "729544d1-8d24-4808-84dc-d1c722bb48c1",
+  "id": "0e437766-e27d-480e-935d-e6958dedb065",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -280,7 +280,13 @@
           "name": "handle",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "default_chain": {
           "name": "default_chain",

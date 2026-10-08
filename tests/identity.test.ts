@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Db } from "@/lib/db/client";
-import { consumeSignupToken, createSignupToken, createUser, peekSignupToken, resolveRecipient } from "@/lib/identity";
+import {
+  claimUser,
+  consumeSignupToken,
+  createSignupToken,
+  createUnclaimedUser,
+  createUser,
+  displayName,
+  isClaimed,
+  peekSignupToken,
+  resolveRecipient,
+} from "@/lib/identity";
 import { addWallet, getWallet, unsealWallet } from "@/lib/wallets";
 import { createTestDb } from "./helpers/db";
 
@@ -42,5 +52,20 @@ describe("identity", () => {
     expect(w.secretEnc).not.toContain("Addr111");
     expect(await unsealWallet(w, key)).toEqual(secret);
     expect(await getWallet(db, u.id, "tempo")).toBeNull();
+  });
+});
+
+describe("unclaimed users", () => {
+  it("creates a nameless user that can be claimed once", async () => {
+    const u = await createUnclaimedUser(db, "+15550000050");
+    expect(isClaimed(u)).toBe(false);
+    expect(displayName(u)).toBe("+•••••••0050");
+    expect((await resolveRecipient(db, "555 000 0050"))?.id).toBe(u.id);
+
+    const claimed = await claimUser(db, u.id, "riley", now);
+    expect(claimed?.handle).toBe("riley");
+    expect(claimed && isClaimed(claimed)).toBe(true);
+    expect(await claimUser(db, u.id, "other", now)).toBeNull();
+    expect(displayName(claimed!)).toBe("riley");
   });
 });
