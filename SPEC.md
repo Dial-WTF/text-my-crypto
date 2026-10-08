@@ -44,8 +44,12 @@ Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
 8. Adapter submits and waits for confirmation. Intent → `settled` with tx hash.
 9. Sender gets: `Sent 10 USDC to jeremy. Solana tx 5Hx…9k <explorer link>`. Recipient gets: `jeremy, you received 10 USDC from alex.`
 
-### 3. Unregistered recipient (claim link)
-If the recipient is a phone number with no account, funds go to a per-intent escrow held by the server wallet on that chain, and the recipient gets an SMS claim link. Claiming = onboarding, then the escrow pays out. Unclaimed after 7 days → refund. This is the growth loop for the pitch. **Stretch goal**: build after all three chains settle end to end.
+### 3. Names, numbers and escrow
+- **Contacts first.** `send jeremy $10`: if "jeremy" isn't in the sender's contacts, the operator asks `What's jeremy's number?` and parks the command (15 min). The reply number completes it and is saved as a contact, so next time it resolves directly. `@jeremy` pays the global Dial handle.
+- **Recipient already on Dial (claimed):** direct transfer after approval; they proved phone custody at signup.
+- **Recipient not on Dial:** after the sender approves, funds move into a **per-payment escrow address** (memo = intent id). The recipient gets `alex sent you $10 USDC on Dial. Reply to this text to claim it.` Only the holder of that phone number can claim: they text in from it and finish signup via a link delivered to that number. On claim, escrow pays out to their new wallet and the escrow token account is closed (rent back to treasury).
+- **Expiry and reclaim:** escrows expire after `ESCROW_TTL_DAYS` (default 7). The sender texts `reclaim` to refund every expired, unclaimed escrow. Nothing is stuck forever.
+- Statuses: `pending` (awaiting sender approval) → `settling` → `escrowed` → `settled` (claimed) | `refunded`; also `failed`, `declined`.
 
 ### 4. Request, receive, invoice (SMS)
 - `request $25 from adam for pizza` → intent with `kind=request`, `createdBy=alex`, sender=adam, recipient=alex, 7-day expiry. adam gets: `alex is asking for $25 USDC (pizza). Pay: <link>` and approves with his passkey, or taps Decline.
