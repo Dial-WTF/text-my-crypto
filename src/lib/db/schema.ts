@@ -4,7 +4,8 @@ import { CHAINS } from "@/lib/chains";
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 
 export const chainEnum = pgEnum("chain", CHAINS);
-export const intentStatus = pgEnum("intent_status", ["pending", "settling", "settled", "failed"]);
+export const intentStatus = pgEnum("intent_status", ["pending", "settling", "settled", "failed", "declined"]);
+export const intentKind = pgEnum("intent_kind", ["send", "request", "invoice"]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -36,6 +37,11 @@ export const signupTokens = pgTable("signup_tokens", {
 
 export const intents = pgTable("intents", {
   id: text("id").primaryKey(),
+  kind: intentKind("kind").notNull().default("send"),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id),
+  note: text("note"),
   senderId: text("sender_id")
     .notNull()
     .references(() => users.id),

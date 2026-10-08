@@ -1,7 +1,11 @@
 CREATE TYPE "public"."chain" AS ENUM('solana', 'tempo', 'base', 'zcash');--> statement-breakpoint
-CREATE TYPE "public"."intent_status" AS ENUM('pending', 'settling', 'settled', 'failed');--> statement-breakpoint
+CREATE TYPE "public"."intent_kind" AS ENUM('send', 'request', 'invoice');--> statement-breakpoint
+CREATE TYPE "public"."intent_status" AS ENUM('pending', 'settling', 'settled', 'failed', 'declined');--> statement-breakpoint
 CREATE TABLE "intents" (
 	"id" text PRIMARY KEY NOT NULL,
+	"kind" "intent_kind" DEFAULT 'send' NOT NULL,
+	"created_by" text NOT NULL,
+	"note" text,
 	"sender_id" text NOT NULL,
 	"recipient_id" text NOT NULL,
 	"chain" "chain" NOT NULL,
@@ -51,6 +55,7 @@ CREATE TABLE "wallets" (
 	"secret_enc" text NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "intents" ADD CONSTRAINT "intents_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "intents" ADD CONSTRAINT "intents_sender_id_users_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "intents" ADD CONSTRAINT "intents_recipient_id_users_id_fk" FOREIGN KEY ("recipient_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "wallets" ADD CONSTRAINT "wallets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

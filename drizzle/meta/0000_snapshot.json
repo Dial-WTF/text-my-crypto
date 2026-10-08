@@ -1,5 +1,5 @@
 {
-  "id": "a190c764-4409-4a86-8519-0ff2e6a8676f",
+  "id": "729544d1-8d24-4808-84dc-d1c722bb48c1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -13,6 +13,26 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "intent_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'send'"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "sender_id": {
           "name": "sender_id",
@@ -99,6 +119,19 @@
       },
       "indexes": {},
       "foreignKeys": {
+        "intents_created_by_users_id_fk": {
+          "name": "intents_created_by_users_id_fk",
+          "tableFrom": "intents",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "intents_sender_id_users_id_fk": {
           "name": "intents_sender_id_users_id_fk",
           "tableFrom": "intents",
@@ -374,6 +407,15 @@
         "zcash"
       ]
     },
+    "public.intent_kind": {
+      "name": "intent_kind",
+      "schema": "public",
+      "values": [
+        "send",
+        "request",
+        "invoice"
+      ]
+    },
     "public.intent_status": {
       "name": "intent_status",
       "schema": "public",
@@ -381,7 +423,8 @@
         "pending",
         "settling",
         "settled",
-        "failed"
+        "failed",
+        "declined"
       ]
     }
   },
