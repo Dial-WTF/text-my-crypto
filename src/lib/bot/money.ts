@@ -20,7 +20,7 @@ import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { ensureWallet } from "./accounts";
+import { ensureSenderWallet, ensureWallet } from "./accounts";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -163,7 +163,8 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   const { chain, adapter, amount } = checked;
   if (other.id === user.id) return fail("self", replies.selfSend());
 
-  const mine = await ensureWallet(deps, user.id, chain, adapter);
+  const mine =
+    cmd.kind === "send" ? await ensureSenderWallet(deps, user.id, chain, adapter) : await ensureWallet(deps, user.id, chain, adapter);
   const note = cmd.note ?? null;
 
   if (cmd.kind === "send") {

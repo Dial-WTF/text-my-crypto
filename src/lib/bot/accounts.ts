@@ -40,6 +40,26 @@ export async function ensureWallet(
   return created;
 }
 
+/** The sender's wallet on a chain; a wallet opened on first use gets the same test drip as signup. */
+export async function ensureSenderWallet(
+  deps: Pick<BotDeps, "db" | "walletKey" | "dripAmount">,
+  userId: string,
+  chain: Chain,
+  adapter: SettlementAdapter,
+): Promise<Wallet> {
+  const existing = await getWallet(deps.db, userId, chain);
+  if (existing) return existing;
+  const wallet = await ensureWallet(deps, userId, chain, adapter);
+  if (deps.dripAmount > 0n) {
+    try {
+      await adapter.fund(wallet.address, deps.dripAmount);
+    } catch (e) {
+      console.error("first-use drip failed", chain, e);
+    }
+  }
+  return wallet;
+}
+
 export type SignupResult = { ok: true; user: User; reply: string } | { ok: false; error: string };
 
 /**
@@ -60,11 +80,12 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   if (!user) return { ok: false, error: replies.badName() };
 
   let dripped = false;
-  for (const [chain, adapter] of enabledChains(deps)) {
-    const w = await ensureWallet(deps, user.id, chain, adapter);
-    if (chain === "solana" && deps.dripAmount > 0n) {
+  const solana = deps.adapters.solana;
+  if (solana) {
+    const w = await ensureWallet(deps, user.id, "solana", solana);
+    if (deps.dripAmount > 0n) {
       try {
-        await adapter.fund(w.address, deps.dripAmount);
+        await solana.fund(w.address, deps.dripAmount);
         dripped = true;
       } catch (e) {
         console.error("signup drip failed", e);
