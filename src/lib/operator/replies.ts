@@ -45,6 +45,8 @@ export const replies = {
   badAmount: (cap: string) => `Amounts can be from $0.01 to ${cap}.`,
   recipientOptedOut: (who: string, days: number) =>
     `${who} has turned off texts from me, so I couldn't tell them. The money waits for them for ${plural(days, "day")}.`,
+  didntCatch: () =>
+    `I didn't catch who or how much. Try "send @jeremy $5", "send $5 to +1 555 123 4567" or "request $10 from alex".`,
   chatFallback: () => `I'm the Dial operator. I move money by text. Try "send jeremy $10".`,
   askNumber: (name: string) => `What's ${name}'s number?`,
   unknownHandle: (handle: string) => `There's no Dial user called ${handle}. Send their phone number instead.`,

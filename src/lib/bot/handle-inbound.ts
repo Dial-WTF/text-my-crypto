@@ -41,6 +41,7 @@ import type { BotDeps } from "./types";
 export type { BotDeps } from "./types";
 
 const BURST_MS = 60_000;
+const MONEY_VERB = /^\s*(?:please\s+)?(?:send|pay|give|transfer|request|ask|charge|invoice|bill|withdraw)\b/i;
 
 /**
  * One inbound text, start to finish: log (dropping redeliveries), drop double-taps, load what the
@@ -159,7 +160,7 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     case "help":
       return reply(replies.help());
     case "chat":
-      return reply(turn.reply ?? replies.chatFallback());
+      return reply(turn.reply ?? (MONEY_VERB.test(body) ? replies.didntCatch() : replies.chatFallback()));
     case "balance":
       return reply(await balanceReply(deps, user));
     case "receive":
