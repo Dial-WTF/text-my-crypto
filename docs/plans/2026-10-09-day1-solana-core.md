@@ -2673,6 +2673,13 @@ export async function SmsQr({ number, body }: { number: string; body: string }) 
 
 - [ ] **Step 4: Landing page** — `src/app/page.tsx`: one screen. Left: headline "Text money to anyone.", the number formatted `+1 (806) 607-1387` as a `tel:`/`sms:` link, the `<Receipt title="DIAL OPERATOR">` containing `<Line label="Text" value="hi" />`, `<Line label="To" value="+1 806 607 1387" />` and the `<SmsQr number="+18066071387" body="hi" />` as the last receipt item with caption "Scan to text". Right (stacks below on mobile): `<PhoneThread />`. Footer line: "Testnet demo. Solana devnet USDC." Works at 375px with 16px gutters, no horizontal scroll.
 
+- [ ] **Step 4b: Proof on the page** (judges reward working product + traction; three prior SMS-payment winners exist, so show what's new)
+  - Live stats strip from the DB: payments settled, total USD moved, people texting (counts over `intents` where status settled, and `users`). Server component, `export const revalidate = 15`.
+  - Recent payments feed: last 8 settled intents as receipt lines `alex → jeremy · $5 · Solana · 5Hx…9k` linking to the explorer. Handles only, never phone numbers.
+  - "Why this is different" row: plain English instead of command syntax · passkey approves the exact payment, no PIN in a text · pay names, not just numbers.
+  - Lineage line: "Text My Bits (2020) → the Dial operator (2026)".
+  - Honest footer: testnet, server-held wallets gated by passkey, chains live.
+
 - [ ] **Step 5: Restyle `/s/[token]` and `/a/[intentId]`** with `Receipt`, `Line` and `Stamp` (approval page: `Receipt title="PAYMENT"`, lines for Amount, From, To, Network, Expires; `Stamp` for status; tx link line once settled; add `printing` when status is settled).
 
 - [ ] **Step 6: Verify** — `pnpm build`, then check `/`, a live `/s/...` and `/a/...` at 375px and desktop in the browser pane; take screenshots for the demo.
