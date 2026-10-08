@@ -13,11 +13,13 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate:local": "wrangler d1 migrations apply text-my-crypto --local",
+    "db:migrate:remote": "wrangler d1 migrations apply text-my-crypto --remote"
   },
   "dependencies": {
-    "@neondatabase/serverless": "~1.2.0",
     "@opennextjs/cloudflare": "1.20.9",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@solana-program/memo": "~0.15.0",
     "@solana-program/token": "~0.17.0",
     "@solana/kit": "~8.4.0",
@@ -30,15 +32,17 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "~0.5.8",
+    "@cloudflare/workers-types": "^5.20261008.1",
     "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24.19.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sql.js": "^1.4.11",
     "drizzle-kit": "~0.31.11",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "sql.js": "~1.14.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3",

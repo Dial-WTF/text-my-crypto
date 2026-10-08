@@ -1,43 +1,43 @@
-import { bigint, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { customType, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { CHAINS } from "@/lib/chains";
 
-const ts = (name: string) => timestamp(name, { withTimezone: true });
+/** Token amounts in base units. SQLite INTEGER is 64-bit; the app works in bigint. */
+const amount = customType<{ data: bigint; driverData: number | bigint }>({
+  dataType: () => "integer",
+  toDriver: (v) => (v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v),
+  fromDriver: (v) => BigInt(v),
+});
 
-export const chainEnum = pgEnum("chain", CHAINS);
-export const intentKind = pgEnum("intent_kind", ["send", "request", "invoice"]);
-export const intentStatus = pgEnum("intent_status", [
-  "pending",
-  "settling",
-  "escrowed",
-  "settled",
-  "refunded",
-  "failed",
-  "declined",
-]);
+const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
+const now = sql`(unixepoch('subsec') * 1000)`;
 
-export const users = pgTable("users", {
+const INTENT_KINDS = ["send", "request", "invoice"] as const;
+const INTENT_STATUSES = ["pending", "settling", "escrowed", "settled", "refunded", "failed", "declined"] as const;
+
+export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull().unique(),
   handle: text("handle").unique(),
   claimedAt: ts("claimed_at"),
-  defaultChain: chainEnum("default_chain").notNull().default("solana"),
-  createdAt: ts("created_at").notNull().defaultNow(),
+  defaultChain: text("default_chain", { enum: CHAINS }).notNull().default("solana"),
+  createdAt: ts("created_at").notNull().default(now),
 });
 
-export const wallets = pgTable(
+export const wallets = sqliteTable(
   "wallets",
   {
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
-    chain: chainEnum("chain").notNull(),
+    chain: text("chain", { enum: CHAINS }).notNull(),
     address: text("address").notNull(),
     secretEnc: text("secret_enc").notNull(),
   },
   (t) => [uniqueIndex("wallets_user_chain").on(t.userId, t.chain)],
 );
 
-export const contacts = pgTable(
+export const contacts = sqliteTable(
   "contacts",
   {
     ownerId: text("owner_id")
@@ -45,28 +45,28 @@ export const contacts = pgTable(
       .references(() => users.id),
     name: text("name").notNull(),
     phone: text("phone").notNull(),
-    createdAt: ts("created_at").notNull().defaultNow(),
+    createdAt: ts("created_at").notNull().default(now),
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.name] })],
 );
 
-export const conversations = pgTable("conversations", {
+export const conversations = sqliteTable("conversations", {
   phone: text("phone").primaryKey(),
   state: text("state", { enum: ["awaiting_name", "awaiting_number"] }).notNull(),
   payload: text("payload").notNull().default("{}"),
   expiresAt: ts("expires_at").notNull(),
 });
 
-export const signupTokens = pgTable("signup_tokens", {
+export const signupTokens = sqliteTable("signup_tokens", {
   token: text("token").primaryKey(),
   phone: text("phone").notNull(),
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
 });
 
-export const intents = pgTable("intents", {
+export const intents = sqliteTable("intents", {
   id: text("id").primaryKey(),
-  kind: intentKind("kind").notNull().default("send"),
+  kind: text("kind", { enum: INTENT_KINDS }).notNull().default("send"),
   createdBy: text("created_by")
     .notNull()
     .references(() => users.id),
@@ -77,13 +77,13 @@ export const intents = pgTable("intents", {
   recipientId: text("recipient_id")
     .notNull()
     .references(() => users.id),
-  chain: chainEnum("chain").notNull(),
+  chain: text("chain", { enum: CHAINS }).notNull(),
   token: text("token").notNull(),
   recipientAddress: text("recipient_address").notNull(),
-  amount: bigint("amount", { mode: "bigint" }).notNull(),
+  amount: amount("amount").notNull(),
   nonce: text("nonce").notNull(),
   expiresAt: ts("expires_at").notNull(),
-  status: intentStatus("status").notNull().default("pending"),
+  status: text("status", { enum: INTENT_STATUSES }).notNull().default("pending"),
   codeHash: text("code_hash"),
   codeAttempts: integer("code_attempts").notNull().default(0),
   escrowSecretEnc: text("escrow_secret_enc"),
@@ -93,17 +93,17 @@ export const intents = pgTable("intents", {
   releaseTxHash: text("release_tx_hash"),
   releaseExplorerUrl: text("release_explorer_url"),
   error: text("error"),
-  createdAt: ts("created_at").notNull().defaultNow(),
+  createdAt: ts("created_at").notNull().default(now),
   settledAt: ts("settled_at"),
 });
 
-export const smsLog = pgTable("sms_log", {
+export const smsLog = sqliteTable("sms_log", {
   id: text("id").primaryKey(),
   direction: text("direction", { enum: ["in", "out"] }).notNull(),
   phone: text("phone").notNull(),
   body: text("body").notNull(),
   dedupeKey: text("dedupe_key").unique(),
-  createdAt: ts("created_at").notNull().defaultNow(),
+  createdAt: ts("created_at").notNull().default(now),
 });
 
 export type User = typeof users.$inferSelect;

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 const schema = z.object({
-  DATABASE_URL: z.string().min(1),
   APP_URL: z.url(),
   PAYPHONE_API_KEY: z.string().min(1),
   PAYPHONE_BASE_URL: z.url().default("https://payphone.wtf"),

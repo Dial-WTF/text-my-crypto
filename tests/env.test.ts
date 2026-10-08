@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { env, resetEnvForTests } from "@/lib/env";
 
 const base = {
-  DATABASE_URL: "postgres://u:p@localhost:5432/db",
   APP_URL: "https://tmc.example",
   PAYPHONE_API_KEY: "dial_test_x",
   DIAL_OPERATOR_NUMBER: "+18066071387",
