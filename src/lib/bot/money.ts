@@ -19,7 +19,7 @@ import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
-import { ensureWallet } from "./accounts";
+import { ensureSenderWallet, ensureWallet } from "./accounts";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -145,7 +145,7 @@ export async function prepareMoney(
   const other = resolved.user;
   if (other.id === user.id) return replies.selfSend();
 
-  const mine = await ensureWallet(deps, user.id, chain, adapter);
+  const mine = cmd.kind === "send" ? await ensureSenderWallet(deps, user.id, chain, adapter) : await ensureWallet(deps, user.id, chain, adapter);
   const note = cmd.note ?? null;
   const otherName = describe(other);
   const me = displayName(user);

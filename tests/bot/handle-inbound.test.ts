@@ -313,11 +313,15 @@ describe("balance, receive, upgrade, chat", () => {
 });
 
 describe("chains", () => {
-  it("opens a wallet on every enabled chain at signup", async () => {
-    const tempo = fakeAdapter({ chain: "tempo" });
+  it("opens a wallet on another chain on first use and drops the test bonus there", async () => {
+    const tempo = fakeAdapter({ chain: "tempo", defaultBalance: 100_000_000n });
     deps = { ...deps, adapters: { solana: sol, tempo } };
     await signUp(ALEX, "alex");
-    const u = await findUserByPhone(db, ALEX);
-    expect(await getWallet(db, u!.id, "tempo")).not.toBeNull();
+    await signUp(JEREMY, "jeremy");
+    const alex = await findUserByPhone(db, ALEX);
+    expect(await getWallet(db, alex!.id, "tempo")).toBeNull();
+    expect(await say(ALEX, "send @jeremy $1 on tempo")).toMatch(/^Send \$1 USDC to @jeremy on Tempo\? Reply \d{6}/);
+    const w = await getWallet(db, alex!.id, "tempo");
+    expect(tempo.funded).toEqual([`${w!.address}:25000000`]);
   });
 });
