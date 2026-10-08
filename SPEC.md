@@ -74,7 +74,10 @@ Any AI agent can use Dial on a person's behalf. The person stays the signer.
 ## Architecture
 
 ```
-Payphone line ──► /api/sms/[secret] (secret-path webhook)
+Payphone line ──► /api/sms/[secret] (secret-path webhook, 200 only once queued)
+                   │
+                   ▼  SMS_INBOUND queue (retries with backoff, then dead-letter queue)
+           worker.ts queue consumer ──► /api/sms/[secret]/process
                    │
                    ▼
            the Dial operator intent parser  (LLM → typed object; never sees keys)
@@ -123,7 +126,7 @@ interface SettlementAdapter {
 ```
 
 ### Hosting
-- Next.js 16 on **Cloudflare Workers via OpenNext** (`@opennextjs/cloudflare`), Workers Paid plan. No `runtime = "edge"`; background work after a webhook response uses `getCloudflareContext().ctx.waitUntil`.
+- Next.js 16 on **Cloudflare Workers via OpenNext** (`@opennextjs/cloudflare`), Workers Paid plan. No `runtime = "edge"`. Inbound texts are not handled in the webhook request: the webhook puts them on a Cloudflare Queue and the custom worker entry (`worker.ts`, which wraps the OpenNext handler) consumes them, so a text survives isolate restarts and deploys.
 - Secrets via `wrangler secret put`; local dev reads `.dev.vars` / `.env.local`.
 - Postgres on **Neon** via `@neondatabase/serverless` HTTP driver (fetch-based, Worker-friendly). Tests use PGlite.
 - Everything on the request path uses WebCrypto and `fetch` (no Node-only crypto, no WebSocket subscriptions). Solana confirmation polls `getSignatureStatuses`.
@@ -135,7 +138,7 @@ interface SettlementAdapter {
 - `passkeys(id, user_id, credential_id, public_key, counter)`
 - `intents(id, sender_id, recipient_user_id null, recipient_phone null, chain, token, amount_base_units, nonce, expires_at, status, tx_hash null, error null, created_at)`
 - `signup_tokens(token, phone_e164, expires_at, used_at null)`
-- `sms_log(id, direction, phone, body, intent_id null, created_at)` (demo activity feed + inbound dedupe)
+- `sms_log(id, direction, phone, body, intent_id null, dedupe_key, claim_id, claimed_at, handled_at, created_at)` (demo activity feed + inbound dedupe; an inbound text counts as a duplicate only once `handled_at` is set, so a failed attempt is retried rather than skipped)
 
 ### Chains
 - **Solana** (primary, main demo): devnet, `@solana/kit` + `@solana-program/token`, Circle devnet USDC (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, 6 decimals). Server-held keypair per user, passkey-gated. A treasury wallet pays all SOL fees and ATA rent, so users never hold SOL, and drips test USDC to new users.

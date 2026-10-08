@@ -116,6 +116,11 @@ export const smsLog = sqliteTable("sms_log", {
   phone: text("phone").notNull(),
   body: text("body").notNull(),
   dedupeKey: text("dedupe_key").unique(),
+  /** Inbound only: who is processing it right now, and since when. A stale claim can be taken over. */
+  claimId: text("claim_id"),
+  claimedAt: ts("claimed_at"),
+  /** Inbound only: set once the message was fully handled, so redelivery can skip it. */
+  handledAt: ts("handled_at"),
   createdAt: ts("created_at").notNull().default(now),
 });
 
