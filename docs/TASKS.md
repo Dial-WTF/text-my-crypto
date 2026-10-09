@@ -32,7 +32,10 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 ## Tranche 2 · More chains, self-custody, agents
 
 - [x] build · Generic EVM adapter (EIP-3009, treasury pays gas) for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia; Robinhood wired (needs a test token) → enable each by adding it to `CHAINS` once funded
-- [ ] you · Fund EVM treasury `0xcc5583a18a9908b80a20876cd8877048ae792B6f`: gas (Sepolia ETH, Base Sepolia ETH, Arbitrum Sepolia ETH, HyperEVM HYPE) + Circle test USDC on each
+- [ ] you · Fund EVM treasury `0xcc5583a18a9908b80a20876cd8877048ae792B6f`: gas (Sepolia ETH, Base Sepolia ETH, Arbitrum Sepolia ETH, HyperEVM HYPE, Robinhood testnet ETH) + Circle test USDC on Base/Ethereum/Arbitrum Sepolia and HyperEVM. `pnpm chains:status` shows what each chain still needs
+- [x] build · Dial Test USD (`contracts/src/DialTestUSD.sol`): ERC-20 + EIP-3009 test dollar for chains with no Circle test USDC; proven against the EVM adapter on anvil (`ANVIL_INT=1`)
+- [ ] build · Robinhood: `pnpm contracts:deploy robinhood` once the treasury has testnet ETH, put the address in the registry, add `robinhood` to `CHAINS`
+- [ ] build · Turn on each funded EVM chain: add it to `CHAINS` in `wrangler.jsonc`, deploy, check the health route; tile goes Live after one real payment
 - [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
 - [x] build · Chain registry (`src/lib/settlement/registry.ts`): testnet and mainnet per chain, `NETWORK` picks one, mainnet needs `ALLOW_MAINNET=yes`. RPC order: `RPC_<NETWORK>` secret, then `ALCHEMY_API_KEY`, then public. Secrets live in `.env.production.local` and go up with `pnpm secrets:push`
 - [ ] you · Enable Tempo Moderato, HyperEVM testnet and Robinhood testnet on the Alchemy app (Workers can't use Tempo's public RPC)
@@ -46,7 +49,7 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 
 - [ ] build · Anchor escrow program on Solana devnet: refund after expiry without Dial, claim with attestor signature
 - [ ] build · Switch escrow sends to the program; keep server escrow as fallback
-- [ ] build · Zcash shielded sends via a Rust wallet service in a Cloudflare Container (stretch)
+- [ ] build · Zcash shielded sends via a Rust wallet service in a Cloudflare Container (stretch). Needs its own wallet stack (librustzcash or zcash-devtool behind lightwalletd); not an adapter tweak, so it is not in the registry yet
 - [ ] build · Carrier SIM-swap / number-verification check if an aggregator covers US numbers (stretch)
 
 ## Submission (Colosseum portal)
