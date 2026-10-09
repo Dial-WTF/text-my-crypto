@@ -219,7 +219,7 @@ describe("programCheck", () => {
     const fetchImpl = rpc({ jsonrpc: "2.0", id: 1, result: { context: { slot: 1 }, value: { executable: true, owner: "BPF", lamports: 1 } } });
     expect((await programCheck("https://rpc.test", "Prog1111", fetchImpl)).ok).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    const body = JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string) as unknown;
     expect(body).toMatchObject({ method: "getAccountInfo", params: ["Prog1111", { encoding: "base64" }] });
   });
 

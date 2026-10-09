@@ -1,6 +1,7 @@
 import { Logo } from "@/ui/brand/Logo";
 import type { LogoId } from "@/ui/brand/logoPaths";
 import styles from "./ChainHero.module.css";
+import { cx } from "@/ui/cx";
 
 type ChainHeroProps = {
   name: string;
@@ -29,7 +30,7 @@ export function ChainHero({ name, logo, statusLabel, live, network, lede }: Chai
         <span className={styles.name}>{name}</span>
       </h1>
       <p className={styles.meta}>
-        <span className={`${styles.status} ${live ? styles.live : ""}`}>{statusLabel}</span>
+        <span className={cx(styles.status, live ? styles.live : "")}>{statusLabel}</span>
         <span>{network}</span>
       </p>
       <p className={styles.lede}>{lede}</p>

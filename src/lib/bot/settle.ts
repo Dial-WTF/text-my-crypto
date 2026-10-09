@@ -192,7 +192,7 @@ async function announceEscrowed(deps: BotDeps, intent: Intent, sender: User, rec
 function escrowProgramFor(deps: BotDeps, intent: Intent): EscrowProgram {
   const program = deps.adapters[intent.chain]?.escrow;
   if (!program || program.programId !== intent.escrowProgram) {
-    throw new Error(`Escrow program ${intent.escrowProgram} is not available on ${intent.chain}`);
+    throw new Error(`Escrow program ${intent.escrowProgram ?? "(none recorded)"} is not available on ${intent.chain}`);
   }
   return program;
 }

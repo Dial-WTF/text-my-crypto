@@ -12,7 +12,8 @@ export type MoneyCommand = {
 };
 
 /** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
-export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
+export type WithdrawCommand = { kind: "withdraw"; /** A USD amount, or "all". */
+  amountUsd: string; address: string; chain?: Chain };
 
 /**
  * "split $30 between @a @b @c": $30 divided among the people listed. "split $30 with @a @b" (or listing "me")

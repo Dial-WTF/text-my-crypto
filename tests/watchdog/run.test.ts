@@ -24,7 +24,7 @@ type Inbox = Array<{ direction: string; contact: string; body: string; timestamp
 function fakePayphone(opts: { inbox?: Inbox; authStatus?: number; inboxStatus?: number } = {}) {
   const calls: string[] = [];
   const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : String(input);
     calls.push(url);
     if (url.includes("/numbers/mine")) return new Response("{}", { status: opts.authStatus ?? 200 });
     if (url.includes("/sms/inbox")) {
@@ -247,7 +247,7 @@ describe("cron trigger", () => {
   function sink() {
     const sent: Array<{ to: string; message: string }> = [];
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-      sent.push(JSON.parse(String(init?.body)));
+      sent.push(JSON.parse(init?.body as string) as { to: string; message: string });
       return new Response("{}");
     }) as unknown as typeof fetch;
     return { sent, fetchImpl };

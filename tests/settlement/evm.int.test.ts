@@ -13,10 +13,7 @@ describe.runIf(run)(`evm adapter (${chain} testnet, live)`, () => {
     const entry = REGISTRY[chain].testnet as EvmNetwork;
     const rpc = resolveRpc(entry, {
       alchemyKey: process.env.ALCHEMY_API_KEY || undefined,
-      overrides: Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith("RPC_") && v)) as Record<
-        string,
-        string
-      >,
+      overrides: Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith("RPC_") && v)),
     });
     const adapter = createEvmAdapter({ ...entry, chain, rpcUrl: rpc.url, treasuryKey: process.env.EVM_TREASURY_KEY as Hex });
     const treasury = await adapter.treasuryAddress();

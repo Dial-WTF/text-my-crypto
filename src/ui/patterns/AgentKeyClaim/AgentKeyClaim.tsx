@@ -6,6 +6,7 @@ import { Field } from "@/ui/primitives/Field/Field";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { Notice } from "../Notice/Notice";
 import styles from "./AgentKeyClaim.module.css";
+import { formText } from "@/lib/form";
 
 export type AgentKeyResult = { ok: true; key: string; mcpUrl: string } | { ok: false; message: string };
 
@@ -30,7 +31,7 @@ export function AgentKeyClaim({ token, redeem }: AgentKeyClaimProps) {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const code = String(new FormData(e.currentTarget).get("code") ?? "").trim();
+    const code = formText(new FormData(e.currentTarget), "code").trim();
     setState("loading");
     setResult(null);
     const r = await redeem(token, code).catch(
@@ -55,12 +56,12 @@ export function AgentKeyClaim({ token, redeem }: AgentKeyClaimProps) {
       <Stack gap="sm">
         <Notice tone="success">Your agent key. It won&rsquo;t be shown again.</Notice>
         <pre className={styles.secret}>{result.key}</pre>
-        <Button full onClick={() => copy("key", result.key)}>
+        <Button full onClick={() => void copy("key", result.key)}>
           {copied === "key" ? "Copied" : "Copy key"}
         </Button>
         <p className={styles.caption}>MCP client config</p>
         <pre className={styles.secret}>{config}</pre>
-        <Button full variant="outline" onClick={() => copy("config", config)}>
+        <Button full variant="outline" onClick={() => void copy("config", config)}>
           {copied === "config" ? "Copied" : "Copy config"}
         </Button>
         <Notice tone="info">Text &ldquo;revoke agents&rdquo; to the operator anytime to turn this key off.</Notice>
@@ -69,7 +70,7 @@ export function AgentKeyClaim({ token, redeem }: AgentKeyClaimProps) {
   }
 
   return (
-    <form onSubmit={onSubmit}>
+    <form onSubmit={(e) => void onSubmit(e)}>
       <Stack gap="sm">
         <Field
           label="Code from the operator"

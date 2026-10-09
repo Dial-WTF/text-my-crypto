@@ -62,7 +62,7 @@ describe.runIf(run)("pay action (devnet)", () => {
       new Request("https://tmc.test/api/actions/pay/blinktest?amount=0.01", { method: "POST", body: JSON.stringify({ account: payer.address }) }),
       ctx,
     );
-    const body = (await post.json()) as { transaction: string; message: string };
+    const body = await post.json<{ transaction: string; message: string }>();
     expect(post.status, JSON.stringify(body)).toBe(200);
     console.log("POST message:", body.message);
 

@@ -143,7 +143,7 @@ async function verifyAssertion(
       transports: transportsSchema.parse(JSON.parse(key.transports)),
     },
   }).catch(() => ({ verified: false as const, authenticationInfo: undefined }));
-  if (!verification.verified || !verification.authenticationInfo) return false;
+  if (!verification.verified) return false;
   await db
     .update(passkeys)
     .set({ counter: verification.authenticationInfo.newCounter })

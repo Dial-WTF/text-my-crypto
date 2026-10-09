@@ -36,7 +36,7 @@ export function PasskeySetup({ token, actions }: { token: string; actions: Passk
 
   return (
     <Stack gap="sm">
-      <Button full state={state} onClick={onClick} disabled={result?.ok}>
+      <Button full state={state} onClick={() => void onClick()} disabled={result?.ok}>
         {result?.ok ? "Passkey added" : state === "loading" ? "Waiting for your device…" : "Create passkey"}
       </Button>
       {result ? <Notice tone={result.ok ? "success" : "error"}>{result.message}</Notice> : null}

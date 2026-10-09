@@ -39,7 +39,7 @@ const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, b
  * One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building.
  * Each links to its chain page; `branded` also colours each tile in its chain's brand (/judges).
  */
-export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): ChainStripItem[] {
+export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): (ChainStripItem & { href: string })[] {
   return [...statuses]
     .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
     .map((s) => ({

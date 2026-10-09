@@ -60,7 +60,7 @@ function fakeChain() {
   };
   let n = 0;
   const tx = (op: string): Hex => {
-    const hash = `0x${(++n).toString(16).padStart(64, "0")}` as Hex;
+    const hash: Hex = `0x${(++n).toString(16).padStart(64, "0")}`;
     sent.push({ op, hash });
     return hash;
   };
@@ -202,7 +202,7 @@ describe("evm escrow", () => {
   it("funds with the sender's authorization in one transaction the treasury sends", async () => {
     const result = await fund();
     expect(chain.sent.map((s) => s.op)).toEqual(["fund"]);
-    expect(result.explorerUrl).toBe(`https://sepolia.arbiscan.io/tx/${chain.sent[0]?.hash}`);
+    expect(result.explorerUrl).toBe(`https://sepolia.arbiscan.io/tx/${chain.sent[0]?.hash ?? ""}`);
     expect(await escrow.lookup("pi_one")).toEqual({
       state: "open",
       sender: SENDER,

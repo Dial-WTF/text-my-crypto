@@ -9,7 +9,6 @@ import {
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   pipe,
-  type Signature,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
@@ -120,7 +119,7 @@ export function createSolanaActions(cfg: {
       for (const { signature, err } of [...sigs].reverse()) {
         if (err) continue;
         const tx = await rl(() =>
-          rpc.getTransaction(signature as Signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send(),
+          rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send(),
         );
         if (!tx?.meta) continue;
         const paid = paidTo(

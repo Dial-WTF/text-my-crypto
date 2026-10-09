@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import styles from "./Receipt.module.css";
+import { cx } from "@/ui/cx";
 
 type ReceiptProps = {
   title: string;
@@ -10,7 +11,7 @@ type ReceiptProps = {
 /** A thermal-receipt card: the base surface for anything that states money or a fact. */
 export function Receipt({ title, children, printing = false }: ReceiptProps) {
   return (
-    <section className={`${styles.receipt} ${printing ? styles.printing : ""}`} aria-label={title}>
+    <section className={cx(styles.receipt, printing ? styles.printing : "")} aria-label={title}>
       <p className={styles.title}>{title}</p>
       <hr className={styles.rule} />
       <div className={styles.body}>{children}</div>
@@ -20,7 +21,7 @@ export function Receipt({ title, children, printing = false }: ReceiptProps) {
 
 export function ReceiptLine({ label, children, total = false }: { label: string; children: ReactNode; total?: boolean }) {
   return (
-    <div className={`${styles.line} ${total ? styles.total : ""}`}>
+    <div className={cx(styles.line, total ? styles.total : "")}>
       <span className={styles.label}>{label}</span>
       <span className={styles.leader} aria-hidden />
       <span className={styles.value}>{children}</span>

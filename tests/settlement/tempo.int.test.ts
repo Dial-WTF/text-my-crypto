@@ -33,6 +33,6 @@ describe.runIf(run)("tempo adapter (moderato)", () => {
     const client = createClient({ chain: tempoModerato, transport: http(rpcUrl) });
     const receipt = await client.getTransactionReceipt({ hash: res.txHash as Hex });
     const [memoLog] = parseEventLogs({ abi: Abis.tip20, eventName: "TransferWithMemo", logs: receipt.logs });
-    expect(memoLog && hexToString(memoLog.args.memo as Hex, { size: 32 })).toBe("pi_tempo_int");
+    expect(memoLog && hexToString(memoLog.args.memo, { size: 32 })).toBe("pi_tempo_int");
   });
 });

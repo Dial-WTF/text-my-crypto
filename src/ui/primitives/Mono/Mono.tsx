@@ -1,4 +1,5 @@
 import styles from "./Mono.module.css";
+import { cx } from "@/ui/cx";
 
 export function shorten(value: string, keep = 4): string {
   return value.length > keep * 2 + 1 ? `${value.slice(0, keep)}…${value.slice(-keep)}` : value;
@@ -10,7 +11,7 @@ export function Mono({ value, href, full = false }: { value: string; href?: stri
   if (href) {
     return (
       <a
-        className={`${styles.mono} ${styles.link}`}
+        className={cx(styles.mono, styles.link)}
         href={href}
         title={value}
         aria-label={`${value} (opens explorer in a new tab)`}

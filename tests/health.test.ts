@@ -13,7 +13,7 @@ describe("dependencyChecks", () => {
       db: await createTestDb(),
       payphone: { baseUrl: "https://payphone.test", apiKey: "k" },
       adapters: { zcash: zec },
-      fetchImpl: (async () => new Response("{}")) as typeof fetch,
+      fetchImpl: (async () => new Response("{}")),
     });
     expect(asked).toEqual(["zcashTreasury"]);
     expect(checks.zcashBalance?.ok).toBe(true);

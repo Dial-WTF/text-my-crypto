@@ -96,7 +96,7 @@ const WORDS: Record<string, [problem: string, fixed: string]> = {
 export function checkWords(key: string): [problem: string, fixed: string] {
   const chain = /^(\w+)Balance$/.exec(key)?.[1];
   if (chain) {
-    const name = `${chain[0]?.toUpperCase()}${chain.slice(1)} network`;
+    const name = `${chain.charAt(0).toUpperCase()}${chain.slice(1)} network`;
     return [`${name} not answering`, `${name} is answering again`];
   }
   return WORDS[key] ?? [key, `${key} is fine again`];

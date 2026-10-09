@@ -95,7 +95,7 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
     (await rl(() => client.token.getBalance({ account: owner, token }))).amount;
 
   async function transfer(
-    from: ReturnType<typeof Account.fromSecp256k1>,
+    from: typeof treasury,
     to: Address,
     amount: bigint,
     memo: string,
@@ -113,7 +113,7 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
 
   /** Every leg in one sponsored transaction: all of them land, or none do. */
   async function transferBatch(
-    from: ReturnType<typeof Account.fromSecp256k1>,
+    from: typeof treasury,
     legs: readonly TransferLeg[],
   ): Promise<SettleResult> {
     if (legs.length === 0 || legs.length > MAX_BATCH_LEGS) throw new Error(`a batch carries 1 to ${MAX_BATCH_LEGS} legs`);

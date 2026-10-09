@@ -33,7 +33,7 @@ export function NameLookup({
     setBusy(true);
     try {
       const res = await fetch(`${endpoint}?name=${encodeURIComponent(name)}`);
-      setAnswer((await res.json()) as Answer);
+      setAnswer(await res.json<Answer>());
     } catch {
       setAnswer({ error: "The lookup didn't answer. Try again in a minute." });
     } finally {
@@ -43,7 +43,7 @@ export function NameLookup({
 
   return (
     <Receipt title="Name lookup">
-      <form className={styles.form} onSubmit={lookUp}>
+      <form className={styles.form} onSubmit={(e) => void lookUp(e)}>
         <label className={styles.label} htmlFor={id}>
           Name ({suffixes.join(" or ")})
           <input

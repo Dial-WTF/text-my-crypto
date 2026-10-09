@@ -129,8 +129,8 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
     };
   return {
     ...adapter,
-    createWallet: guard(adapter.createWallet),
-    getBalance: guard(adapter.getBalance),
-    fund: guard(adapter.fund),
+    createWallet: guard(adapter.createWallet.bind(adapter)),
+    getBalance: guard(adapter.getBalance.bind(adapter)),
+    fund: guard(adapter.fund.bind(adapter)),
   };
 }

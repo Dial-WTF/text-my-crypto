@@ -49,6 +49,7 @@ export async function dependencyChecks(deps: {
     });
   }
   for (const [chain, adapter] of Object.entries(deps.adapters)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Partial<Record> allows an explicit undefined, which Object.entries hides
     if (!adapter) continue;
     checks[`${chain}Balance`] = await timed(async () => {
       // Zcash can only read wallets its service holds, so it probes the treasury.

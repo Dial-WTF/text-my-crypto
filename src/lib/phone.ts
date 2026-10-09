@@ -12,5 +12,5 @@ export function normalizePhone(input: string): string | null {
 /** "+18066071387" → "+1 806 607 1387". Non-NANP numbers come back unchanged. */
 export function formatPhone(e164: string): string {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
-  return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : e164;
+  return m ? `+1 ${e164.slice(2, 5)} ${e164.slice(5, 8)} ${e164.slice(8)}` : e164;
 }

@@ -63,7 +63,7 @@ describe("/api/actions/pay/[handle]", () => {
     const ok = await post("https://tmc.test/api/actions/pay/alex?amount=5", JSON.stringify({ account: payer }));
     expect(ok.status).toBe(200);
     expectSpecHeaders(ok);
-    const body = (await ok.json()) as { type: string; transaction: string; message: string };
+    const body = await ok.json<{ type: string; transaction: string; message: string }>();
     expect(body.type).toBe("transaction");
     expect(body.transaction).toMatch(/^[A-Za-z0-9+/]+=*$/);
 

@@ -3,6 +3,7 @@ import type { LogoId } from "@/ui/brand/logoPaths";
 import type { BrandId } from "@/ui/theme/brands";
 import { ThemeScope } from "@/ui/theme/ThemeScope";
 import styles from "./ChainStrip.module.css";
+import { cx } from "@/ui/cx";
 
 export type ChainStripItem = {
   name: string;
@@ -30,7 +31,7 @@ export function ChainStrip({
 }) {
   const id = `strip-${heading.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <section className={`${styles.strip} ${size === "large" ? styles.large : ""}`} aria-labelledby={id}>
+    <section className={cx(styles.strip, size === "large" ? styles.large : "")} aria-labelledby={id}>
       <h2 id={id} className={styles.heading}>
         {heading}
       </h2>
@@ -50,7 +51,7 @@ export function ChainStrip({
                 )}
               </span>
               <p className={styles.role}>{item.role}</p>
-              <span className={`${styles.status} ${styles[item.status]}`}>{item.statusLabel}</span>
+              <span className={cx(styles.status, styles[item.status])}>{item.statusLabel}</span>
             </>
           );
           // A linked name stays on one line; a long one ("Robinhood Chain") gets a smaller size to fit.

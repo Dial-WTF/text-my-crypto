@@ -16,7 +16,7 @@ export function CopyButton({ value, label = "Copy", full = false }: { value: str
     }
   };
   return (
-    <Button variant="outline" full={full} state={copied ? "success" : "idle"} onClick={onClick} aria-live="polite">
+    <Button variant="outline" full={full} state={copied ? "success" : "idle"} onClick={() => void onClick()} aria-live="polite">
       {copied ? "Copied" : label}
     </Button>
   );

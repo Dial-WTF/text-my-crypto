@@ -111,7 +111,7 @@ export function chainWith<F extends FeatureId>(
   for (const chain of candidates as Chain[]) {
     const adapter = adapters[chain];
     const found = adapter?.[feature];
-    if (adapter && found !== undefined) return { chain, adapter, module: found as NonNullable<Capabilities[F]> };
+    if (adapter && found !== undefined) return { chain, adapter, module: found };
   }
   return null;
 }

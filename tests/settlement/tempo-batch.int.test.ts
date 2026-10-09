@@ -20,9 +20,9 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
     console.log(`fund: ${(await adapter.fund(payer.address, 10_000_000n)).explorerUrl}`);
 
     const legs = [
-      { to: people[0]!.address, amount: 3_340_000n, memo: "pi_split_leg_a" },
-      { to: people[1]!.address, amount: 3_330_000n, memo: "pi_split_leg_b" },
-      { to: people[2]!.address, amount: 3_330_000n, memo: "pi_split_leg_c" },
+      { to: people[0].address, amount: 3_340_000n, memo: "pi_split_leg_a" },
+      { to: people[1].address, amount: 3_330_000n, memo: "pi_split_leg_b" },
+      { to: people[2].address, amount: 3_330_000n, memo: "pi_split_leg_c" },
     ];
     const res = await adapter.batch!.settleBatch({ fromSecret: payer.secret, legs });
     console.log(`split: ${res.explorerUrl}`);
@@ -33,7 +33,7 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
 
     const receipt = await client.getTransactionReceipt({ hash: res.txHash as Hex });
     const memos = parseEventLogs({ abi: Abis.tip20, eventName: "TransferWithMemo", logs: receipt.logs }).map((l) =>
-      hexToString(l.args.memo as Hex, { size: 32 }),
+      hexToString(l.args.memo, { size: 32 }),
     );
     expect(memos).toEqual(legs.map((l) => l.memo));
   });

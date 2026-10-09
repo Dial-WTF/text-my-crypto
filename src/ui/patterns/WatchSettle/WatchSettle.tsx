@@ -44,7 +44,7 @@ export function WatchSettle({ initial, endpoint, network, everyMs = 30_000 }: Pr
       try {
         const res = await fetch(endpoint, { headers: { accept: "application/json" } });
         if (!res.ok) return;
-        const body = (await res.json()) as { payment: LatestPayment | null };
+        const body = await res.json<{ payment: LatestPayment | null }>();
         if (!alive) return;
         setPayment(body.payment);
         setChecked(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
@@ -52,7 +52,7 @@ export function WatchSettle({ initial, endpoint, network, everyMs = 30_000 }: Pr
         // Keep showing the last answer; the next poll tries again.
       }
     };
-    const timer = setInterval(poll, everyMs);
+    const timer = setInterval(() => void poll(), everyMs);
     return () => {
       alive = false;
       clearInterval(timer);

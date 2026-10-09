@@ -29,7 +29,7 @@ export async function getConversation(db: Db, phone: string, now: Date): Promise
     .where(and(eq(conversations.phone, phone), gt(conversations.expiresAt, now)))
     .limit(1);
   if (!row) return null;
-  const parsed = conversationSchema.safeParse({ state: row.state, payload: JSON.parse(row.payload) });
+  const parsed = conversationSchema.safeParse({ state: row.state, payload: JSON.parse(row.payload) as unknown });
   return parsed.success ? { ...parsed.data, rev: row.expiresAt.getTime() } : null;
 }
 

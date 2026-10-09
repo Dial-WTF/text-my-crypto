@@ -1,4 +1,5 @@
 import styles from "./SmsConsent.module.css";
+import { cx } from "@/ui/cx";
 
 /** The consent sentence, one place. Carriers want it next to every "text us" call to action. */
 export const SMS_CONSENT =
@@ -14,7 +15,7 @@ type SmsConsentProps = {
 /** The small print under a "text hi" button or number: what texting the operator signs you up for. */
 export function SmsConsent({ on = "canvas", terms = "/terms", privacy = "/privacy" }: SmsConsentProps) {
   return (
-    <p className={`${styles.consent} ${on === "card" ? styles.card : styles.canvas}`}>
+    <p className={cx(styles.consent, on === "card" ? styles.card : styles.canvas)}>
       {SMS_CONSENT}{" "}
       <a className={styles.link} href={terms}>
         Terms

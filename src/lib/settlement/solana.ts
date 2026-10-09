@@ -160,7 +160,7 @@ export function createSolanaAdapter(cfg: {
       } catch (e) {
         const code = escrowErrorCode(e);
         if (code === ESCROW_ERRORS.Expired) throw new EscrowExpiredError(intentId);
-        if (code !== null) throw new Error(`dial_escrow refused: ${escrowErrorName(code)} (${code})`, { cause: e });
+        if (code !== null) throw new Error(`dial_escrow refused: ${escrowErrorName(code) ?? "unknown error"} (${code})`, { cause: e });
         throw e;
       }
     }

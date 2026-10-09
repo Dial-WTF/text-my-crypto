@@ -34,9 +34,10 @@ export async function POST(req: Request, ctx: RouteContext<"/api/actions/pay/[ha
   if (!on) return actionError(OFF, 503, headers);
   const handle = handleFromParam((await ctx.params).handle);
   if (!handle) return actionError(NOT_FOUND, 404, headers);
-  let body: ActionPostRequest;
+  // `null` is valid JSON, so the body may be null even though it parsed.
+  let body: ActionPostRequest | null;
   try {
-    body = (await req.json()) as ActionPostRequest;
+    body = await req.json<ActionPostRequest | null>();
   } catch {
     return actionError("Send JSON with the paying wallet as `account`.", 400, headers);
   }
