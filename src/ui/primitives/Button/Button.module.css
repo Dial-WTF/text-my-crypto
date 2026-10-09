@@ -36,8 +36,10 @@
   color: var(--button-ink);
 }
 
+/* Hover inverts to the outline look. Its colours are the button's own pair, so the label reads in every theme. */
 .solid:hover:not(:disabled) {
-  background: var(--color-accent-ink);
+  background: transparent;
+  color: var(--button-ink);
 }
 
 .outline:hover:not(:disabled) {
