@@ -252,7 +252,7 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     case "venue":
       return reply(await prepareVenue(deps, user, cmd));
     case "venue_balance":
-      return reply(await venueBalanceReply(deps, user));
+      return reply(await venueBalanceReply(deps, user, cmd.venue));
     case "price":
       return reply(await priceReply(cmd.coin));
   }

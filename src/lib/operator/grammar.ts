@@ -15,13 +15,14 @@ export type MoneyCommand = {
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
 
 /** USDC from HyperEVM into a HyperCore spot balance: someone's, or with no counterparty, the sender's own. */
-export type VenueCommand = { kind: "venue"; amountUsd: string; counterparty?: string };
+/** `venue` is the word they used ("hyperliquid", "hypercore", "hl"); the bot matches it to a chain's venue module. */
+export type VenueCommand = { kind: "venue"; venue: string; amountUsd: string; counterparty?: string };
 
 export type Command =
   | MoneyCommand
   | WithdrawCommand
   | VenueCommand
-  | { kind: "venue_balance" }
+  | { kind: "venue_balance"; venue: string }
   | { kind: "price"; coin: string }
   | { kind: "balance" }
   | { kind: "receive" }
@@ -77,17 +78,22 @@ const WITHDRAW = new RegExp(
 );
 
 // "to hyperliquid" means HyperCore; "on hyperliquid" stays a HyperEVM send (the chain alias).
-const HL = String.raw`(?:hyperliquid|hypercore|hl)(?:\s+(?:spot|account|balance))?`;
+// Words for a trading venue: Hyperliquid's (the chain alias), HyperCore (the venue's name) and "hl".
+const VENUE_WORD = String.raw`hyperliquid|hypercore|hl`;
+const HL = String.raw`(?<venue>${VENUE_WORD})(?:\s+(?:spot|account|balance))?`;
 const HL_SELF = new RegExp(
-  String.raw`^(?:move|send|transfer|deposit|bridge|put)\s+${AMT}\s+(?:to|into|onto)\s+(?:my\s+)?${HL}${END}`,
+  String.raw`^(?:move|send|transfer|deposit|bridge|put)\s+${AMT}\s+(?<prep>to|into|onto)\s+(?:my\s+)?${HL}${END}`,
   "i",
 );
-const TO_HL = String.raw`(?:(?:to|into)\s+(?:their\s+)?${HL}|on\s+hypercore)`;
+const TO_HL = String.raw`(?<prep>to|into|on)\s+(?:their\s+)?${HL}`;
 const HL_SEND = [
   new RegExp(String.raw`^${SEND}\s+(?:to\s+)?(${WHO})\s+${AMT}\s+${TO_HL}${END}`, "i"),
   new RegExp(String.raw`^${SEND}\s+${AMT}\s+to\s+(${WHO})\s+${TO_HL}${END}`, "i"),
 ];
-const HL_BALANCE = /^(?:(?:hl|hyperliquid|hypercore)\s+(?:balance|bal)|(?:balance|bal)\s+(?:on\s+)?(?:hl|hyperliquid|hypercore))\??$/i;
+const HL_BALANCE = new RegExp(
+  String.raw`^(?:(?<a>${VENUE_WORD})\s+(?:balance|bal)|(?:balance|bal)\s+(?:on\s+)?(?<b>${VENUE_WORD}))\??$`,
+  "i",
+);
 const PRICE = /^(?:price|px|quote)\s+(?:of\s+|for\s+)?\$?([a-z][a-z0-9]{0,9})\??$|^\$?([a-z][a-z0-9]{0,9})\s+price\??$/i;
 
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
@@ -126,13 +132,19 @@ function build(pat: Pattern, m: RegExpExecArray): Command | null {
 /** "move $5 to hyperliquid", "send @alex $5 to hyperliquid". Checked before plain sends, which would read "hyperliquid" as a name. */
 function parseVenue(t: string): Command | null {
   const self = HL_SELF.exec(t);
-  if (self?.[1]) return isUsdAmount(self[1]) ? { kind: "venue", amountUsd: self[1] } : { kind: "chat" };
+  const selfVenue = self?.groups?.venue;
+  if (self?.[1] && selfVenue) {
+    return isUsdAmount(self[1]) ? { kind: "venue", venue: selfVenue.toLowerCase(), amountUsd: self[1] } : { kind: "chat" };
+  }
   for (const [i, re] of HL_SEND.entries()) {
     const m = re.exec(t);
     const [who, amount] = i === 0 ? [m?.[1], m?.[2]] : [m?.[2], m?.[1]];
-    if (!who || !amount) continue;
+    const venue = m?.groups?.venue?.toLowerCase();
+    if (!who || !amount || !venue) continue;
+    // "on hyperliquid" names the chain (a HyperEVM send); only "on hypercore" names the venue.
+    if (m?.groups?.prep?.toLowerCase() === "on" && venue !== "hypercore") return null;
     if (!isUsdAmount(amount)) return { kind: "chat" };
-    return { kind: "venue", amountUsd: amount, counterparty: normalizeCounterparty(who) };
+    return { kind: "venue", venue, amountUsd: amount, counterparty: normalizeCounterparty(who) };
   }
   return null;
 }
@@ -140,7 +152,9 @@ function parseVenue(t: string): Command | null {
 export function parseCommand(text: string): Command {
   const t = text.trim().replace(/\s+/g, " ");
   if (BALANCE.test(t)) return { kind: "balance" };
-  if (HL_BALANCE.test(t)) return { kind: "venue_balance" };
+  const venueBalance = HL_BALANCE.exec(t);
+  const balanceWord = venueBalance?.groups?.a ?? venueBalance?.groups?.b;
+  if (balanceWord) return { kind: "venue_balance", venue: balanceWord.toLowerCase() };
   const price = PRICE.exec(t);
   if (price) return { kind: "price", coin: (price[1] ?? price[2] ?? "").toUpperCase() };
   const hl = parseVenue(t);

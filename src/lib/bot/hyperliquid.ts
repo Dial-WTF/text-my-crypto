@@ -1,4 +1,4 @@
-import type { Chain } from "@/lib/chains";
+import { type Chain, chainLabel, parseChain } from "@/lib/chains";
 import type { Intent, User } from "@/lib/db/schema";
 import { describe, isClaimed } from "@/lib/identity";
 import { createIntent, findPendingDuplicate, isCodeLocked } from "@/lib/intents";
@@ -8,7 +8,7 @@ import { replies } from "@/lib/operator/replies";
 import { type Capabilities, chainWith } from "@/lib/settlement/capabilities";
 import { coinSymbol, type Fetch, formatPrice, midPrice } from "@/lib/settlement/hypercore";
 import { venueOf } from "@/lib/settlement/registry";
-import type { SettlementAdapter } from "@/lib/settlement/types";
+import type { Adapters, SettlementAdapter } from "@/lib/settlement/types";
 import { getWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
 import { announce, checkMoney, codeFor, insufficientReply, type Prepared, overDailyCap, resolveCounterparty } from "./money";
@@ -24,12 +24,23 @@ const fail = (code: Extract<Prepared, { ok: false }>["error"]["code"], message: 
 
 type Venue = { chain: Chain; adapter: SettlementAdapter; venue: NonNullable<Capabilities["venue"]> };
 
-/** The enabled chain carrying a trading venue, or why there's none. */
-function findVenue(deps: BotDeps): { ok: true; found: Venue } | { ok: false; message: string } {
-  const found = chainWith(deps.adapters, "venue");
-  return found
-    ? { ok: true, found: { chain: found.chain, adapter: found.adapter, venue: found.module } }
-    : { ok: false, message: replies.hyperCoreOff() };
+/**
+ * The enabled chain whose venue the person named: `word` matches the venue's name ("hypercore"), the chain's
+ * label, or one of the chain's aliases ("hyperliquid", "hl"). No word: any chain carrying a venue.
+ */
+export function venueNamed(adapters: Adapters, word?: string): Venue | null {
+  const preferred = word ? (parseChain(word) ?? undefined) : undefined;
+  const found = chainWith(adapters, "venue", preferred);
+  if (!found) return null;
+  const w = word?.toLowerCase();
+  const matches = !w || w === found.module.name.toLowerCase() || w === chainLabel(found.chain).toLowerCase() || preferred === found.chain;
+  return matches ? { chain: found.chain, adapter: found.adapter, venue: found.module } : null;
+}
+
+/** The venue the person named, or why there's none. */
+function findVenue(deps: BotDeps, word?: string): { ok: true; found: Venue } | { ok: false; message: string } {
+  const found = venueNamed(deps.adapters, word);
+  return found ? { ok: true, found } : { ok: false, message: replies.hyperCoreOff() };
 }
 
 /** Who gets the deposit: the sender (no counterparty) or a Dial user who has signed up. */
@@ -50,8 +61,14 @@ export async function venueRecipient(
 }
 
 /** The same deposit already waiting for approval. */
-export async function pendingVenueDuplicate(deps: BotDeps, user: User, other: User, amount: bigint): Promise<Intent | null> {
-  const found = chainWith(deps.adapters, "venue");
+export async function pendingVenueDuplicate(
+  deps: BotDeps,
+  user: User,
+  other: User,
+  amount: bigint,
+  word?: string,
+): Promise<Intent | null> {
+  const found = venueNamed(deps.adapters, word);
   if (!found) return null;
   return findPendingDuplicate(
     deps.db,
@@ -64,8 +81,14 @@ export async function pendingVenueDuplicate(deps: BotDeps, user: User, other: Us
  * Validates a venue deposit to a resolved recipient and creates its PaymentIntent and code. The recipient's
  * venue account is their Dial wallet address on the chain. Same caps and approval as a send. Texts nobody.
  */
-export async function createVenueIntent(deps: BotDeps, user: User, amountUsd: string, other: User): Promise<Prepared> {
-  const on = findVenue(deps);
+export async function createVenueIntent(
+  deps: BotDeps,
+  user: User,
+  amountUsd: string,
+  other: User,
+  word?: string,
+): Promise<Prepared> {
+  const on = findVenue(deps, word);
   if (!on.ok) return fail("chain_unavailable", on.message);
   const { chain, adapter } = on.found;
   const checked = checkMoney(deps, user, { amountUsd, chain });
@@ -99,7 +122,7 @@ export async function createVenueIntent(deps: BotDeps, user: User, amountUsd: st
 
 /** SMS path for "move $5 to hyperliquid" and "send @alex $5 to hyperliquid". Returns the reply. */
 export async function prepareVenue(deps: BotDeps, user: User, cmd: VenueCommand): Promise<string> {
-  const on = findVenue(deps);
+  const on = findVenue(deps, cmd.venue);
   if (!on.ok) return on.message;
   const to = await venueRecipient(deps, user, cmd.counterparty);
   if (!to.ok) return to.message;
@@ -107,7 +130,7 @@ export async function prepareVenue(deps: BotDeps, user: User, cmd: VenueCommand)
   if (!checked.ok) return checked.error.message;
 
   // Asked twice: the same confirmation again, with a fresh code, instead of a second deposit.
-  const pending = await pendingVenueDuplicate(deps, user, to.user, checked.amount);
+  const pending = await pendingVenueDuplicate(deps, user, to.user, checked.amount, cmd.venue);
   if (pending) {
     if (isCodeLocked(pending)) return replies.codeMismatch(0);
     const code = await codeFor(deps, user.id, pending.id, pending.amount, { keepAttempts: true });
@@ -115,7 +138,7 @@ export async function prepareVenue(deps: BotDeps, user: User, cmd: VenueCommand)
     return replies.confirmHyperCore(formatUsd(pending.amount), who, code, `${deps.appUrl}/a/${pending.id}`);
   }
 
-  const r = await createVenueIntent(deps, user, cmd.amountUsd, to.user);
+  const r = await createVenueIntent(deps, user, cmd.amountUsd, to.user, cmd.venue);
   return r.ok ? announce(deps, user, r.prepared) : r.error.message;
 }
 
@@ -123,19 +146,20 @@ export async function prepareVenue(deps: BotDeps, user: User, cmd: VenueCommand)
 export async function venueBalance(
   deps: BotDeps,
   user: User,
+  word?: string,
 ): Promise<{ amount: bigint; network: string; address: string } | null> {
-  const found = chainWith(deps.adapters, "venue");
+  const found = venueNamed(deps.adapters, word);
   if (!found) return null;
   const wallet = await getWallet(deps.db, user.id, found.chain);
   if (!wallet) return null;
-  const network = venueOf(found.chain, deps.network)?.network ?? found.module.name;
-  return { amount: await found.module.balance(wallet.address), network, address: wallet.address };
+  const network = venueOf(found.chain, deps.network)?.network ?? found.venue.name;
+  return { amount: await found.venue.balance(wallet.address), network, address: wallet.address };
 }
 
 /** "hl balance". */
-export async function venueBalanceReply(deps: BotDeps, user: User): Promise<string> {
-  if (!chainWith(deps.adapters, "venue")) return replies.hyperCoreOff();
-  const b = await venueBalance(deps, user);
+export async function venueBalanceReply(deps: BotDeps, user: User, word: string): Promise<string> {
+  if (!venueNamed(deps.adapters, word)) return replies.hyperCoreOff();
+  const b = await venueBalance(deps, user, word);
   return b ? replies.hlBalance(formatUsd(b.amount), b.network) : replies.hlNoAccount();
 }
 

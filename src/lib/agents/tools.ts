@@ -11,7 +11,7 @@ import {
   resolveCounterparty,
 } from "@/lib/bot/money";
 import { text } from "@/lib/bot/text";
-import { chainWith, FEATURES, featuresOf } from "@/lib/settlement/capabilities";
+import { FEATURES, featuresOf } from "@/lib/settlement/capabilities";
 import type { BotDeps } from "@/lib/bot/types";
 import { CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
@@ -37,7 +37,7 @@ import { buildPaymentView } from "@/lib/views/payment";
 import { walletJson, walletView } from "@/lib/views/wallet";
 import { coinSymbol, midPrice } from "@/lib/settlement/hypercore";
 import { getWallet } from "@/lib/wallets";
-import { createVenueIntent, venueBalance, venueRecipient, pendingVenueDuplicate } from "@/lib/bot/hyperliquid";
+import { createVenueIntent, pendingVenueDuplicate, venueBalance, venueNamed, venueRecipient } from "@/lib/bot/hyperliquid";
 import type { Agent } from "./keys";
 
 // ---------------------------------------------------------------------------------------------
@@ -348,11 +348,11 @@ async function sendToHyperliquid(deps: BotDeps, agent: Agent, input: ToolInput<"
   const { user } = agent;
   const to = await venueRecipient(deps, user, input.to);
   if (!to.ok) return err(to.code, to.code === "unknown_recipient" && input.to ? notFoundOnDial(input.to) : to.message);
-  const pending = await pendingVenueDuplicate(deps, user, to.user, usdToBaseUnits(input.amountUsd));
+  const pending = await pendingVenueDuplicate(deps, user, to.user, usdToBaseUnits(input.amountUsd), "hyperliquid");
   if (pending) {
     return err("duplicate", `The same Hyperliquid deposit is already waiting for approval as ${pending.id}. Poll get_payment instead of asking again.`);
   }
-  const r = await createVenueIntent(deps, user, input.amountUsd, to.user);
+  const r = await createVenueIntent(deps, user, input.amountUsd, to.user, "hyperliquid");
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }
 
@@ -360,8 +360,8 @@ const notFoundOnDial = (raw: string) =>
   `"${raw}" isn't a Dial user who has signed up, so there's no Hyperliquid balance to send to. Pass their Dial @handle, or use send_payment.`;
 
 async function getHyperliquidBalance(deps: BotDeps, agent: Agent): Promise<ToolResult> {
-  if (!chainWith(deps.adapters, "venue")) return err("unavailable", replies.hyperCoreOff());
-  const b = await venueBalance(deps, agent.user);
+  if (!venueNamed(deps.adapters, "hyperliquid")) return err("unavailable", replies.hyperCoreOff());
+  const b = await venueBalance(deps, agent.user, "hyperliquid");
   if (!b) {
     return ok({ account: null, amountUsd: "0", asset: "USDC", message: "No Hyperliquid account yet: send_to_hyperliquid with no `to` starts one." });
   }

@@ -11,6 +11,7 @@ const ALIASES: Record<string, Chain> = {
   arb: "arbitrum",
   arbitrum: "arbitrum",
   hyperliquid: "hyperevm",
+  hl: "hyperevm",
   hyperevm: "hyperevm",
   hype: "hyperevm",
   robinhood: "robinhood",

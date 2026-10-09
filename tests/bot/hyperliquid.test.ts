@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runTool } from "@/lib/agents/tools";
 import type { Agent } from "@/lib/agents/keys";
 import { handleInbound } from "@/lib/bot/handle-inbound";
+import { venueNamed } from "@/lib/bot/hyperliquid";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
@@ -130,6 +131,15 @@ describe("move $5 to hyperliquid", () => {
     expect(await say(ALEX, "move $5 to hyperliquid")).toBe(
       "You have $2 in test USDC, not enough for that one. Add more: https://tmc.test/@alex Free test USDC: faucet.circle.com",
     );
+  });
+
+  it("finds the venue by the word they used: its name, the chain's label or an alias", async () => {
+    expect(venueNamed(deps.adapters, "hypercore")?.chain).toBe("hyperevm");
+    expect(venueNamed(deps.adapters, "hyperliquid")?.chain).toBe("hyperevm");
+    expect(venueNamed(deps.adapters, "hl")?.chain).toBe("hyperevm");
+    expect(venueNamed(deps.adapters, "hyperevm")?.chain).toBe("hyperevm");
+    expect(venueNamed(deps.adapters, "solana")).toBeNull();
+    expect(await say(ALEX, "move $1 to hypercore")).toMatch(/^Move \$1 USDC from HyperEVM to your Hyperliquid spot balance\?/);
   });
 
   it("says so when deposits are off, and moves nothing", async () => {
