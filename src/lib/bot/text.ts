@@ -1,3 +1,4 @@
+import { errorText } from "@/lib/settlement/redact";
 import { logOutbound } from "@/lib/sms/log";
 import { isOptedOut } from "@/lib/sms/optout";
 import type { BotDeps } from "./types";
@@ -20,7 +21,7 @@ export async function notify(deps: TextDeps, phone: string, body: string): Promi
   try {
     return await text(deps, phone, body);
   } catch (e) {
-    console.error("notify failed", e);
+    console.error("notify failed", errorText(e));
     return false;
   }
 }
