@@ -2,7 +2,11 @@ import { z } from "zod";
 
 const schema = z.object({
   APP_URL: z.url(),
-  PAYPHONE_API_KEY: z.string().min(1),
+  /** Needed to send texts (SMS_MODE=payphone). Staging and local log texts and can leave it out. */
+  PAYPHONE_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   PAYPHONE_BASE_URL: z.url().default("https://payphone.wtf"),
   DIAL_OPERATOR_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/),
   SMS_WEBHOOK_SECRET: z.string().min(32),
@@ -57,6 +61,9 @@ const schema = z.object({
 }).refine((e) => e.NETWORK === "testnet" || e.ALLOW_MAINNET === "yes", {
   message: "NETWORK=mainnet moves real money; set ALLOW_MAINNET=yes to confirm",
   path: ["ALLOW_MAINNET"],
+}).refine((e) => e.SMS_MODE === "log" || e.PAYPHONE_API_KEY !== undefined, {
+  message: "SMS_MODE=payphone sends texts through Payphone; set PAYPHONE_API_KEY",
+  path: ["PAYPHONE_API_KEY"],
 });
 
 export type Env = z.infer<typeof schema>;

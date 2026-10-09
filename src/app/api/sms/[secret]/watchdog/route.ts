@@ -19,7 +19,7 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
   const owner = e.ALERT_PHONE ? normalizePhone(e.ALERT_PHONE) : null;
   if (e.ALERT_PHONE && !owner) console.error(JSON.stringify({ evt: "watchdog", error: "ALERT_PHONE is not a phone number" }));
   const send =
-    e.SMS_MODE === "payphone"
+    e.SMS_MODE === "payphone" && e.PAYPHONE_API_KEY
       ? payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER })
       : logSender;
   const report = await runWatchdog({

@@ -25,7 +25,7 @@ export function botDeps(): BotDeps {
   return {
     db: getDb(),
     sendSms:
-      e.SMS_MODE === "payphone"
+      e.SMS_MODE === "payphone" && e.PAYPHONE_API_KEY
         ? payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER })
         : logSender,
     llm: operatorModel(e),

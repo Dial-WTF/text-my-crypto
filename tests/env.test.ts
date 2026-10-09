@@ -39,6 +39,16 @@ describe("env", () => {
     delete process.env.ALCHEMY_API_KEY;
   });
 
+  it("needs a Payphone key only when it sends real texts", () => {
+    Object.assign(process.env, base, { PAYPHONE_API_KEY: "" });
+    expect(env().PAYPHONE_API_KEY).toBeUndefined();
+    resetEnvForTests();
+    Object.assign(process.env, { SMS_MODE: "payphone" });
+    expect(() => env()).toThrow(/PAYPHONE_API_KEY/);
+    delete process.env.SMS_MODE;
+    process.env.PAYPHONE_API_KEY = base.PAYPHONE_API_KEY;
+  });
+
   it("rejects a bad bot number", () => {
     Object.assign(process.env, base, { DIAL_OPERATOR_NUMBER: "8066071387" });
     expect(() => env()).toThrow();
