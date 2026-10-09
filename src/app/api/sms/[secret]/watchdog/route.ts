@@ -1,4 +1,3 @@
-import { solanaActionChain } from "@/lib/actions/chain";
 import { recordActionPayments } from "@/lib/actions/record";
 import { reconcileEscrows } from "@/lib/bot/settle";
 import { getDb } from "@/lib/db/client";
@@ -41,12 +40,9 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     console.error(JSON.stringify({ evt: "reconcile_escrows", error: errorText(err) }));
     return null;
   });
-  const solana = solanaActionChain();
-  const actionPayments = solana
-    ? await recordActionPayments(botDeps(), solana).catch((err: unknown) => {
-        console.error(JSON.stringify({ evt: "record_action_payments", error: errorText(err) }));
-        return null;
-      })
-    : null;
+  const actionPayments = await recordActionPayments(botDeps()).catch((err: unknown) => {
+    console.error(JSON.stringify({ evt: "record_action_payments", error: errorText(err) }));
+    return null;
+  });
   return Response.json({ ...report, escrows, actionPayments });
 }

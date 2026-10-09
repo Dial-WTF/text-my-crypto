@@ -12,12 +12,12 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { newReference } from "@/lib/actions/pay";
 import { recordActionPayments } from "@/lib/actions/record";
-import { solanaChainReader } from "@/lib/actions/rpc";
 import type { BotDeps } from "@/lib/bot/types";
 import { actionPayments } from "@/lib/db/schema";
 import { createUser } from "@/lib/identity";
 import { b64ToBytes } from "@/lib/secretbox";
 import { REGISTRY, type SolanaNetwork } from "@/lib/settlement/registry";
+import { createSolanaActions } from "@/lib/settlement/solana-actions";
 import { createTestDb } from "../helpers/db";
 import { fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
 
@@ -26,10 +26,8 @@ import { fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
 const run = process.env.SOLANA_INT === "1" && !!process.env.SOLANA_TREASURY_SEED;
 const devnet = REGISTRY.solana.testnet as SolanaNetwork;
 const rpcUrl = process.env.RPC_SOLANA_DEVNET ?? devnet.publicRpc;
-const reader = solanaChainReader(rpcUrl);
 const state: { deps?: BotDeps } = {};
 vi.mock("@/lib/deps", () => ({ botDeps: () => state.deps }));
-vi.mock("@/lib/actions/chain", () => ({ solanaActionChain: () => ({ entry: devnet, reader }) }));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,7 +43,13 @@ describe.runIf(run)("pay action (devnet)", () => {
     state.deps = testDeps(db, {
       sendSms: sms.sendSms,
       now: () => new Date(),
-      adapters: { solana: { ...fakeAdapter(), createWallet: async () => ({ address: recipient, secret: new Uint8Array(32) }) } },
+      adapters: {
+        solana: {
+          ...fakeAdapter({ defaultBalance: 100_000_000n }),
+          createWallet: async () => ({ address: recipient, secret: new Uint8Array(32) }),
+          actions: createSolanaActions({ rpcUrl, mint: devnet.mint, caip2: devnet.caip2, explorerTx: devnet.explorerTx }),
+        },
+      },
     });
     const ctx = { params: Promise.resolve({ handle: "blinktest" }) };
 
@@ -89,13 +93,13 @@ describe.runIf(run)("pay action (devnet)", () => {
     }
 
     // getSignaturesForAddress can trail confirmation by a moment.
-    let report = await recordActionPayments(state.deps, { entry: devnet, reader });
+    let report = await recordActionPayments(state.deps);
     for (let i = 0; i < 10 && report.recorded === 0; i++) {
       await sleep(2000);
-      report = await recordActionPayments(state.deps, { entry: devnet, reader });
+      report = await recordActionPayments(state.deps);
     }
     expect(report.recorded).toBe(1);
-    expect((await recordActionPayments(state.deps, { entry: devnet, reader })).recorded).toBe(0);
+    expect((await recordActionPayments(state.deps)).recorded).toBe(0);
     const [row] = await db.select().from(actionPayments).where(eq(actionPayments.recipientAddress, recipient));
     expect(row).toMatchObject({ signature, received: 10_000n, payerAddress: payer.address });
     expect(sms.to("+15550000777")).toHaveLength(1);

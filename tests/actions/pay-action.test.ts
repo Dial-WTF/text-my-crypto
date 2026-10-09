@@ -15,14 +15,15 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { MAX_OPEN_PER_HANDLE, newReference, payActionMetadata, preparePayment } from "@/lib/actions/pay";
-import { recordActionPayments, paidTo } from "@/lib/actions/record";
-import type { ActionChainReader, ConfirmedTx } from "@/lib/actions/rpc";
+import { type ActionsChain, actionsChain, MAX_OPEN_PER_HANDLE, newReference, payActionMetadata, preparePayment } from "@/lib/actions/pay";
+import { recordActionPayments } from "@/lib/actions/record";
 import { ACTIONS_JSON, actionHeaders } from "@/lib/actions/spec";
 import type { BotDeps } from "@/lib/bot/types";
 import { actionPayments } from "@/lib/db/schema";
 import { createUser } from "@/lib/identity";
+import { featuresOf, type PaymentActions } from "@/lib/settlement/capabilities";
 import { REGISTRY, type SolanaNetwork } from "@/lib/settlement/registry";
+import { buildPayTransaction, type ConfirmedTx, paidTo } from "@/lib/settlement/solana-actions";
 import { movedByChain, publicStats, recentPayments } from "@/lib/stats";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
@@ -32,51 +33,40 @@ const entry = REGISTRY.solana.testnet as SolanaNetwork;
 const now = new Date("2026-10-09T12:00:00Z");
 const PAYER = newReference();
 const ALEX_WALLET = newReference();
+const LIFETIME = { blockhash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1EtWTRABZaYq6", lastValidBlockHeight: 1000n };
 
-/** A chain reader with a payer balance, a fixed blockhash, and whatever transactions a test puts on "chain". */
-function fakeReader(balance: bigint | null = 100_000_000n) {
-  const byReference = new Map<string, Array<{ signature: string; err: unknown }>>();
-  const txs = new Map<string, ConfirmedTx>();
-  const calls = { signatures: 0 };
-  let down = false;
-  const reader: ActionChainReader = {
-    latestBlockhash: async () => ({ blockhash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1EtWTRABZaYq6", lastValidBlockHeight: 1000n }),
-    tokenBalance: async () => balance,
-    signatures: async (ref) => {
-      calls.signatures++;
-      if (down) throw new Error("RPC 503");
-      return byReference.get(ref) ?? [];
-    },
-    transaction: async (sig) => txs.get(sig) ?? null,
-  };
-  return {
-    reader,
-    calls,
-    setDown: (v: boolean) => {
-      down = v;
-    },
-    /** Lands a transfer of `amount` from `from` to `to` that carries `reference`. */
-    land(reference: string, signature: string, amount: bigint, opts: { to?: string; from?: string; err?: unknown } = {}) {
-      byReference.set(reference, [{ signature, err: opts.err ?? null }, ...(byReference.get(reference) ?? [])]);
-      const bal = (accountIndex: number, owner: string, amt: bigint) => ({ accountIndex, mint: entry.mint, owner, uiTokenAmount: { amount: String(amt) } });
-      const from = opts.from ?? PAYER;
-      txs.set(signature, {
-        err: opts.err ?? null,
-        feePayer: from,
-        pre: [bal(1, from, 100_000_000n), bal(2, opts.to ?? ALEX_WALLET, 0n)],
-        post: [bal(1, from, 100_000_000n - amount), bal(2, opts.to ?? ALEX_WALLET, amount)],
-      });
+type Landed = { txHash: string; explorerUrl: string; payer: string; amount: bigint; to: string };
+
+/** An `actions` module with the real transaction builder and a "chain" a test lands payments on. */
+function fakeActions() {
+  const landed = new Map<string, Landed[]>();
+  const state = { down: false };
+  const actions: PaymentActions = {
+    blockchainId: entry.caip2,
+    buildPayment: (args) => buildPayTransaction({ ...args, mint: entry.mint, lifetime: LIFETIME }),
+    findByReference: async (reference, recipient) => {
+      if (state.down) throw new Error("RPC 503");
+      return (landed.get(reference) ?? []).filter((p) => p.to === recipient);
     },
   };
+  const land = (reference: string, txHash: string, amount: bigint, to = ALEX_WALLET) =>
+    landed.set(reference, [...(landed.get(reference) ?? []), { txHash, explorerUrl: entry.explorerTx(txHash), payer: PAYER, amount, to }]);
+  return { module: actions, state, land };
 }
 
 async function setup(overrides: Partial<BotDeps> = {}) {
   const db = await createTestDb();
   const alex = await createUser(db, { phone: "+15550000010", handle: "alex", name: "Alex Rivera" }, now);
   const sms = smsSink();
-  const adapter = { ...fakeAdapter(), createWallet: async () => ({ address: ALEX_WALLET, secret: new Uint8Array(32) }) };
+  const actions = fakeActions();
+  const adapter = {
+    ...fakeAdapter({ defaultBalance: 100_000_000n }),
+    createWallet: async () => ({ address: ALEX_WALLET, secret: new Uint8Array(32) }),
+    actions: actions.module,
+  };
   const deps = testDeps(db, { adapters: { solana: adapter }, sendSms: sms.sendSms, now: () => now, ...overrides });
-  return { db, alex, sms, deps };
+  const on: ActionsChain = { chain: "solana", adapter, module: actions.module };
+  return { db, alex, sms, deps, adapter, actions, on };
 }
 
 function decode(base64: string) {
@@ -88,13 +78,8 @@ function decode(base64: string) {
 describe("pay action GET", () => {
   it("offers $1, $5, $10 and a custom amount up to the cap, with an absolute icon", async () => {
     const { deps } = await setup();
-    const body = payActionMetadata(deps, { handle: "alex", name: "Alex Rivera" }, {}, entry);
-    expect(body).toMatchObject({
-      type: "action",
-      icon: "https://tmc.test/pay/alex/card",
-      title: "Pay Alex Rivera (@alex)",
-      label: "Pay",
-    });
+    const body = payActionMetadata(deps, "solana", { handle: "alex", name: "Alex Rivera" }, {});
+    expect(body).toMatchObject({ type: "action", icon: "https://tmc.test/pay/alex/card", title: "Pay Alex Rivera (@alex)", label: "Pay" });
     expect(body.description).toContain("Solana devnet");
     const actions = body.links?.actions ?? [];
     expect(actions.map((a) => [a.label, a.href])).toEqual([
@@ -109,20 +94,20 @@ describe("pay action GET", () => {
 
   it("a link with an amount gets one button for it; presets over the cap are left out", async () => {
     const { deps } = await setup();
-    const asked = payActionMetadata(deps, { handle: "alex", name: null }, { amount: "7.50", note: "pizza" }, entry);
+    const asked = payActionMetadata(deps, "solana", { handle: "alex", name: null }, { amount: "7.50", note: "pizza" });
     expect(asked.title).toBe("Pay @alex $7.50 for pizza");
     expect(asked.icon).toBe("https://tmc.test/pay/alex/card?amount=7.50&note=pizza");
     expect(asked.links?.actions).toEqual([{ type: "transaction", label: "Pay $7.50", href: "https://tmc.test/api/actions/pay/alex?amount=7.50&note=pizza" }]);
 
-    const small = payActionMetadata({ ...deps, perTxCap: 5_000_000n }, { handle: "alex", name: null }, {}, entry);
+    const small = payActionMetadata({ ...deps, perTxCap: 5_000_000n }, "solana", { handle: "alex", name: null }, {});
     expect(small.links?.actions.map((a) => a.label)).toEqual(["$1", "$5", "Pay"]);
-    // An amount over the cap isn't offered as a preset.
-    const over = payActionMetadata(deps, { handle: "alex", name: null }, { amount: "500" }, entry);
+    // An amount over the cap isn't offered.
+    const over = payActionMetadata(deps, "solana", { handle: "alex", name: null }, { amount: "500" });
     expect(over.links?.actions).toHaveLength(4);
   });
 });
 
-describe("Actions headers and actions.json", () => {
+describe("Actions headers, actions.json and the capability", () => {
   it("carries CORS, the spec version and the devnet chain id", () => {
     const h = actionHeaders(entry.caip2);
     expect(h["access-control-allow-origin"]).toBe("*");
@@ -147,13 +132,19 @@ describe("Actions headers and actions.json", () => {
     expect(map("/api/actions/pay/alex")).toBe("/api/actions/pay/alex");
     expect(map("/ledger")).toBeNull();
   });
+
+  it("is found by capability, not by chain name", async () => {
+    const { deps, adapter } = await setup();
+    expect(featuresOf(adapter)).toContain("actions");
+    expect(actionsChain(deps.adapters)?.chain).toBe("solana");
+    expect(actionsChain({ solana: fakeAdapter() })).toBeNull();
+  });
 });
 
 describe("pay action POST", () => {
   it("builds a devnet USDC transfer the payer signs: create ATA, transfer with the reference, memo", async () => {
-    const { db, alex, deps } = await setup();
-    const chain = fakeReader();
-    const res = await preparePayment(deps, { entry, reader: chain.reader }, { handle: "alex", account: PAYER, amount: "5", note: "pizza" });
+    const { db, alex, deps, on } = await setup();
+    const res = await preparePayment(deps, on, { handle: "alex", account: PAYER, amount: "5", note: "pizza" });
     if (!res.ok) throw new Error(res.message);
     expect(res.message).toBe("Pays $5 USDC to @alex's Dial wallet.");
 
@@ -169,19 +160,20 @@ describe("pay action POST", () => {
     expect(transfer?.programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
     expect(memo?.programAddress).toBe(MEMO_PROGRAM_ADDRESS);
 
-    const [aliceAta] = await findAssociatedTokenPda({ owner: ALEX_WALLET as never, mint: entry.mint as never, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const [payerAta] = await findAssociatedTokenPda({ owner: PAYER as never, mint: entry.mint as never, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const ataOf = async (owner: string) =>
+      (await findAssociatedTokenPda({ owner: owner as never, mint: entry.mint as never, tokenProgram: TOKEN_PROGRAM_ADDRESS }))[0];
+    const [alexAta, payerAta] = await Promise.all([ataOf(ALEX_WALLET), ataOf(PAYER)]);
     const c = parseCreateAssociatedTokenIdempotentInstruction(create as never);
     expect([c.accounts.payer.address, c.accounts.ata.address, c.accounts.owner.address, c.accounts.mint.address]).toEqual([
       PAYER,
-      aliceAta,
+      alexAta,
       ALEX_WALLET,
       entry.mint,
     ]);
-    const t = parseTransferCheckedInstruction({ ...transfer, accounts: transfer!.accounts!.slice(0, 4) } as never);
+    const t = parseTransferCheckedInstruction({ ...transfer, accounts: transfer?.accounts?.slice(0, 4) } as never);
     expect(t.data.amount).toBe(5_000_000n);
     expect(t.data.decimals).toBe(6);
-    expect([t.accounts.source.address, t.accounts.destination.address, t.accounts.authority.address]).toEqual([payerAta, aliceAta, PAYER]);
+    expect([t.accounts.source.address, t.accounts.destination.address, t.accounts.authority.address]).toEqual([payerAta, alexAta, PAYER]);
     // The reference rides on the transfer as a read-only, non-signing account.
     expect(transfer?.accounts?.[4]).toEqual({ address: res.reference, role: AccountRole.READONLY });
     expect(parseAddMemoInstruction(memo as never).data.memo).toBe(res.id);
@@ -190,6 +182,7 @@ describe("pay action POST", () => {
     expect(row).toMatchObject({
       reference: res.reference,
       recipientId: alex.id,
+      chain: "solana",
       recipientAddress: ALEX_WALLET,
       payerAddress: PAYER,
       amount: 5_000_000n,
@@ -200,52 +193,50 @@ describe("pay action POST", () => {
   });
 
   it("refuses amounts outside $0.01 to the cap, bad accounts, unknown handles and thin wallets", async () => {
-    const { deps } = await setup();
-    const chain = { entry, reader: fakeReader().reader };
+    const { deps, adapter, on } = await setup();
     const post = (input: { handle?: string; account?: unknown; amount?: string | null }) =>
-      preparePayment(deps, chain, { handle: "alex", account: PAYER, amount: "5", ...input });
+      preparePayment(deps, on, { handle: "alex", account: PAYER, amount: "5", ...input });
 
     for (const amount of ["0", "0.001", "50.01", "-1", "abc", null]) {
       expect(await post({ amount })).toEqual({ ok: false, status: 400, message: "Amounts can be from $0.01 to $50." });
     }
     expect((await post({ amount: "50" })).ok).toBe(true);
     expect((await post({ amount: "0.01" })).ok).toBe(true);
-    expect(await post({ account: "not-an-address" })).toMatchObject({ ok: false, status: 400 });
+    expect(await post({ account: "not-an-address" })).toEqual({ ok: false, status: 400, message: "That isn't a wallet address." });
     expect(await post({ account: 42 })).toMatchObject({ ok: false, status: 400 });
     expect(await post({ handle: "nobody" })).toEqual({ ok: false, status: 404, message: "No Dial user with that handle." });
-    expect(await post({ account: ALEX_WALLET })).toMatchObject({ ok: false, status: 400, message: "That is @alex's own Dial wallet." });
+    expect(await post({ account: ALEX_WALLET })).toEqual({ ok: false, status: 400, message: "That is @alex's own Dial wallet." });
 
-    const thin = await preparePayment(deps, { entry, reader: fakeReader(2_000_000n).reader }, { handle: "alex", account: PAYER, amount: "5" });
-    expect(thin).toEqual({ ok: false, status: 400, message: "This wallet has $2 in devnet USDC, not $5. Get test USDC at faucet.circle.com." });
+    adapter.balances.set(PAYER, 2_000_000n);
+    expect(await post({})).toEqual({ ok: false, status: 400, message: "This wallet has $2 in test USDC, not $5. Get test USDC at faucet.circle.com." });
     // A balance the RPC couldn't read doesn't block: the wallet's own simulation will.
-    expect((await preparePayment(deps, { entry, reader: fakeReader(null).reader }, { handle: "alex", account: PAYER, amount: "5" })).ok).toBe(true);
+    const blind = { ...on, adapter: { ...adapter, getBalance: async () => Promise.reject(new Error("RPC 503")) } };
+    expect((await preparePayment(deps, blind, { handle: "alex", account: PAYER, amount: "5" })).ok).toBe(true);
   });
 
   it("caps how many unpaid transactions one handle can have out", async () => {
-    const { deps } = await setup();
-    const chain = { entry, reader: fakeReader().reader };
+    const { deps, on } = await setup();
     for (let i = 0; i < MAX_OPEN_PER_HANDLE; i++) {
-      expect((await preparePayment(deps, chain, { handle: "alex", account: PAYER, amount: "1" })).ok).toBe(true);
+      expect((await preparePayment(deps, on, { handle: "alex", account: PAYER, amount: "1" })).ok).toBe(true);
     }
-    expect(await preparePayment(deps, chain, { handle: "alex", account: PAYER, amount: "1" })).toMatchObject({ ok: false, status: 429 });
+    expect(await preparePayment(deps, on, { handle: "alex", account: PAYER, amount: "1" })).toMatchObject({ ok: false, status: 429 });
   });
 });
 
 describe("reference matcher", () => {
-  async function prepared(deps: BotDeps, chain: ReturnType<typeof fakeReader>, amount = "5") {
-    const res = await preparePayment(deps, { entry, reader: chain.reader }, { handle: "alex", account: PAYER, amount, note: "pizza" });
+  async function prepared(deps: BotDeps, on: ActionsChain, amount = "5") {
+    const res = await preparePayment(deps, on, { handle: "alex", account: PAYER, amount, note: "pizza" });
     if (!res.ok) throw new Error(res.message);
     return res;
   }
 
   it("records a landed payment once, as from the paying wallet, and texts the recipient once", async () => {
-    const { db, deps, sms } = await setup();
-    const chain = fakeReader();
-    const res = await prepared(deps, chain);
-    const run = () => recordActionPayments(deps, { entry, reader: chain.reader });
+    const { db, deps, sms, actions, on } = await setup();
+    const res = await prepared(deps, on);
+    const run = () => recordActionPayments(deps);
 
     expect(await run()).toEqual({ recorded: 0, expired: 0, errors: 0 });
-    chain.land(res.reference, "SigOne", 5_000_000n);
+    actions.land(res.reference, "SigOne", 5_000_000n);
     // Two passes at once (a slow minute overlapping the next) still record it once.
     const [a, b] = await Promise.all([run(), run()]);
     expect(a.recorded + b.recorded).toBe(1);
@@ -269,49 +260,46 @@ describe("reference matcher", () => {
   });
 
   it("never records one signature for two references", async () => {
-    const { deps, sms } = await setup();
-    const chain = fakeReader();
-    const one = await prepared(deps, chain);
-    const two = await prepared(deps, chain);
-    chain.land(one.reference, "SigShared", 5_000_000n);
-    chain.land(two.reference, "SigShared", 5_000_000n);
-    expect((await recordActionPayments(deps, { entry, reader: chain.reader })).recorded).toBe(1);
+    const { deps, sms, actions, on } = await setup();
+    const one = await prepared(deps, on);
+    const two = await prepared(deps, on);
+    actions.land(one.reference, "SigShared", 5_000_000n);
+    actions.land(two.reference, "SigShared", 5_000_000n);
+    expect((await recordActionPayments(deps)).recorded).toBe(1);
     expect(sms.to("+15550000010")).toHaveLength(1);
   });
 
-  it("records what actually arrived, and skips failed transactions and transfers to someone else", async () => {
-    const { db, deps } = await setup();
-    const chain = fakeReader();
-    const res = await prepared(deps, chain, "10");
-    chain.land(res.reference, "SigFailed", 10_000_000n, { err: { InstructionError: [1, "Custom"] } });
-    chain.land(res.reference, "SigElsewhere", 10_000_000n, { to: newReference() });
-    expect((await recordActionPayments(deps, { entry, reader: chain.reader })).recorded).toBe(0);
-    chain.land(res.reference, "SigLess", 3_000_000n);
-    expect((await recordActionPayments(deps, { entry, reader: chain.reader })).recorded).toBe(1);
+  it("records what actually arrived, and ignores transfers to someone else", async () => {
+    const { db, deps, actions, on } = await setup();
+    const res = await prepared(deps, on, "10");
+    actions.land(res.reference, "SigElsewhere", 10_000_000n, newReference());
+    expect((await recordActionPayments(deps)).recorded).toBe(0);
+    actions.land(res.reference, "SigLess", 3_000_000n);
+    expect((await recordActionPayments(deps)).recorded).toBe(1);
     const [row] = await db.select().from(actionPayments).where(eq(actionPayments.id, res.id));
     expect(row).toMatchObject({ signature: "SigLess", received: 3_000_000n, amount: 10_000_000n });
   });
 
-  it("drops references that expired unpaid, but keeps them while the RPC is down", async () => {
-    const { db, deps } = await setup();
-    const chain = fakeReader();
-    const res = await prepared(deps, chain);
+  it("drops references that expired unpaid, keeps them while the RPC is down, and purges them a day on", async () => {
+    const { db, deps, actions, on } = await setup();
+    const res = await prepared(deps, on);
     const later = { ...deps, now: () => new Date(now.getTime() + 31 * 60_000) };
-    chain.setDown(true);
-    expect(await recordActionPayments(later, { entry, reader: chain.reader })).toEqual({ recorded: 0, expired: 0, errors: 1 });
+    actions.state.down = true;
+    expect(await recordActionPayments(later)).toEqual({ recorded: 0, expired: 0, errors: 1 });
     expect(await db.select().from(actionPayments)).toHaveLength(1);
-    chain.setDown(false);
-    expect(await recordActionPayments(later, { entry, reader: chain.reader })).toEqual({ recorded: 0, expired: 1, errors: 0 });
+    actions.state.down = false;
+    expect(await recordActionPayments(later)).toEqual({ recorded: 0, expired: 1, errors: 0 });
     expect(await db.select().from(actionPayments).where(eq(actionPayments.id, res.id))).toHaveLength(0);
 
-    // A day past expiry, an unpaid reference goes even while the RPC is down.
-    await prepared(deps, chain);
-    chain.setDown(true);
+    await prepared(deps, on);
+    actions.state.down = true;
     const nextDay = { ...deps, now: () => new Date(now.getTime() + 25 * 60 * 60_000) };
-    expect(await recordActionPayments(nextDay, { entry, reader: chain.reader })).toEqual({ recorded: 0, expired: 0, errors: 0 });
+    expect(await recordActionPayments(nextDay)).toEqual({ recorded: 0, expired: 0, errors: 0 });
     expect(await db.select().from(actionPayments)).toHaveLength(0);
   });
+});
 
+describe("Solana transfer reading", () => {
   it("paidTo reads the recipient's gain and the wallet the money left", () => {
     const tx: ConfirmedTx = {
       err: null,
@@ -325,6 +313,7 @@ describe("reference matcher", () => {
     };
     expect(paidTo(tx, entry.mint, "Alex")).toEqual({ received: 5_000_000n, from: "Payer" });
     expect(paidTo(tx, "OtherMint", "Alex")).toBeNull();
-    expect(paidTo({ ...tx, err: "boom" }, entry.mint, "Alex")).toBeNull();
+    expect(paidTo(tx, entry.mint, "Someone")).toBeNull();
+    expect(paidTo({ ...tx, err: { InstructionError: [1, "Custom"] } }, entry.mint, "Alex")).toBeNull();
   });
 });

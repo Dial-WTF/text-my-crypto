@@ -6,6 +6,7 @@ import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
 import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc, type SolanaNetwork } from "./registry";
 import { createSolanaAdapter } from "./solana";
+import { createSolanaActions } from "./solana-actions";
 import { createTempoAdapter } from "./tempo";
 import { type Adapters, guardAdapter, type SettlementAdapter } from "./types";
 
@@ -33,13 +34,16 @@ export function solanaEscrow(
 function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | null {
   switch (entry.kind) {
     case "solana":
-      return createSolanaAdapter({
-        rpcUrl: rpc.url,
-        mint: entry.mint,
-        explorerTx: entry.explorerTx,
-        treasurySeed: b64ToBytes(e.SOLANA_TREASURY_SEED),
-        escrow: solanaEscrow(e, entry),
-      });
+      return {
+        ...createSolanaAdapter({
+          rpcUrl: rpc.url,
+          mint: entry.mint,
+          explorerTx: entry.explorerTx,
+          treasurySeed: b64ToBytes(e.SOLANA_TREASURY_SEED),
+          escrow: solanaEscrow(e, entry),
+        }),
+        actions: createSolanaActions({ rpcUrl: rpc.url, mint: entry.mint, caip2: entry.caip2, explorerTx: entry.explorerTx }),
+      };
     case "tempo":
       if (!e.TEMPO_TREASURY_KEY || !entry.token) return null;
       return createTempoAdapter({

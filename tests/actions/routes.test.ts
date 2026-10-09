@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { newReference } from "@/lib/actions/pay";
-import type { ActionChainReader } from "@/lib/actions/rpc";
 import type { BotDeps } from "@/lib/bot/types";
 import { createUser } from "@/lib/identity";
+import type { PaymentActions } from "@/lib/settlement/capabilities";
 import { REGISTRY, type SolanaNetwork } from "@/lib/settlement/registry";
+import { buildPayTransaction } from "@/lib/settlement/solana-actions";
 import { createTestDb } from "../helpers/db";
 import { fakeAdapter, testDeps } from "../helpers/fakes";
 
 const state: { deps?: BotDeps } = {};
 const entry = REGISTRY.solana.testnet as SolanaNetwork;
-const reader: ActionChainReader = {
-  latestBlockhash: async () => ({ blockhash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1EtWTRABZaYq6", lastValidBlockHeight: 1000n }),
-  tokenBalance: async () => 100_000_000n,
-  signatures: async () => [],
-  transaction: async () => null,
+const actions: PaymentActions = {
+  blockchainId: entry.caip2,
+  buildPayment: (args) =>
+    buildPayTransaction({ ...args, mint: entry.mint, lifetime: { blockhash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1EtWTRABZaYq6", lastValidBlockHeight: 1000n } }),
+  findByReference: async () => [],
 };
 vi.mock("@/lib/deps", () => ({ botDeps: () => state.deps }));
-vi.mock("@/lib/actions/chain", () => ({ solanaActionChain: () => ({ entry, reader }) }));
 
 const { GET, POST, OPTIONS } = await import("@/app/api/actions/pay/[handle]/route");
 const actionsJson = await import("@/app/actions.json/route");
@@ -35,7 +35,8 @@ beforeEach(async () => {
   const db = await createTestDb();
   await createUser(db, { phone: "+15550000010", handle: "alex", name: null }, new Date("2026-10-09T12:00:00Z"));
   const wallet = newReference();
-  state.deps = testDeps(db, { adapters: { solana: { ...fakeAdapter(), createWallet: async () => ({ address: wallet, secret: new Uint8Array(32) }) } } });
+  const adapter = { ...fakeAdapter({ defaultBalance: 100_000_000n }), createWallet: async () => ({ address: wallet, secret: new Uint8Array(32) }), actions };
+  state.deps = testDeps(db, { adapters: { solana: adapter } });
 });
 
 describe("/api/actions/pay/[handle]", () => {
@@ -76,6 +77,13 @@ describe("/api/actions/pay/[handle]", () => {
 
     expect((await post("https://tmc.test/api/actions/pay/alex?amount=5", "not json")).status).toBe(400);
     expect((await post("https://tmc.test/api/actions/pay/alex?amount=5", JSON.stringify({}))).status).toBe(400);
+  });
+
+  it("answers 503 when no chain carries the actions module", async () => {
+    state.deps = testDeps(await createTestDb(), { adapters: { solana: fakeAdapter() } });
+    const res = await GET(new Request("https://tmc.test/api/actions/pay/alex"), ctx("alex"));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ message: "Wallet payments are switched off right now." });
   });
 
   it("OPTIONS and /actions.json allow any origin", async () => {

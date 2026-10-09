@@ -1,39 +1,19 @@
 import { and, count, eq, gt, isNull } from "drizzle-orm";
-import {
-  AccountRole,
-  address,
-  appendTransactionMessageInstructions,
-  type Blockhash,
-  compileTransaction,
-  createNoopSigner,
-  createTransactionMessage,
-  getAddressDecoder,
-  getBase64EncodedWireTransaction,
-  isAddress,
-  pipe,
-  setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
-} from "@solana/kit";
-import { getAddMemoInstruction } from "@solana-program/memo";
-import {
-  findAssociatedTokenPda,
-  getCreateAssociatedTokenIdempotentInstruction,
-  getTransferCheckedInstruction,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@solana-program/token";
+import { getAddressDecoder } from "@solana/kit";
 import { ensureWallet } from "@/lib/bot/accounts";
 import type { BotDeps } from "@/lib/bot/types";
+import type { Chain } from "@/lib/chains";
 import { actionPayments, type User } from "@/lib/db/schema";
 import { findUserByHandle, isClaimed } from "@/lib/identity";
 import { newId } from "@/lib/ids";
 import { formatUsd, usdToBaseUnits } from "@/lib/money";
 import { payActionUrl } from "@/lib/pay-links";
-import type { SolanaNetwork } from "@/lib/settlement/registry";
+import { chainWith, type PaymentActions } from "@/lib/settlement/capabilities";
+import { REGISTRY } from "@/lib/settlement/registry";
+import type { SettlementAdapter } from "@/lib/settlement/types";
 import { cleanAsk } from "@/lib/views/pay";
-import type { ActionChainReader } from "./rpc";
 import type { ActionGetResponse, LinkedAction } from "./spec";
 
-const DECIMALS = 6;
 /** How long the cron keeps looking for a payment after its transaction was handed out. */
 export const REFERENCE_TTL_MS = 30 * 60_000;
 /** Unpaid transactions one handle may have out at once: each is a row and a lookup every minute. */
@@ -41,6 +21,15 @@ export const MAX_OPEN_PER_HANDLE = 30;
 const PRESETS = ["1", "5", "10"];
 
 export type PayActionDeps = Pick<BotDeps, "db" | "adapters" | "walletKey" | "perTxCap" | "appUrl" | "now" | "network">;
+export type ActionsChain = { chain: Chain; adapter: SettlementAdapter; module: PaymentActions };
+
+/**
+ * The chain pay-link actions run on: the one carrying the `actions` module, Solana first since the
+ * Actions spec is Solana's. Null when no enabled chain carries it.
+ */
+export function actionsChain(adapters: BotDeps["adapters"]): ActionsChain | null {
+  return chainWith(adapters, "actions", "solana");
+}
 
 /** A claimed Dial user with this handle, or null. */
 export async function actionPayee(db: BotDeps["db"], handle: string): Promise<User | null> {
@@ -54,14 +43,14 @@ export async function actionPayee(db: BotDeps["db"], handle: string): Promise<Us
  */
 export function payActionMetadata(
   deps: Pick<PayActionDeps, "appUrl" | "perTxCap" | "network">,
+  chain: Chain,
   user: Pick<User, "handle" | "name">,
   raw: { amount?: string | null; note?: string | null },
-  entry: Pick<SolanaNetwork, "network">,
 ): ActionGetResponse {
   const handle = user.handle ?? "";
   const ask = cleanAsk(deps, raw);
   const who = user.name && user.name !== `@${handle}` ? `${user.name} (@${handle})` : `@${handle}`;
-  const forNote = ask.note ? ` for ${ask.note}` : "";
+  const network = REGISTRY[chain][deps.network]?.network ?? chain;
   const test = deps.network === "testnet" ? "test " : "";
   const cap = Number(formatUsd(deps.perTxCap).slice(1));
   const href = (amount: string) => payActionUrl(deps.appUrl, handle, { amountUsd: amount, ...(ask.note ? { note: ask.note } : {}) });
@@ -81,53 +70,11 @@ export function payActionMetadata(
   return {
     type: "action",
     icon: `${deps.appUrl}/pay/${handle}/card${new URL(payActionUrl(deps.appUrl, handle, ask)).search}`,
-    title: `Pay ${who}${ask.amountUsd ? ` $${ask.amountUsd}` : ""}${forNote}`,
-    description: `Send ${who} ${test}USDC on ${entry.network} from any Solana wallet. It lands in their Dial wallet and they get a text receipt. Powered by Dial.Work.`,
+    title: `Pay ${who}${ask.amountUsd ? ` $${ask.amountUsd}` : ""}${ask.note ? ` for ${ask.note}` : ""}`,
+    description: `Send ${who} ${test}USDC on ${network} from any wallet. It lands in their Dial wallet and they get a text receipt. Powered by Dial.Work.`,
     label: ask.amountUsd ? `Pay $${ask.amountUsd}` : "Pay",
     links: { actions },
   };
-}
-
-/**
- * The unsigned transfer the payer's wallet signs: create the recipient's USDC account if it is missing
- * (the payer pays its rent), move the USDC with the reference as a read-only account so the payment
- * can be found by it, and a memo with the payment id. The payer is the fee payer and only signer.
- */
-export async function buildPayTransaction(a: {
-  payer: string;
-  recipient: string;
-  mint: string;
-  amount: bigint;
-  reference: string;
-  memo: string;
-  lifetime: { blockhash: string; lastValidBlockHeight: bigint };
-}): Promise<string> {
-  const payer = createNoopSigner(address(a.payer));
-  const mint = address(a.mint);
-  const recipient = address(a.recipient);
-  const ata = async (owner: typeof recipient) =>
-    (await findAssociatedTokenPda({ owner, mint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))[0];
-  const [source, destination] = await Promise.all([ata(payer.address), ata(recipient)]);
-  const transfer = getTransferCheckedInstruction({ source, mint, destination, authority: payer, amount: a.amount, decimals: DECIMALS });
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayer(payer.address, m),
-    (m) =>
-      setTransactionMessageLifetimeUsingBlockhash(
-        { blockhash: a.lifetime.blockhash as Blockhash, lastValidBlockHeight: a.lifetime.lastValidBlockHeight },
-        m,
-      ),
-    (m) =>
-      appendTransactionMessageInstructions(
-        [
-          getCreateAssociatedTokenIdempotentInstruction({ payer, ata: destination, owner: recipient, mint }),
-          { ...transfer, accounts: [...transfer.accounts, { address: address(a.reference), role: AccountRole.READONLY }] },
-          getAddMemoInstruction({ memo: a.memo }),
-        ],
-        m,
-      ),
-  );
-  return getBase64EncodedWireTransaction(compileTransaction(message));
 }
 
 /** A fresh reference key: 32 random bytes. It never signs, so it needn't be on the curve. */
@@ -145,12 +92,12 @@ export type PreparedPayment =
  */
 export async function preparePayment(
   deps: PayActionDeps,
-  chain: { entry: SolanaNetwork; reader: ActionChainReader },
+  on: ActionsChain,
   input: { handle: string; account: unknown; amount?: string | null; note?: string | null },
 ): Promise<PreparedPayment> {
   const cap = formatUsd(deps.perTxCap);
-  if (typeof input.account !== "string" || !isAddress(input.account)) {
-    return { ok: false, status: 400, message: "That isn't a Solana wallet address." };
+  if (typeof input.account !== "string" || !on.adapter.isValidAddress(input.account)) {
+    return { ok: false, status: 400, message: "That isn't a wallet address." };
   }
   const ask = cleanAsk(deps, { amount: input.amount, note: input.note });
   if (!ask.amountUsd) return { ok: false, status: 400, message: `Amounts can be from $0.01 to ${cap}.` };
@@ -158,9 +105,7 @@ export async function preparePayment(
 
   const user = await actionPayee(deps.db, input.handle);
   if (!user?.handle) return { ok: false, status: 404, message: "No Dial user with that handle." };
-  const adapter = deps.adapters.solana;
-  if (!adapter) return { ok: false, status: 503, message: "Solana payments are switched off right now." };
-  const wallet = await ensureWallet(deps, user.id, "solana", adapter);
+  const wallet = await ensureWallet(deps, user.id, on.chain, on.adapter);
   if (wallet.address === input.account) return { ok: false, status: 400, message: `That is @${user.handle}'s own Dial wallet.` };
 
   const now = deps.now();
@@ -172,32 +117,25 @@ export async function preparePayment(
     return { ok: false, status: 429, message: `Too many unpaid payments to @${user.handle} right now. Try again in a few minutes.` };
   }
 
-  const balance = await chain.reader.tokenBalance(input.account, chain.entry.mint);
+  // A balance the RPC can't read doesn't block: the wallet's own simulation will catch a short one.
+  const balance = await on.adapter.getBalance(input.account).catch(() => null);
   if (balance !== null && balance < amount) {
-    const faucet = deps.network === "testnet" ? " Get test USDC at faucet.circle.com." : "";
+    const testnet = deps.network === "testnet";
     return {
       ok: false,
       status: 400,
-      message: `This wallet has ${formatUsd(balance)} in ${deps.network === "testnet" ? "devnet " : ""}USDC, not ${formatUsd(amount)}.${faucet}`,
+      message: `This wallet has ${formatUsd(balance)} in ${testnet ? "test " : ""}USDC, not ${formatUsd(amount)}.${testnet ? " Get test USDC at faucet.circle.com." : ""}`,
     };
   }
 
   const id = newId("ap");
   const reference = newReference();
-  const transaction = await buildPayTransaction({
-    payer: input.account,
-    recipient: wallet.address,
-    mint: chain.entry.mint,
-    amount,
-    reference,
-    memo: id,
-    lifetime: await chain.reader.latestBlockhash(),
-  });
+  const transaction = await on.module.buildPayment({ payer: input.account, recipient: wallet.address, amount, reference, memo: id });
   await deps.db.insert(actionPayments).values({
     id,
     reference,
     recipientId: user.id,
-    chain: "solana",
+    chain: on.chain,
     recipientAddress: wallet.address,
     payerAddress: input.account,
     amount,
