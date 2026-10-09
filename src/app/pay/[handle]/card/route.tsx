@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import QRCode from "qrcode";
-import { liveChainNames } from "@/lib/chain-status";
+import { enabledChainNames } from "@/lib/chain-status";
 import { publicEnv } from "@/lib/env";
 import { formatPhone } from "@/lib/phone";
 import { askQuery, loadPayHeader } from "@/lib/web/pay-page";
@@ -43,7 +43,7 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
         mark={mark}
         family={font ? "Terminal" : "sans-serif"}
         tag={`TEXT ${phone}`}
-        aside={["or any wallet", ...liveChainNames(running().chains).map((n) => n.replace(/ Chain$/, ""))].join(" · ")}
+        aside={["or any wallet", ...enabledChainNames(running().chains).map((n) => n.replace(/ Chain$/, ""))].join(" · ")}
       >
         {head ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 32 }}>

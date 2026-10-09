@@ -40,7 +40,7 @@ export default async function LedgerPage() {
             ]}
           />
           <Split>
-            <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
+            <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” to send one." />
             <OnchainProof rows={proofs} note={note} more={{ href: "/ledger.json", label: "Ledger as JSON →" }} />
           </Split>
         </Stack>

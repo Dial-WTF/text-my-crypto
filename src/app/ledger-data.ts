@@ -1,12 +1,25 @@
+import { cache } from "react";
+import { type ChainStatus, chainStatuses } from "@/lib/chain-status";
+import type { Chain } from "@/lib/chains";
 import { getDb } from "@/lib/db/client";
-import { env } from "@/lib/env";
+import { env, publicEnv } from "@/lib/env";
 import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { errorText } from "@/lib/settlement/types";
-import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import type { FeedEntry } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 
 export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[]; note: string };
+
+/**
+ * Each chain's status with the ledger behind it: "live" only where a payment has moved. Once per request,
+ * since the landing page, its colophon and a card may all ask. If D1 can't be read, nothing is live.
+ */
+export const loadChainStatuses = cache(async (): Promise<ChainStatus[]> => {
+  const { CHAINS, NETWORK } = publicEnv();
+  const moved = await quietly("chain activity unavailable", async () => movedByChain(getDb()), {});
+  return chainStatuses(CHAINS, NETWORK, new Set(Object.keys(moved) as Chain[]));
+});
 
 /** Runs one part of a public ledger. If it throws, logs the (redacted) error and returns the fallback. */
 export async function quietly<T>(label: string, part: () => Promise<T>, fallback: T): Promise<T> {

@@ -19,7 +19,7 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "./agent-content";
 import { Colophon } from "./colophon";
 import { limitItems, runsOn, settlesOn, transcript } from "./landing-content";
-import { loadLedger } from "./ledger-data";
+import { loadChainStatuses, loadLedger } from "./ledger-data";
 import { pageMeta } from "./seo";
 import { running, site } from "./site";
 import { StructuredData } from "./StructuredData";
@@ -32,7 +32,8 @@ export const metadata = pageMeta({ path: "/", title: { absolute: `${s.name} by $
 export default async function Home() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();
   const { stats, feed, proofs, note } = await loadLedger(8);
-  const { network, chains, limits } = running();
+  const { network, limits } = running();
+  const chains = await loadChainStatuses();
   const stat = (v: string | number | undefined) => (stats ? String(v) : "—");
 
   return (
@@ -86,7 +87,7 @@ export default async function Home() {
             ]}
           />
           <Split>
-            <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
+            <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” to send one." />
             <OnchainProof rows={proofs} note={note} more={{ href: "/ledger", label: "Full ledger →" }} />
           </Split>
         </Stack>

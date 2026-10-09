@@ -1,14 +1,16 @@
 import { agentFacts } from "../agent-content";
 import { limitItems, settlesOn } from "../landing-content";
+import { loadChainStatuses } from "../ledger-data";
 import { running, site } from "../site";
 
 export const dynamic = "force-dynamic";
 
 /** Plain-text guide for agents and LLM crawlers (llmstxt.org). */
-export function GET(): Response {
+export async function GET(): Promise<Response> {
   const s = site();
   const a = agentFacts();
   const now = running();
+  const chains = await loadChainStatuses();
   const body = `# ${s.name} by ${s.company}
 
 > Agentic peer-to-peer crypto payments over SMS. Humans text ${s.phone}; agents use the MCP server. Send, request and invoice USDC to anyone with a phone number.${now.network === "testnet" ? " Testnet." : ""}
@@ -30,7 +32,8 @@ export function GET(): Response {
 ${a.tools.map(([name, what]) => `- ${name}: ${what}`).join("\n")}
 
 ## Chains
-${settlesOn(now.chains)
+Live: switched on and a payment has settled there. Ready: switched on, no payment settled yet. Wired: built and tested, switched off. Building: not settling yet.
+${settlesOn(chains)
   .map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`)
   .join("\n")}
 

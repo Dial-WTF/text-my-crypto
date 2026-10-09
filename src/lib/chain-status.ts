@@ -2,17 +2,18 @@ import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import { type Network, REGISTRY } from "@/lib/settlement/registry";
 
 /**
- * "live": switched on by CHAINS and settling on this network. "wired": the registry has a stablecoin for it,
+ * "live": switched on by CHAINS and at least one payment has moved on it (settled, escrowed or refunded).
+ * "ready": switched on, but no payment has moved on it yet. "wired": the registry has a stablecoin for it,
  * but CHAINS leaves it off. "building": no stablecoin or no adapter on this network yet.
  */
-export type ChainState = "live" | "wired" | "building";
+export type ChainState = "live" | "ready" | "wired" | "building";
 
 export type ChainStatus = {
   chain: Chain;
   state: ChainState;
   /** "Solana devnet", "Tempo Moderato"; the chain's own name where the registry has no entry. */
   network: string;
-  /** "Live · devnet", "Wired · Sepolia", "Building". */
+  /** "Live · devnet", "Ready · Sepolia", "Wired · Sepolia", "Building". */
   label: string;
 };
 
@@ -37,23 +38,33 @@ function networkSuffix(chain: Chain, networkName: string): string {
   return networkName.startsWith(label) ? networkName.slice(label.length).trim() : networkName;
 }
 
-/** Every chain the operator knows, with what it is doing on this network right now. */
-export function chainStatuses(chainsSetting: string, network: Network): ChainStatus[] {
+const WORD: Record<ChainState, string> = { live: "Live", ready: "Ready", wired: "Wired", building: "Building" };
+
+/**
+ * Every chain the operator knows, with what it is doing on this network right now. `moved` is the chains
+ * a payment has actually moved on (from the ledger): a chain is only "live" once one has. Pass an empty
+ * set where the ledger can't be read, so nothing is called live on a guess.
+ */
+export function chainStatuses(chainsSetting: string, network: Network, moved: ReadonlySet<Chain>): ChainStatus[] {
   const on = new Set(enabledChains(chainsSetting, network));
   return CHAINS.map((chain) => {
     const entry = REGISTRY[chain][network];
     const name = entry?.network ?? chainLabel(chain);
-    const state: ChainState = on.has(chain) ? "live" : settles(chain, network) ? "wired" : "building";
-    const suffix = networkSuffix(chain, name);
-    const label =
-      state === "building" ? "Building" : `${state === "live" ? "Live" : "Wired"}${suffix ? ` · ${suffix}` : ""}`;
-    return { chain, state, network: name, label };
+    const state: ChainState = on.has(chain)
+      ? moved.has(chain)
+        ? "live"
+        : "ready"
+      : settles(chain, network)
+        ? "wired"
+        : "building";
+    const suffix = state === "building" ? "" : networkSuffix(chain, name);
+    return { chain, state, network: name, label: `${WORD[state]}${suffix ? ` · ${suffix}` : ""}` };
   });
 }
 
-/** The names of the chains settling now, e.g. ["Solana", "Tempo"], for share cards and one-line copy. */
-export function liveChainNames(statuses: ChainStatus[]): string[] {
-  return statuses.filter((s) => s.state === "live").map((s) => chainLabel(s.chain));
+/** The chains switched on (live or ready), e.g. ["Solana", "Tempo"]: neutral lists that claim nothing settled. */
+export function enabledChainNames(statuses: ChainStatus[]): string[] {
+  return statuses.filter((s) => s.state === "live" || s.state === "ready").map((s) => chainLabel(s.chain));
 }
 
 /** "a", "a and b", "a, b and c". */

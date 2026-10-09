@@ -1,11 +1,20 @@
 import { readFileSync } from "node:fs";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { chainsSentence, limitItems, settlesOn } from "@/app/landing-content";
-import { chainStatuses, enabledChains, listWords, liveChainNames } from "@/lib/chain-status";
+import { chainStatuses, enabledChainNames, enabledChains, listWords } from "@/lib/chain-status";
+import type { Chain } from "@/lib/chains";
+import { intents } from "@/lib/db/schema";
 import type { Env } from "@/lib/env";
+import { createUser } from "@/lib/identity";
+import { createIntent } from "@/lib/intents";
 import { activeChains } from "@/lib/settlement";
+import { movedByChain } from "@/lib/stats";
+import { createTestDb } from "./helpers/db";
 
 const PRODUCTION = "solana,tempo,ethereum,robinhood";
+const NONE: ReadonlySet<Chain> = new Set();
+const SOLANA_TEMPO: ReadonlySet<Chain> = new Set(["solana", "tempo"]);
 
 /** wrangler.jsonc's production vars. Comments there sit on their own lines. */
 function wranglerVars(): Record<string, string> {
@@ -13,16 +22,16 @@ function wranglerVars(): Record<string, string> {
   return (JSON.parse(jsonc) as { vars: Record<string, string> }).vars;
 }
 
-const byChain = (chains: string, network: "testnet" | "mainnet" = "testnet") =>
-  Object.fromEntries(chainStatuses(chains, network).map((s) => [s.chain, s.label]));
+const labels = (chains: string, moved: ReadonlySet<Chain>, network: "testnet" | "mainnet" = "testnet") =>
+  Object.fromEntries(chainStatuses(chains, network, moved).map((s) => [s.chain, s.label]));
 
 describe("chainStatuses", () => {
-  it("marks production's chains live, registry chains with a token wired, zcash building", () => {
-    expect(byChain(PRODUCTION)).toEqual({
+  it("calls a chain live only once a payment has moved on it; switched on without one is ready", () => {
+    expect(labels(PRODUCTION, SOLANA_TEMPO)).toEqual({
       solana: "Live · devnet",
       tempo: "Live · Moderato",
-      ethereum: "Live · Sepolia",
-      robinhood: "Live · testnet",
+      ethereum: "Ready · Sepolia",
+      robinhood: "Ready · testnet",
       base: "Wired · Sepolia",
       arbitrum: "Wired · Sepolia",
       hyperevm: "Wired · testnet",
@@ -30,17 +39,22 @@ describe("chainStatuses", () => {
     });
   });
 
-  it("follows the CHAINS default when nothing else is switched on", () => {
-    const s = byChain("solana,tempo");
-    expect([s.solana, s.tempo, s.ethereum, s.robinhood]).toEqual(["Live · devnet", "Live · Moderato", "Wired · Sepolia", "Wired · testnet"]);
+  it("calls nothing live when the ledger has no payments or can't be read", () => {
+    const states = chainStatuses(PRODUCTION, "testnet", NONE).map((s) => s.state);
+    expect(states).not.toContain("live");
+    expect(states.filter((s) => s === "ready")).toHaveLength(4);
   });
 
-  it("never calls a chain live without a stablecoin on the network, whatever CHAINS says", () => {
+  it("never calls a chain live that CHAINS leaves off, even with payments on it", () => {
+    const s = labels("solana", new Set<Chain>(["solana", "base", "zcash"]));
+    expect([s.solana, s.base, s.zcash]).toEqual(["Live · devnet", "Wired · Sepolia", "Building"]);
+  });
+
+  it("only switches on chains with a stablecoin on the network, whatever CHAINS says", () => {
     expect(enabledChains("solana, Tempo ,zcash,dogecoin", "testnet")).toEqual(["solana", "tempo"]);
-    // Tempo and HyperEVM mainnet have no settlement token yet; Robinhood mainnet has none either.
-    const main = byChain("solana,tempo,hyperevm,robinhood,base", "mainnet");
-    expect(main).toMatchObject({ solana: "Live", base: "Live", tempo: "Building", hyperevm: "Building", robinhood: "Building" });
-    expect(main.ethereum).toBe("Wired");
+    // Tempo, HyperEVM and Robinhood mainnet have no settlement token yet.
+    const main = labels("solana,tempo,hyperevm,robinhood,base", new Set<Chain>(["solana"]), "mainnet");
+    expect(main).toMatchObject({ solana: "Live", base: "Ready", tempo: "Building", hyperevm: "Building", robinhood: "Building", ethereum: "Wired" });
   });
 
   it("agrees with the chains settlement actually runs", () => {
@@ -48,7 +62,7 @@ describe("chainStatuses", () => {
     expect(activeChains(e, {}).map((c) => c.chain)).toEqual(enabledChains(PRODUCTION, "testnet"));
   });
 
-  it("calls every chain production switches on live", () => {
+  it("switches on every chain production lists in wrangler.jsonc", () => {
     const chains = wranglerVars().CHAINS ?? "";
     const wanted = chains.split(",").map((c) => c.trim());
     expect(enabledChains(chains, "testnet")).toEqual(expect.arrayContaining(wanted));
@@ -56,16 +70,47 @@ describe("chainStatuses", () => {
   });
 });
 
-describe("site copy from chain status", () => {
-  const statuses = chainStatuses(PRODUCTION, "testnet");
+describe("movedByChain", () => {
+  it("counts settled, escrowed and refunded payments per chain, not pending or failed ones", async () => {
+    const db = await createTestDb();
+    const now = new Date("2026-10-09T12:00:00Z");
+    const a = await createUser(db, { phone: "+15550000010", handle: "alex", name: "Alex" }, now);
+    const b = await createUser(db, { phone: "+15550000011", handle: "sam", name: "Sam" }, now);
+    const pay = async (chain: Chain, status: (typeof intents.$inferSelect)["status"]) => {
+      const i = await createIntent(
+        db,
+        { kind: "send", createdBy: a.id, senderId: a.id, recipientId: b.id, chain, token: "T", recipientAddress: "E", amount: 1_000_000n, note: null },
+        now,
+      );
+      await db.update(intents).set({ status }).where(eq(intents.id, i.id));
+    };
+    await pay("solana", "settled");
+    await pay("solana", "escrowed");
+    await pay("tempo", "refunded");
+    await pay("ethereum", "pending");
+    await pay("robinhood", "failed");
+    await pay("base", "settling");
 
-  it("puts live tiles first, with the derived label", () => {
-    const tiles = settlesOn(statuses);
-    expect(tiles.map((t) => [t.name, t.status, t.statusLabel])).toEqual([
+    const moved = await movedByChain(db);
+    expect(moved).toEqual({ solana: 2, tempo: 1 });
+    expect(labels(PRODUCTION, new Set(Object.keys(moved) as Chain[]))).toMatchObject({
+      solana: "Live · devnet",
+      tempo: "Live · Moderato",
+      ethereum: "Ready · Sepolia",
+      robinhood: "Ready · testnet",
+    });
+  });
+});
+
+describe("site copy from chain status", () => {
+  const statuses = chainStatuses(PRODUCTION, "testnet", SOLANA_TEMPO);
+
+  it("orders tiles live, ready, wired, building, and only live tiles get the live style", () => {
+    expect(settlesOn(statuses).map((t) => [t.name, t.status, t.statusLabel])).toEqual([
       ["Solana", "live", "Live · devnet"],
       ["Tempo", "live", "Live · Moderato"],
-      ["Ethereum", "live", "Live · Sepolia"],
-      ["Robinhood Chain", "live", "Live · testnet"],
+      ["Ethereum", "next", "Ready · Sepolia"],
+      ["Robinhood Chain", "next", "Ready · testnet"],
       ["Base", "next", "Wired · Sepolia"],
       ["Arbitrum", "next", "Wired · Sepolia"],
       ["Hyperliquid", "next", "Wired · testnet"],
@@ -73,17 +118,26 @@ describe("site copy from chain status", () => {
     ]);
   });
 
-  it("says the same thing in the colophon", () => {
+  it("says in the colophon only that payments settled where they did", () => {
     expect(chainsSentence(statuses, "testnet")).toBe(
-      "Payments settle in test stablecoins on Solana devnet, Tempo Moderato, Ethereum Sepolia and Robinhood Chain testnet. " +
+      "Payments have settled in test stablecoins on Solana devnet and Tempo Moderato. " +
+        "Ethereum Sepolia and Robinhood Chain testnet are switched on, with no payment settled there yet. " +
         "Base, Arbitrum and HyperEVM are wired but switched off. Zcash is still being built.",
     );
-    expect(chainsSentence(chainStatuses("solana", "testnet"), "testnet")).toMatch(/^Payments settle in test stablecoins on Solana devnet\. /);
-    expect(chainsSentence(chainStatuses("", "testnet"), "testnet")).toMatch(/^No chain is switched on right now\./);
+    expect(chainsSentence(chainStatuses("solana", "testnet", NONE), "testnet")).toMatch(
+      /^Solana devnet is switched on, with no payment settled there yet\. /,
+    );
+    expect(chainsSentence(chainStatuses("", "testnet", NONE), "testnet")).toMatch(/^No chain is switched on right now\./);
   });
 
-  it("names live chains for share cards", () => {
-    expect(liveChainNames(statuses)).toEqual(["Solana", "Tempo", "Ethereum", "Robinhood Chain"]);
+  it("never says live or first", () => {
+    const words = [chainsSentence(statuses, "testnet"), ...settlesOn(chainStatuses(PRODUCTION, "testnet", NONE)).map((t) => t.statusLabel)];
+    for (const w of words) expect(w).not.toMatch(/\bfirst\b/i);
+    expect(settlesOn(chainStatuses(PRODUCTION, "testnet", NONE)).map((t) => t.statusLabel).join(" ")).not.toMatch(/Live/);
+  });
+
+  it("lists switched-on chains neutrally for static share cards", () => {
+    expect(enabledChainNames(chainStatuses(PRODUCTION, "testnet", NONE))).toEqual(["Solana", "Tempo", "Ethereum", "Robinhood Chain"]);
   });
 
   it("joins words like a person would", () => {

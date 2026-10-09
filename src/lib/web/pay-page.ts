@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { chainStatuses, listWords, liveChainNames } from "@/lib/chain-status";
+import { chainStatuses, enabledChainNames, listWords } from "@/lib/chain-status";
 import { botDeps } from "@/lib/deps";
 import { publicEnv } from "@/lib/env";
 import type { User } from "@/lib/db/schema";
@@ -57,13 +57,13 @@ export function askQuery(ask: PayAsk): string {
 /** The words a share preview uses, from one place for the page title, OG tags and the card. */
 export function payWords(h: PayHeader): { title: string; description: string } {
   const { CHAINS, NETWORK } = publicEnv();
-  const live = liveChainNames(chainStatuses(CHAINS, NETWORK));
+  const on = enabledChainNames(chainStatuses(CHAINS, NETWORK, new Set()));
   const who = h.name === `@${h.handle}` ? `@${h.handle}` : `${h.name} (@${h.handle})`;
   const ask = h.amountUsd ? ` $${h.amountUsd}${h.note ? ` for ${h.note}` : ""}` : "";
   return {
     title: `Pay ${who}${ask}`,
     description: h.amountUsd
       ? `${h.name} is asking for $${h.amountUsd} USDC${h.note ? ` for ${h.note}` : ""}. Tap to pay by text from any phone, or scan with any crypto wallet.`
-      : `Send ${h.name} crypto by text from any phone, or from any wallet app. USDC on ${listWords(live)}. Powered by Dial.Work.`,
+      : `Send ${h.name} crypto by text from any phone, or from any wallet app. USDC on ${listWords(on)}. Powered by Dial.Work.`,
   };
 }

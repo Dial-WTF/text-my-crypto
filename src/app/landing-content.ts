@@ -32,26 +32,31 @@ const CHAIN_COPY: Record<Chain, { name: string; logo: LogoId; role: string }> = 
   zcash: { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo" },
 };
 
-const STATE_ORDER: Record<ChainState, number> = { live: 0, wired: 1, building: 2 };
+const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, building: 3 };
 
-/** One tile per chain with a prize track in the Crypto World's Fair, live chains first. */
+/** One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building. */
 export function settlesOn(statuses: ChainStatus[]): ChainStripItem[] {
   return [...statuses]
     .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
     .map((s) => ({ ...CHAIN_COPY[s.chain], status: s.state === "live" ? "live" : "next", statusLabel: s.label }));
 }
 
-/** Which chains settle, which are wired but off, which are being built: the colophon's chain line. */
+/**
+ * The colophon's chain line: where payments have settled, what is switched on without a payment yet, what
+ * is wired but off and what is being built. Only chains with a settled payment are said to settle.
+ */
 export function chainsSentence(statuses: ChainStatus[], network: Network): string {
   const named = (state: ChainState, name: (s: ChainStatus) => string) => statuses.filter((s) => s.state === state).map(name);
   const live = named("live", (s) => s.network);
+  const ready = named("ready", (s) => s.network);
   const wired = named("wired", (s) => chainLabel(s.chain));
   const building = named("building", (s) => chainLabel(s.chain));
   const verb = (n: string[]) => (n.length === 1 ? "is" : "are");
+  const money = network === "testnet" ? "test stablecoins" : "stablecoins";
   return [
-    live.length
-      ? `Payments settle in ${network === "testnet" ? "test stablecoins" : "stablecoins"} on ${listWords(live)}.`
-      : "No chain is switched on right now.",
+    live.length ? `Payments have settled in ${money} on ${listWords(live)}.` : "",
+    ready.length ? `${listWords(ready)} ${verb(ready)} switched on, with no payment settled there yet.` : "",
+    live.length || ready.length ? "" : "No chain is switched on right now.",
     wired.length ? `${listWords(wired)} ${verb(wired)} wired but switched off.` : "",
     building.length ? `${listWords(building)} ${verb(building)} still being built.` : "",
   ]

@@ -1,6 +1,7 @@
 import { FooterLinks } from "@/ui/patterns/FooterLinks/FooterLinks";
 import { SmsConsent } from "@/ui/patterns/SmsConsent/SmsConsent";
 import { chainsSentence } from "./landing-content";
+import { loadChainStatuses } from "./ledger-data";
 import { running, site } from "./site";
 
 /** Every page in the footer, in reading order: learn, check, the fine print, the code. */
@@ -14,9 +15,13 @@ export const footerLinks = () => [
   { href: site().source, label: "GitHub" },
 ];
 
-/** The fine print under every public page. Which chains settle comes from the running settings, not from copy. */
-export function Colophon() {
-  const { network, chains } = running();
+/**
+ * The fine print under every public page. Which chains settle comes from the settings and the ledger,
+ * not from copy: a chain is only said to settle once a payment has.
+ */
+export async function Colophon() {
+  const { network } = running();
+  const chains = await loadChainStatuses();
   const testnet = network === "testnet";
   return (
     <>
