@@ -9,14 +9,25 @@ export function Mono({ value, href, full = false }: { value: string; href?: stri
   const shown = full ? value : shorten(value);
   if (href) {
     return (
-      <a className={`${styles.mono} ${styles.link}`} href={href} title={value} target="_blank" rel="noreferrer">
+      <a
+        className={`${styles.mono} ${styles.link}`}
+        href={href}
+        title={value}
+        aria-label={`${value} (opens explorer in a new tab)`}
+        target="_blank"
+        rel="noreferrer"
+      >
         {shown}
       </a>
     );
   }
+  if (shown === value) {
+    return <span className={styles.mono}>{value}</span>;
+  }
   return (
     <span className={styles.mono} title={value}>
-      {shown}
+      <span aria-hidden="true">{shown}</span>
+      <span className={styles.srOnly}>{value}</span>
     </span>
   );
 }

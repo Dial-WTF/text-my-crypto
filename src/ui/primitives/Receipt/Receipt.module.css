@@ -43,8 +43,11 @@
   min-width: 0;
 }
 
+/* A long label (a "@from → @to" feed row) shrinks and wraps, so it never pushes the line past a phone's edge. */
 .label {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--color-on-card-muted);
 }
 
@@ -55,9 +58,12 @@
   transform: translateY(-0.3em);
 }
 
-/* The value gives way first: it shrinks and wraps so a long label and value still fit the line. */
+/*
+ * The value keeps its width (up to 70% of the line, wrapping past that) and the label gives way, so
+ * "$12.50" never splits because the label beside it is long.
+ */
 .value {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 70%;
   text-align: right;
