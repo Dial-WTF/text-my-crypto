@@ -5,6 +5,7 @@ import {
   claimEscrowForRefund,
   claimEscrowForRelease,
   claimForSettlement,
+  claimUnknownForRetry,
   declineIntent,
   expiredEscrowsFrom,
   getIntent,
@@ -12,11 +13,13 @@ import {
   markEscrowed,
   markFailed,
   markFundingUnconfirmed,
+  markOutcomeUnknown,
   markReleased,
   markSettled,
   revertToEscrowed,
   settleUnconfirmed,
   unconfirmedEscrowFunding,
+  unknownSettlements,
 } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
@@ -30,6 +33,7 @@ import {
   errorText,
   type SettleResult,
 } from "@/lib/settlement/types";
+import { SettlementUnknownError } from "@/lib/settlement/unconfirmed";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
@@ -38,6 +42,7 @@ import type { BotDeps } from "./types";
 
 export type SettleOutcome =
   | { ok: true; status: "settled" | "escrowed"; txHash: string; explorerUrl: string }
+  /** "unconfirmed": the send went out but no answer came back. It stays "settling" and a minute job finishes it. */
   | { ok: false; reason: "not_claimable" | "failed" | "expired" | "unconfirmed"; error?: string };
 
 const DAY_MS = 86_400_000;
@@ -52,7 +57,28 @@ const STALE_SETTLING_MS = 5 * 60_000;
 export async function approveIntent(deps: BotDeps, intentId: string): Promise<SettleOutcome> {
   const intent = await claimForSettlement(deps.db, intentId, deps.now());
   if (!intent) return { ok: false, reason: "not_claimable" };
+  return execute(deps, intent, { resume: false });
+}
 
+/**
+ * Drives settlements whose outcome was unknown (a send went out and no answer came back) to an answer.
+ * Only adapters with idempotent sends throw for that, so sending again with the same arguments returns
+ * the transaction that already went out, or sends it if it never did. Run by the minute watchdog.
+ */
+export async function resumeUnknownSettlements(deps: BotDeps): Promise<SettleOutcome[]> {
+  const outcomes: SettleOutcome[] = [];
+  for (const candidate of await unknownSettlements(deps.db)) {
+    const intent = await claimUnknownForRetry(deps.db, candidate.id);
+    if (intent) outcomes.push(await execute(deps, intent, { resume: true }));
+  }
+  return outcomes;
+}
+
+/**
+ * Settles a claimed intent. On a resume the balance check and the "Sending…" text are skipped: the money
+ * may already have left, and the sender heard about it the first time.
+ */
+async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: boolean }): Promise<SettleOutcome> {
   const [sender, recipient] = await Promise.all([
     getUserById(deps.db, intent.senderId),
     getUserById(deps.db, intent.recipientId),
@@ -69,24 +95,39 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
     const wallet = await getWallet(deps.db, intent.senderId, intent.chain);
     if (!wallet) throw new Error("Missing sender wallet");
-    const balance = await adapter.getBalance(wallet.address);
+    const balance = resume ? intent.amount : await adapter.getBalance(wallet.address);
     if (balance < intent.amount) {
       await markFailed(deps.db, intent.id, "Insufficient balance at approval");
       await notify(deps, sender.phone, replies.insufficientNow(money(balance, intent.chain, deps.network)));
       return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
     }
     const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
-    await notify(deps, sender.phone, replies.sending(money(intent.amount, intent.chain, deps.network), target, chainLabel(intent.chain)));
+    if (!resume) {
+      await notify(deps, sender.phone, replies.sending(money(intent.amount, intent.chain, deps.network), target, chainLabel(intent.chain)));
+    }
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
     result = intent.escrowProgram
       ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
-      : await adapter.settle({ fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id });
+      : await adapter.settle({
+          fromSecret,
+          to: intent.recipientAddress,
+          amount: intent.amount,
+          memo: intent.id,
+          escrow: Boolean(intent.escrowSecretEnc),
+        });
   } catch (e) {
     const error = errorText(e);
     if (e instanceof EscrowUnconfirmedError) {
       // It may still land. Leave it settling; reconcileEscrows settles it from the chain.
       await markFundingUnconfirmed(deps.db, intent.id, error);
       await notify(deps, sender.phone, replies.sendUnconfirmed(formatUsd(intent.amount), describe(recipient)));
+      return { ok: false, reason: "unconfirmed", error };
+    }
+    if (e instanceof SettlementUnknownError) {
+      // The money may have moved: never call it failed. resumeUnknownSettlements asks again with the
+      // same arguments, which the adapter's idempotent sends turn into the same transaction.
+      await markOutcomeUnknown(deps.db, intent.id, error);
+      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(money(intent.amount, intent.chain, deps.network), describe(recipient)));
       return { ok: false, reason: "unconfirmed", error };
     }
     await markFailed(deps.db, intent.id, error);

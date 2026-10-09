@@ -17,7 +17,7 @@ import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -60,7 +60,8 @@ export async function dripOnce(
     await adapter.fund(wallet.address, deps.dripAmount);
     return true;
   } catch (e) {
-    if (!(e instanceof TransferUnconfirmedError)) await releaseDrip(deps.db, wallet.userId, wallet.chain);
+    const mayHaveMoved = e instanceof TransferUnconfirmedError || e instanceof SettlementUnknownError;
+    if (!mayHaveMoved) await releaseDrip(deps.db, wallet.userId, wallet.chain);
     throw e;
   }
 }

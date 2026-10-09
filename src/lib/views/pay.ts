@@ -5,6 +5,7 @@ import type { User } from "@/lib/db/schema";
 import { isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import { eip681TransferUri, payByTextBody, smsUri, solanaPayUri, zip321Uri } from "@/lib/pay-links";
 import { REGISTRY } from "@/lib/settlement/registry";
+import { ChainDownError } from "@/lib/settlement/types";
 import { formatZec, usdToZats } from "@/lib/settlement/zcash";
 
 export type PayChain = {
@@ -61,7 +62,14 @@ export async function payProfile(deps: BotDeps, user: User, ask: PayAsk = {}): P
     if (!entry) continue;
     const token = entry.kind === "solana" ? entry.mint : entry.kind === "zcash" ? entry.asset : entry.token;
     if (!token) continue;
-    const { address } = await ensureWallet(deps, user.id, chain, adapter);
+    let address: string;
+    try {
+      ({ address } = await ensureWallet(deps, user.id, chain, adapter));
+    } catch (e) {
+      // A chain that can't open a wallet right now (its RPC or wallet service is down) just isn't offered.
+      if (e instanceof ChainDownError) continue;
+      throw e;
+    }
     const baseUnits = ask.amountUsd ? usdToBaseUnits(ask.amountUsd) : undefined;
     let uri: string;
     let assetNote: string | null = null;

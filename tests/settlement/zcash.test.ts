@@ -3,6 +3,8 @@ import { usdToBaseUnits } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { REGISTRY } from "@/lib/settlement/registry";
+import { ChainDownError, guardAdapter } from "@/lib/settlement/types";
+import { SettlementUnknownError } from "@/lib/settlement/unconfirmed";
 import {
   createZcashAdapter,
   decodeAccount,
@@ -44,6 +46,7 @@ const RATE = entry.usdPerZec;
 
 function adapter(fetch: typeof globalThis.fetch) {
   return createZcashAdapter({
+    sleep: async () => {},
     serviceUrl: "https://wallet.example/",
     token: TOKEN,
     usdPerZec: RATE,
@@ -130,23 +133,31 @@ describe("zcash adapter", () => {
     expect(svc.calls[0]).toMatchObject({ method: "POST", path: "/v1/accounts", auth: `Bearer ${TOKEN}` });
   });
 
-  it("reports the balance in dollars, holding one network fee back", async () => {
-    const svc = fakeService({ "GET /v1/balance/:address": () => ({ json: { account: 3, total: 10_010_000, spendable: 0 } }) });
+  it("reports what the account can send after its fee, as the service computes it", async () => {
+    const svc = fakeService({
+      "GET /v1/balance/:address": () => ({ json: { account: 3, total: 10_010_000, spendable: 10_010_000, sendable: 10_000_000, synced: true } }),
+    });
     expect(await adapter(svc.fetch).getBalance(UA)).toBe(usdToBaseUnits("5"));
     expect(svc.calls[0]?.path).toBe(`/v1/balance/${UA}`);
   });
 
-  it("never reports a negative balance", async () => {
-    const svc = fakeService({ "GET /v1/balance/:address": () => ({ json: { total: 5_000 } }) });
-    expect(await adapter(svc.fetch).getBalance(UA)).toBe(0n);
+  it("refuses to report a balance while the wallet is still scanning", async () => {
+    const svc = fakeService({ "GET /v1/balance/:address": () => ({ json: { total: 10_010_000, sendable: 10_000_000, synced: false } }) });
+    await expect(adapter(svc.fetch).getBalance(UA)).rejects.toThrow(/not_synced/);
   });
 
   it("sends zatoshis from the sender's account with the payment id as the memo", async () => {
     const svc = fakeService({ "POST /v1/send": () => ({ json: { txid: "ab".repeat(32) } }) });
     const res = await adapter(svc.fetch).settle({ fromSecret: encodeAccount(3), to: UA, amount: usdToBaseUnits("5"), memo: "pi_abc" });
     expect(res).toEqual({ txHash: "ab".repeat(32), explorerUrl: `https://testnet.zcashexplorer.app/transactions/${"ab".repeat(32)}` });
-    expect(svc.calls[0]?.body).toMatchObject({ account: 3, to: UA, zats: 10_000_000, memo: "pi_abc", sweep: false });
+    expect(svc.calls[0]?.body).toMatchObject({ account: 3, to: UA, zats: 10_000_000, memo: "pi_abc", sweep: false, carry: 1 });
     expect((svc.calls[0]?.body as { wait: number }).wait).toBeGreaterThan(75);
+  });
+
+  it("funds an escrow with two fees on top: its release, and the recipient's next send", async () => {
+    const svc = fakeService({ "POST /v1/send": () => ({ json: { txid: "ab".repeat(32) } }) });
+    await adapter(svc.fetch).settle({ fromSecret: encodeAccount(3), to: UA, amount: usdToBaseUnits("5"), memo: "pi_esc", escrow: true });
+    expect(svc.calls[0]?.body).toMatchObject({ carry: 2, sweep: false });
   });
 
   it("sweeps an escrow when closing it", async () => {
@@ -166,6 +177,53 @@ describe("zcash adapter", () => {
     expect(await adapter(svc.fetch).treasuryAddress()).toBe(UA);
   });
 
+  it("asks again when a send gets no answer, and takes the answer that comes back", async () => {
+    let tries = 0;
+    const fetch = (async () => {
+      if (++tries < 3) throw new TypeError("network connection lost");
+      return new Response(JSON.stringify({ txid: "ab".repeat(32) }));
+    }) as typeof globalThis.fetch;
+    const res = await adapter(fetch).settle({ fromSecret: encodeAccount(3), to: UA, amount: usdToBaseUnits("5"), memo: "pi_retry" });
+    expect(res.txHash).toBe("ab".repeat(32));
+    expect(tries).toBe(3);
+  });
+
+  it("reports a send it never heard back about as unknown, not failed", async () => {
+    let tries = 0;
+    const fetch = (async () => {
+      tries++;
+      return new Response("<html>gateway timeout</html>", { status: 504 });
+    }) as typeof globalThis.fetch;
+    const err = await adapter(fetch)
+      .settle({ fromSecret: encodeAccount(3), to: UA, amount: usdToBaseUnits("5"), memo: "pi_lost" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SettlementUnknownError);
+    expect(err).toBeInstanceOf(ChainDownError);
+    expect(tries).toBe(3);
+  });
+
+  it("treats a drip with no answer as unknown too", async () => {
+    const fetch = (async () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    }) as typeof globalThis.fetch;
+    await expect(adapter(fetch).fund(UA, usdToBaseUnits("1"))).rejects.toBeInstanceOf(SettlementUnknownError);
+  });
+
+  it("does not retry a definite no: not enough funds, or the network rejected it", async () => {
+    for (const [status, error] of [
+      [409, "insufficient_funds"],
+      [422, "rejected"],
+    ] as const) {
+      const svc = fakeService({ "POST /v1/send": () => ({ status, json: { error, message: "no" } }) });
+      const err = await adapter(svc.fetch)
+        .settle({ fromSecret: encodeAccount(3), to: UA, amount: usdToBaseUnits("5"), memo: "pi_no" })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ZcashServiceError);
+      expect(err).not.toBeInstanceOf(SettlementUnknownError);
+      expect(svc.calls).toHaveLength(1);
+    }
+  });
+
   it("surfaces service errors with their code, never the token", async () => {
     const svc = fakeService({
       "POST /v1/send": () => ({ status: 409, json: { error: "insufficient_funds", message: "have 0, need 11000" } }),
@@ -181,5 +239,14 @@ describe("zcash adapter", () => {
   it("treats a non-JSON answer (say, a proxy error page) as an error", async () => {
     const fetch = (async () => new Response("<html>bad gateway</html>", { status: 502 })) as typeof globalThis.fetch;
     await expect(adapter(fetch).treasuryAddress()).rejects.toThrow(/502 bad_response/);
+  });
+
+  it("is wrapped so a down service reads as the chain being down, wallet creation included", async () => {
+    const fetch = (async () => {
+      throw new TypeError("connection refused");
+    }) as typeof globalThis.fetch;
+    const guarded = guardAdapter(adapter(fetch));
+    await expect(guarded.createWallet()).rejects.toBeInstanceOf(ChainDownError);
+    await expect(guarded.getBalance(UA)).rejects.toBeInstanceOf(ChainDownError);
   });
 });

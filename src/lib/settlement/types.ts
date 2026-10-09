@@ -13,13 +13,18 @@ export interface SettlementAdapter extends Capabilities {
   isValidAddress(address: string): boolean;
   createWallet(): Promise<{ address: string; secret: Uint8Array<ArrayBuffer> }>;
   getBalance(address: string): Promise<bigint>;
-  /** Moves `amount` from the wallet behind `fromSecret` to `to`. `closeSource` empties and closes the source token account (escrow release/refund). */
+  /**
+   * Moves `amount` from the wallet behind `fromSecret` to `to`. `closeSource` empties and closes the source
+   * token account (escrow release/refund). `escrow` says `to` is a per-payment escrow wallet, for chains
+   * where the sender also covers what moving it on will cost.
+   */
   settle(args: {
     fromSecret: Uint8Array<ArrayBuffer>;
     to: string;
     amount: bigint;
     memo: string;
     closeSource?: boolean;
+    escrow?: boolean;
   }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
@@ -95,7 +100,10 @@ export class EscrowExpiredError extends Error {
   }
 }
 
-/** Wraps an adapter so read and funding failures surface as ChainDownError. `settle` failures stay as-is: they're recorded on the payment. */
+/**
+ * Wraps an adapter so read, wallet-creation and funding failures surface as ChainDownError. `settle`
+ * failures stay as-is: they're recorded on the payment.
+ */
 export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
   const guard =
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
@@ -106,5 +114,10 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
-  return { ...adapter, getBalance: guard(adapter.getBalance), fund: guard(adapter.fund) };
+  return {
+    ...adapter,
+    createWallet: guard(adapter.createWallet),
+    getBalance: guard(adapter.getBalance),
+    fund: guard(adapter.fund),
+  };
 }

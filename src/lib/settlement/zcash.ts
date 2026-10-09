@@ -1,4 +1,5 @@
-import type { SettlementAdapter, SettleResult } from "./types";
+import { errorText, type SettlementAdapter, type SettleResult } from "./types";
+import { SettlementUnknownError } from "./unconfirmed";
 
 /** 1 ZEC = 10^8 zatoshis. */
 const ZATS_PER_ZEC = 100_000_000n;
@@ -19,6 +20,8 @@ export type ZcashConfig = {
   addressPrefix: string;
   explorerTx: (txid: string) => string;
   fetch?: typeof fetch;
+  /** For tests: how retries wait. */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 /** The rate in cents, so conversions stay in integers. */
@@ -106,25 +109,49 @@ export class ZcashServiceError extends Error {
     super(`Zcash wallet service ${status} ${code}: ${message}`.slice(0, 300));
     this.name = "ZcashServiceError";
   }
+
+  /**
+   * Whether a send that got this answer may still have gone out: no answer at all (status 0), a 5xx,
+   * or a rate limit. A 4xx from the service itself (bad request, not enough funds, rejected by the
+   * network) is definite: nothing moved.
+   */
+  get maybeSent(): boolean {
+    return this.status === 0 || this.status === 429 || this.status >= 500;
+  }
 }
+
+/** Delays between tries of a send whose answer didn't come back. Sends are idempotent per payment, so a retry can't pay twice. */
+const RETRY_DELAYS_MS = [2_000, 5_000];
 
 /**
  * Shielded ZEC through the wallet service (services/zcash-wallet), which holds one seed, scans
  * the chain, and proves transactions; a Worker can do neither. Dial wallets are accounts of that
  * seed. Every payment carries its intent id in the encrypted memo. Amounts are dollars converted
- * at the registry's demo rate. The sender pays the network fee, so balances hold one fee back,
- * and the service adds one fee to payments between Dial wallets so an escrow can pay out in full.
+ * at the registry's demo rate. The sender pays the network fee, so balances are what an account can
+ * send after its fee, and payments between Dial wallets carry the fee the recipient will need to move
+ * them on (two for an escrow: its release, then the recipient's next send).
+ *
+ * Sends are idempotent per (account, recipient, memo) in the service. A send whose answer never
+ * comes back is retried, then reported as SettlementUnknownError: it may have gone out, so the bot
+ * keeps it "settling" and asks again later instead of calling it failed.
  */
 export function createZcashAdapter(cfg: ZcashConfig): SettlementAdapter {
   const doFetch = cfg.fetch ?? fetch;
+  const sleep = cfg.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const base = cfg.serviceUrl.replace(/\/+$/, "");
 
-  async function call<T>(path: string, init?: { method: "POST"; body: unknown }): Promise<T> {
-    const res = await doFetch(`${base}${path}`, {
-      method: init?.method ?? "GET",
-      headers: { authorization: `Bearer ${cfg.token}`, ...(init ? { "content-type": "application/json" } : {}) },
-      body: init ? JSON.stringify(init.body) : undefined,
-    });
+  async function call<T>(path: string, init?: { method: "POST"; body: unknown; timeoutMs?: number }): Promise<T> {
+    let res: Response;
+    try {
+      res = await doFetch(`${base}${path}`, {
+        method: init?.method ?? "GET",
+        headers: { authorization: `Bearer ${cfg.token}`, ...(init ? { "content-type": "application/json" } : {}) },
+        body: init ? JSON.stringify(init.body) : undefined,
+        signal: AbortSignal.timeout(init?.timeoutMs ?? 30_000),
+      });
+    } catch (e) {
+      throw new ZcashServiceError(0, "no_answer", errorText(e));
+    }
     const text = await res.text();
     let body: unknown;
     try {
@@ -139,7 +166,23 @@ export function createZcashAdapter(cfg: ZcashConfig): SettlementAdapter {
     return body as T;
   }
 
-  const sent = (txid: string): SettleResult => ({ txHash: txid, explorerUrl: cfg.explorerTx(txid) });
+  /** A send or drip: retried while the answer is unknown, then SettlementUnknownError. */
+  async function send(path: "/v1/send" | "/v1/fund", body: Record<string, unknown>): Promise<SettleResult> {
+    // The service may wait up to CONFIRM_WAIT_SECONDS for notes to confirm, then prove and broadcast.
+    const timeoutMs = (CONFIRM_WAIT_SECONDS + 60) * 1000;
+    let last: unknown;
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 0);
+      try {
+        const { txid } = await call<{ txid: string }>(path, { method: "POST", body, timeoutMs });
+        return { txHash: txid, explorerUrl: cfg.explorerTx(txid) };
+      } catch (e) {
+        if (!(e instanceof ZcashServiceError) || !e.maybeSent) throw e;
+        last = e;
+      }
+    }
+    throw new SettlementUnknownError("zcash", last);
+  }
 
   return {
     chain: "zcash",
@@ -153,29 +196,31 @@ export function createZcashAdapter(cfg: ZcashConfig): SettlementAdapter {
     },
 
     async getBalance(address) {
-      const { total } = await call<{ total: number }>(`/v1/balance/${encodeURIComponent(address)}`);
-      const sendable = BigInt(total) - ZCASH_FEE_ZATS;
-      return sendable > 0n ? zatsToUsd(sendable, cfg.usdPerZec) : 0n;
+      const b = await call<{ sendable: number; synced: boolean }>(`/v1/balance/${encodeURIComponent(address)}`);
+      // Mid-rescan the number can be short; say the chain is busy rather than show a wrong balance.
+      if (!b.synced) throw new ZcashServiceError(503, "not_synced", "the wallet is still scanning the chain");
+      return zatsToUsd(BigInt(b.sendable), cfg.usdPerZec);
     },
 
-    async settle({ fromSecret, to, amount, memo, closeSource }) {
+    async settle({ fromSecret, to, amount, memo, closeSource, escrow }) {
       const zats = usdToZats(amount, cfg.usdPerZec);
       if (zats <= 0n && !closeSource) throw new RangeError("Amount is below one zatoshi");
-      const { txid } = await call<{ txid: string }>("/v1/send", {
-        method: "POST",
-        body: { account: decodeAccount(fromSecret), to, zats: Number(zats), memo, sweep: closeSource === true, wait: CONFIRM_WAIT_SECONDS },
+      return send("/v1/send", {
+        account: decodeAccount(fromSecret),
+        to,
+        zats: Number(zats),
+        memo,
+        sweep: closeSource === true,
+        carry: escrow ? 2 : 1,
+        wait: CONFIRM_WAIT_SECONDS,
       });
-      return sent(txid);
     },
 
     async fund(to, amount) {
-      // One extra fee, so the drip's full dollar amount can be sent on to another Dial wallet.
+      // One fee on top here and one more the service adds for any Dial recipient: the full drip can be
+      // sent on to another Dial wallet. The memo plus the recipient makes the drip idempotent.
       const zats = usdToZats(amount, cfg.usdPerZec) + ZCASH_FEE_ZATS;
-      const { txid } = await call<{ txid: string }>("/v1/fund", {
-        method: "POST",
-        body: { to, zats: Number(zats), memo: "Dial test drip", wait: CONFIRM_WAIT_SECONDS },
-      });
-      return sent(txid);
+      return send("/v1/fund", { to, zats: Number(zats), memo: "Dial test drip", wait: CONFIRM_WAIT_SECONDS });
     },
 
     async treasuryAddress() {

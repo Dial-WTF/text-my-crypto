@@ -226,6 +226,36 @@ export async function revertToEscrowed(db: Db, id: string, error: string): Promi
     .where(eq(intents.id, id));
 }
 
+/** Marks a settlement whose outcome isn't known yet (the money may have moved). It stays "settling". */
+const UNKNOWN = "outcome unknown: ";
+
+export async function markOutcomeUnknown(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ error: `${UNKNOWN}${error}`.slice(0, 500) })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling")));
+}
+
+/** Settlements left with an unknown outcome, oldest first, for the resume job to drive to an answer. */
+export async function unknownSettlements(db: Db, limit = 10): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.status, "settling"), sql`${intents.error} like ${`${UNKNOWN}%`}`))
+    .orderBy(intents.createdAt)
+    .limit(limit);
+}
+
+/** Takes one unknown settlement for a retry, so two resume runs never drive the same one at once. */
+export async function claimUnknownForRetry(db: Db, id: string): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ error: null })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling"), sql`${intents.error} like ${`${UNKNOWN}%`}`))
+    .returning();
+  return row ?? null;
+}
+
 export async function markFailed(db: Db, id: string, error: string): Promise<void> {
   await db
     .update(intents)

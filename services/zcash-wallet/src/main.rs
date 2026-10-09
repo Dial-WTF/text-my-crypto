@@ -1,10 +1,17 @@
 //! Dial's Zcash testnet wallet service. The Worker can't scan the chain or prove transactions,
-//! so it calls this over HTTP with a shared bearer token. See README.md for the API.
+//! so it calls this over HTTP with a shared bearer token. See docs/zcash.md for the API.
 
 mod cache;
 mod wallet;
 
-use std::{env, num::NonZeroU32, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::VecDeque,
+    env,
+    num::NonZeroU32,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -25,10 +32,14 @@ use tracing::{info, warn};
 
 use wallet::{Wallet, WalletError};
 
+/// Sends, drips and new accounts per minute, across all callers. Testnet traffic is a few a minute.
+const WRITES_PER_MINUTE: usize = 30;
+
 #[derive(Clone)]
 struct App {
     wallet: Arc<Mutex<Wallet>>,
     token: Arc<String>,
+    writes: Arc<std::sync::Mutex<VecDeque<Instant>>>,
 }
 
 impl IntoResponse for WalletError {
@@ -38,10 +49,12 @@ impl IntoResponse for WalletError {
             WalletError::NotFound(m) => (StatusCode::NOT_FOUND, "not_found", m),
             WalletError::Insufficient(m) => (StatusCode::CONFLICT, "insufficient_funds", m),
             WalletError::NotSynced => (StatusCode::SERVICE_UNAVAILABLE, "not_synced", "wallet is still syncing".into()),
-            WalletError::Upstream(m) => (StatusCode::BAD_GATEWAY, "upstream", m),
+            WalletError::Rejected(m) => (StatusCode::UNPROCESSABLE_ENTITY, "rejected", m),
+            WalletError::Unknown(m) => (StatusCode::GATEWAY_TIMEOUT, "unknown", m),
             WalletError::Internal(e) => {
+                // Details stay in the log: they can name accounts, notes or file paths.
                 warn!("internal error: {e:#}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal", format!("{e:#}"))
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error, see the service log".into())
             }
         };
         (status, Json(json!({ "error": code, "message": message }))).into_response()
@@ -64,6 +77,28 @@ async fn auth(State(app): State<App>, req: Request, next: Next) -> Response {
     }
 }
 
+/// A sliding one-minute window over every call that moves money or creates accounts.
+async fn rate_limit(State(app): State<App>, req: Request, next: Next) -> Response {
+    let allowed = {
+        let mut writes = app.writes.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        while writes.front().is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60)) {
+            writes.pop_front();
+        }
+        let ok = writes.len() < WRITES_PER_MINUTE;
+        if ok {
+            writes.push_back(now);
+        }
+        ok
+    };
+    if allowed {
+        next.run(req).await
+    } else {
+        let body = json!({ "error": "rate_limited", "message": "too many sends this minute; nothing was sent" });
+        (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response()
+    }
+}
+
 async fn healthz(State(app): State<App>) -> Reply {
     let w = app.wallet.lock().await;
     let s = w.status()?;
@@ -80,9 +115,9 @@ async fn treasury(State(app): State<App>) -> Reply {
     Ok(Json(json!({ "account": 0, "address": w.address(0)? })))
 }
 
+/// Hands out the next account from the pool.
 async fn create_account(State(app): State<App>) -> Reply {
-    let mut w = app.wallet.lock().await;
-    let (account, address) = w.create_account()?;
+    let (account, address) = app.wallet.lock().await.create_account()?;
     info!(account, "created account");
     Ok(Json(json!({ "account": account, "address": address })))
 }
@@ -92,18 +127,27 @@ struct Restore {
     accounts: u32,
 }
 
-/// Rebuilds accounts 0..n on a fresh disk. Idempotent.
+/// Rebuilds accounts 0..n (plus the pool) on a fresh disk. Idempotent.
 async fn restore(State(app): State<App>, Json(body): Json<Restore>) -> Reply {
     let mut w = app.wallet.lock().await;
-    w.ensure_accounts(body.accounts.max(1))?;
-    Ok(Json(json!({ "accounts": w.account_count()? })))
+    Ok(Json(json!({ "accounts": w.restore(body.accounts)? })))
 }
 
 async fn balance(State(app): State<App>, Path(address): Path<String>) -> Reply {
-    let w = app.wallet.lock().await;
+    let mut w = app.wallet.lock().await;
     let synced = w.status()?.synced;
     let (account, b) = w.balance(&address)?;
-    Ok(Json(json!({ "account": account, "spendable": b.spendable, "total": b.total, "synced": synced })))
+    Ok(Json(json!({
+        "account": account,
+        "spendable": b.spendable,
+        "total": b.total,
+        "sendable": b.sendable,
+        "synced": synced,
+    })))
+}
+
+fn default_carry() -> u64 {
+    1
 }
 
 #[derive(Deserialize)]
@@ -115,6 +159,10 @@ struct Send {
     memo: Option<String>,
     #[serde(default)]
     sweep: bool,
+    /// Fees added on top when the recipient is another account in this wallet: 1 for a person (their
+    /// next send), 2 for an escrow (its release, plus the recipient's next send).
+    #[serde(default = "default_carry")]
+    carry: u64,
     /// Seconds to wait for received notes to confirm when the account holds enough but can't spend
     /// it yet. Testnet blocks take ~75s.
     #[serde(default)]
@@ -122,14 +170,17 @@ struct Send {
 }
 
 /// Sends, waiting up to `wait` seconds for unconfirmed funds. The wallet lock is released between
-/// tries so the sync loop can scan the block that confirms them.
+/// tries so balance reads and other sends aren't stuck behind the wait.
 async fn send_waiting(app: &App, body: &Send) -> Result<String, WalletError> {
+    if body.carry > 2 {
+        return Err(WalletError::BadRequest("carry is at most 2".into()));
+    }
     let deadline = tokio::time::Instant::now() + Duration::from_secs(body.wait.min(240));
     loop {
         let mut w = app.wallet.lock().await;
-        match w.send(body.account, &body.to, body.zats, body.memo.as_deref(), body.sweep).await {
+        match w.send(body.account, &body.to, body.zats, body.memo.as_deref(), body.sweep, body.carry) {
             Err(WalletError::Insufficient(m)) => {
-                let need = if body.sweep { 1 } else { w.outgoing(&body.to, body.zats)? + wallet::FEE };
+                let need = if body.sweep { 1 } else { w.outgoing(&body.to, body.zats, body.carry)? + wallet::FEE };
                 let held = w.account_balance(body.account)?.total;
                 if held < need || tokio::time::Instant::now() >= deadline {
                     return Err(WalletError::Insufficient(m));
@@ -160,12 +211,12 @@ struct Fund {
     wait: u64,
 }
 
-/// Pays from the treasury (account 0).
+/// Pays from the treasury (account 0). Idempotent per (recipient, memo), like a send.
 async fn fund(State(app): State<App>, Json(body): Json<Fund>) -> Reply {
     if body.zats == 0 {
         return Err(WalletError::BadRequest("zats must be positive".into()));
     }
-    let send = Send { account: 0, to: body.to, zats: body.zats, memo: body.memo, sweep: false, wait: body.wait };
+    let send = Send { account: 0, to: body.to, zats: body.zats, memo: body.memo, sweep: false, carry: 1, wait: body.wait };
     let txid = send_waiting(&app, &send).await?;
     info!(%txid, zats = body.zats, "funded");
     Ok(Json(json!({ "txid": txid })))
@@ -205,36 +256,35 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(NonZeroU32::MIN);
     let port: u16 = env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8080);
 
-    let mut w = Wallet::open(&data_dir, &lightwalletd, seed, birthday, min_conf).await?;
+    let (mut w, mut syncer) = Wallet::open(&data_dir, &lightwalletd, seed, birthday, min_conf).await?;
     if let Some(n) = env::var("ZCASH_ACCOUNTS").ok().and_then(|v| v.parse().ok()) {
-        w.ensure_accounts(n).map_err(|e| anyhow!("{e:?}"))?;
+        w.restore(n).map_err(|e| anyhow!("{e:?}"))?;
     }
     info!(treasury = %w.address(0).map_err(|e| anyhow!("{e:?}"))?, %lightwalletd, "wallet open");
-    let wallet = Arc::new(Mutex::new(w));
 
-    // Keep scanning: blocks arrive every ~75s on testnet.
-    let syncer = wallet.clone();
+    // Keep scanning on the sync loop's own connection: blocks arrive every ~75s on testnet, and a
+    // rescan never holds the lock the request handlers use.
     tokio::spawn(async move {
         loop {
-            {
-                let mut w = syncer.lock().await;
-                if let Err(e) = w.sync().await {
-                    warn!("{e:#}");
-                }
+            if let Err(e) = syncer.sync().await {
+                warn!("{e:#}");
             }
             tokio::time::sleep(Duration::from_secs(15)).await;
         }
     });
 
-    let app = App { wallet, token: Arc::new(token) };
+    let app = App { wallet: Arc::new(Mutex::new(w)), token: Arc::new(token), writes: Arc::default() };
+    let writes = Router::new()
+        .route("/v1/accounts", post(create_account))
+        .route("/v1/send", post(send))
+        .route("/v1/fund", post(fund))
+        .route_layer(middleware::from_fn_with_state(app.clone(), rate_limit));
     let api = Router::new()
         .route("/v1/status", get(status))
         .route("/v1/treasury", get(treasury))
-        .route("/v1/accounts", post(create_account))
         .route("/v1/restore", post(restore))
         .route("/v1/balance/{address}", get(balance))
-        .route("/v1/send", post(send))
-        .route("/v1/fund", post(fund))
+        .merge(writes)
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
     let router = Router::new().route("/healthz", get(healthz)).merge(api).with_state(app);
 

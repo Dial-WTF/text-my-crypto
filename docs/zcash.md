@@ -48,8 +48,31 @@ lightwalletd v0.5.4). `lightwalletd.testnet.electriccoin.co:9067` timed out and
   of failing. The treasury keeps its change split into up to 8 notes so signups in a row don't wait
   on each other.
 - **Fees.** The sender pays a ZIP 317 fee, 0.0001 TAZ for a normal payment. There is no fee sponsor
-  like Tempo's. So balances hold one fee back, drips include one extra fee, and a payment to another
-  Dial wallet carries one fee on top. That makes an escrow release pay the recipient the full amount.
+  like Tempo's, so:
+  - A balance is what the account can send after the fee to spend everything it holds (the service
+    computes it from the same proposal a sweep would build).
+  - A payment to another Dial wallet carries one fee on top, so the recipient can spend all of it.
+  - A payment into an escrow carries two: one for the release and one for the recipient's next send.
+    The release sweeps the escrow, so the recipient gets the full amount plus their one fee.
+  - A drip carries two fees on top of the dollar amount (one from the adapter, one as a Dial
+    recipient), so a new user can send their whole drip to another Dial user.
+- **Accounts come from a pool.** Every account shares the service birthday, and importing one makes
+  the wallet rescan from there. So the service makes 100 at a time ahead of signups and hands them out
+  one by one: a new wallet is instant and never triggers a rescan, and the pool tops up (one rescan)
+  when fewer than 10 are left. Giving each account its own recent birthday was tried; the NU7
+  pre-release crates then refuse to add a second account ("commitment tree retains checkpoints both
+  above and below …").
+- **Sends are idempotent.** The service keys every send and drip on (account, recipient, memo). The
+  memo is the payment id, and a drip's memo with its recipient is unique too. Asking again returns the
+  transaction that already went out and re-broadcasts it. The transaction is built, broadcast and recorded in one database
+  transaction: if lightwalletd refuses it, it rolls back and the notes stay spendable. If the
+  broadcast gets no answer, the transaction and its record are kept, and the service answers
+  `unknown`.
+- **Unknown outcomes never read as failed.** When a send or drip gets no answer (timeout, dropped
+  connection, 5xx, rate limit) the adapter asks again twice, then throws `SettlementUnknownError`.
+  The bot leaves the payment "settling", texts the sender that it may still go through, and the
+  minute watchdog re-drives it with the same arguments until it settles or gets a definite no. A
+  drip in that state stays taken, so it can't be sent twice.
 
 ## Dollars and TAZ
 
@@ -68,25 +91,32 @@ All routes except `/healthz` need `Authorization: Bearer $ZCASH_SERVICE_TOKEN`.
 
 | Route | Does |
 |---|---|
-| `GET /healthz` | `{ok, synced}` |
+| `GET /healthz` | `{ok, synced}`; behind the Container wrapper, `{ok, running: false}` without waking a sleeping container |
 | `GET /v1/status` | chain tip, scanned height, account count |
 | `GET /v1/treasury` | account 0's address |
-| `POST /v1/accounts` | next account: `{account, address}` |
-| `POST /v1/restore {accounts}` | rebuilds accounts 0..n on a fresh disk (idempotent) |
-| `GET /v1/balance/:address` | `{account, spendable, total}` in zatoshis |
-| `POST /v1/send {account, to, zats, memo, sweep, wait}` | `{txid}`; `sweep` sends everything spendable minus the fee |
+| `POST /v1/accounts` | hands out the next pooled account: `{account, address}` |
+| `POST /v1/restore {accounts}` | marks accounts 0..n as handed out and rebuilds them (plus the pool) on a fresh disk; idempotent |
+| `GET /v1/balance/:address` | `{account, spendable, total, sendable, synced}`, amounts in zatoshis |
+| `POST /v1/send {account, to, zats, memo, sweep, carry, wait}` | `{txid}`; `sweep` sends everything spendable minus the fee; `carry` (1 or 2) fees go on top for a Dial recipient |
 | `POST /v1/fund {to, zats, memo, wait}` | send from the treasury |
 
+Sends, drips and new accounts share a limit of 30 a minute (429 `rate_limited`, nothing sent).
 Errors are `{error, message}`: 400 `bad_request`, 404 `not_found`, 409 `insufficient_funds`,
-503 `not_synced`, 502 `upstream` (lightwalletd rejected the transaction).
+422 `rejected` (lightwalletd refused the transaction; nothing moved), 503 `not_synced`, 504 `unknown`
+(broadcast got no answer; ask again), 502 `upstream`, 500 `internal` (details only in the service log).
 
 ## Hosting
 
 **Cloudflare Container** (`services/zcash-wallet/worker`): a tiny Worker plus a Durable Object that
 starts one container (`standard-1`) and proxies to it. Container disk is ephemeral, so the Durable
-Object counts the accounts the service has handed out and passes `ZCASH_ACCOUNTS` on every start. A
-fresh disk rebuilds every account from the seed and rescans from the shared birthday. `sleepAfter`
-is 24h so that rescan rarely happens.
+Object keeps what must outlive a restart. It counts the accounts the service has handed out and
+passes `ZCASH_ACCOUNTS` on every start, so a fresh disk rebuilds every account from the seed and
+rescans from the shared birthday. It also keeps the txid of every send and drip by the same
+(account, recipient, memo) key, and answers a repeat from there, so idempotency survives a fresh
+disk too. `sleepAfter` is 24h so the rescan rarely happens. The image runs as a non-root user.
+During a rescan the sync loop works on its own database connection, so health checks, balances and
+sends aren't stuck behind it; balances answer `synced: false` and the bot treats Zcash as down until
+the rescan finishes.
 
 **Or any small host with a disk** (a $5 VM, Fly machine with a volume): run the same image with
 `/data` on a volume and the three env vars below. Nothing else changes; point `ZCASH_SERVICE_URL`
@@ -108,7 +138,7 @@ at it over HTTPS.
 3. **Fund the treasury with TAZ.** `GET /v1/treasury` gives the address. The faucets listed by ZecHub
    were down on 2026-10-08 (`testnet.zecaucet.com` has no DNS, `faucet.zecpages.com` doesn't answer),
    so ask for TAZ in the Zcash community Discord or forum. A signup drip costs the treasury the drip
-   plus about 0.0003 TAZ in fees: 0.02 TAZ at staging's $1, 0.04 TAZ at production's $2. 2 TAZ covers
+   plus up to about 0.0006 TAZ in fees (two carried fees and the treasury's own, which splits its change): 0.02 TAZ at staging's $1, 0.04 TAZ at production's $2. 2 TAZ covers
    about 45 production signups. Raise `usdPerZec` in the registry if TAZ is scarce.
 4. **One real round-trip** with the local or deployed service:
    ```
@@ -137,7 +167,15 @@ DATA_DIR=/tmp/zwallet PORT=8787 ./target/debug/zcash-wallet
 - Testnet only; the service hard-codes testnet parameters and the registry has no mainnet entry.
 - One wallet process. Sends are serialized behind one lock, and a send that waits for confirmations
   holds a request open for up to 3 minutes.
-- A Dial wallet that received exactly $X from another Dial wallet can send $X out of Dial but not to
-  another Dial wallet (that needs a second fee). The bot reports it as a failed payment; nothing moves.
+- Fees are real and come out of TAZ the sender holds. Sending your whole balance to another Dial
+  wallet needs one more fee than sending it out of Dial (the carry). Sending to an escrow, someone
+  not on Dial yet, needs two more fees (0.0002 TAZ, a cent at the demo rate). When that's short, the
+  payment fails up front and nothing moves.
+- A broadcast that got no answer is kept as sent. If it never reached the network it expires after
+  about 40 blocks, but the payment already shows settled with that txid. This needs a dropped
+  broadcast and a lost transaction together, so it's rare. The fix would be to check the txid on chain
+  before settling.
+- On the single-host option the send ledger lives on the disk only; lose the disk and a retried
+  payment could go out twice. Behind the Container wrapper the Durable Object keeps a copy.
 - Received memos aren't read back: the service doesn't fetch full transactions after scanning
   compact blocks. Matching works from our side, because we record the txid we sent.
