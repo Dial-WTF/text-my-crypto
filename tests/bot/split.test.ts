@@ -10,7 +10,7 @@ import type { Db } from "@/lib/db/client";
 import { intents } from "@/lib/db/schema";
 import { findUserByPhone } from "@/lib/identity";
 import { splitLegs } from "@/lib/intents";
-import type { BatchLeg } from "@/lib/settlement/types";
+import type { TransferLeg as BatchLeg } from "@/lib/settlement/capabilities";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
 import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
@@ -29,14 +29,17 @@ function fakeTempo(): FakeTempo {
   const t: FakeTempo = Object.assign(base, {
     batches: [] as BatchLeg[][],
     failNext: null as Error | null,
-    settleBatch: async ({ legs }: { legs: readonly BatchLeg[] }) => {
-      if (t.failNext) {
-        const e = t.failNext;
-        t.failNext = null;
-        throw e;
-      }
-      t.batches.push([...legs]);
-      return TX;
+    batch: {
+      maxLegs: 16,
+      settleBatch: async ({ legs }: { legs: BatchLeg[] }) => {
+        if (t.failNext) {
+          const e = t.failNext;
+          t.failNext = null;
+          throw e;
+        }
+        t.batches.push([...legs]);
+        return TX;
+      },
     },
   });
   return t;
@@ -140,12 +143,21 @@ describe("split over SMS", () => {
     expect(tempo.batches[0]!.map((l) => l.amount)).toEqual([3_340_000n, 3_330_000n]);
   });
 
-  it("runs on Tempo only: another chain gets pointed at 'on tempo' and nothing is created", async () => {
-    const tip =
-      'Splits settle in one transaction on Tempo, so they run there, not on Solana. Add "on tempo" to the end and text it again.';
-    expect(await say(JEREMY, "split $30 between @alex @sam")).toBe(tip);
-    expect(await say(JEREMY, "split $30 between @alex @sam on solana")).toBe(tip);
+  it("runs where transactions batch: a chain that can't is pointed at 'on tempo' and nothing is created", async () => {
+    expect(await say(JEREMY, "split $30 between @alex @sam on solana")).toBe(
+      'Splits settle in one transaction on Tempo, so they run there, not on Solana. Add "on tempo" to the end and text it again.',
+    );
     expect(await legsOf(JEREMY)).toEqual([]);
+  });
+
+  it("picks the chain that batches when none is named, even with another default", async () => {
+    // Jeremy's default chain is Solana, which can't batch.
+    expect(await say(JEREMY, "split $30 between @alex @sam")).toMatch(/^Split \$30 2 ways on Tempo: \$15 each to @alex, @sam\./);
+  });
+
+  it("says splits are off when no chain batches", async () => {
+    delete (tempo as Partial<FakeTempo>).batch;
+    expect(await say(JEREMY, "split $30 between @alex @sam on tempo")).toBe("Splits aren't switched on yet. Send each person a payment instead.");
   });
 
   it("applies the per-payment cap to each share and the daily cap and balance to the total", async () => {
@@ -294,7 +306,10 @@ describe("split_payment over MCP", () => {
     const a = await agent();
     expect(await runTool(deps, a, "split_payment", { amountUsd: "30", people: ["@alex", "@sam"], chain: "base" })).toEqual({
       ok: false,
-      error: { error: "split_tempo_only", message: 'Splits settle in one transaction on Tempo, not Base. Pass chain "tempo" or leave it out.' },
+      error: {
+        error: "split_chain",
+        message: "Splits settle in one transaction, which Base can't do. Leave chain out to use one that can (see list_chain_features).",
+      },
     });
     const ten = Array.from({ length: 10 }, (_, i) => `+1555000${String(3000 + i)}`);
     expect(await runTool(deps, a, "split_payment", { amountUsd: "50", people: ten, includeMe: true })).toMatchObject({

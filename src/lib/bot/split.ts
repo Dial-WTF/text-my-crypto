@@ -1,4 +1,4 @@
-import { chainLabel } from "@/lib/chains";
+import { type Chain, chainLabel } from "@/lib/chains";
 import type { Intent, User } from "@/lib/db/schema";
 import { describe, displayName, getUserById, isClaimed } from "@/lib/identity";
 import {
@@ -19,7 +19,8 @@ import { replies } from "@/lib/operator/replies";
 import { shareList, splitReplies } from "@/lib/operator/split-replies";
 import { hasPasskey } from "@/lib/passkeys";
 import { seal } from "@/lib/secretbox";
-import { errorText } from "@/lib/settlement/types";
+import { type BatchTransfer, chainWith } from "@/lib/settlement/capabilities";
+import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureSenderWallet, ensureWallet } from "./accounts";
@@ -34,7 +35,7 @@ export const MAX_SPLIT_PEOPLE = 10;
 const CENT = 10_000n;
 const DAY_MS = 86_400_000;
 
-export type SplitErrorCode = MoneyError["code"] | "split_tempo_only" | "split_people" | "ambiguous_recipient";
+export type SplitErrorCode = MoneyError["code"] | "split_chain" | "split_people" | "ambiguous_recipient";
 export type SplitError = { code: SplitErrorCode; message: string };
 
 /** A split waiting for its one approval: a leg (an ordinary send intent) per person, sharing a split id and a code. */
@@ -93,20 +94,35 @@ export async function resolvePeople(
   return { ok: true, people };
 }
 
+type SplitChain = { ok: true; chain: Chain; adapter: SettlementAdapter; batch: BatchTransfer } | { ok: false; error: SplitError };
+
+/**
+ * Where a split runs: a chain whose transactions batch (Tempo's atomic calls). A chain they named that can't
+ * batch is refused with the one that can, never faked with one transfer after another. Named none: their
+ * default chain if it batches, else the first that does.
+ */
+export function splitChain(deps: Pick<BotDeps, "adapters">, user: User, named: Chain | undefined): SplitChain {
+  const found = chainWith(deps.adapters, "batch", named ?? user.defaultChain);
+  if (!found) return { ok: false, error: { code: "chain_unavailable", message: splitReplies.unavailable() } };
+  if (named && found.chain !== named) {
+    return { ok: false, error: { code: "split_chain", message: splitReplies.needsBatch(chainLabel(named), chainLabel(found.chain), found.chain) } };
+  }
+  return { ok: true, chain: found.chain, adapter: found.adapter, batch: found.module };
+}
+
 /**
  * Validates a split with its people resolved and creates a leg per person, all approved by one code.
- * Splits run on Tempo, where one transaction carries every leg. Per-payment caps apply to each leg,
- * the daily cap and the balance check to what the sender pays in all. Texts nobody.
+ * Splits run where one transaction carries every leg (see splitChain). Per-payment caps apply to each
+ * leg, the daily cap and the balance check to what the sender pays in all. Texts nobody.
  */
 export async function createSplit(deps: BotDeps, user: User, cmd: SplitCommand, people: User[]): Promise<SplitPrepared> {
-  const chain = cmd.chain ?? user.defaultChain;
-  if (chain !== "tempo") return fail("split_tempo_only", splitReplies.tempoOnly(chainLabel(chain)));
-  const adapter = deps.adapters.tempo;
-  if (!adapter?.settleBatch) return fail("chain_unavailable", replies.chainUnavailable(chainLabel("tempo")));
+  const picked = splitChain(deps, user, cmd.chain);
+  if (!picked.ok) return picked;
+  const { chain, adapter, batch } = picked;
 
   const ways = people.length + (cmd.includeMe ? 1 : 0);
   if (people.length === 0 || ways < 2) return fail("split_people", splitReplies.tooFew());
-  if (ways > MAX_SPLIT_PEOPLE) return fail("split_people", splitReplies.tooMany(MAX_SPLIT_PEOPLE));
+  if (ways > MAX_SPLIT_PEOPLE || people.length > batch.maxLegs) return fail("split_people", splitReplies.tooMany(MAX_SPLIT_PEOPLE));
   const seen = new Set<string>();
   for (const p of people) {
     if (p.id === user.id) return fail("self", replies.selfSend());
@@ -198,14 +214,15 @@ export function confirmSplitText(p: PreparedSplit): string {
   const ways = p.legs.length + (p.mine === null ? 0 : 1);
   const shares = sharesText(p.legs.map((l) => ({ amount: l.intent.amount, person: l.person })));
   const note = p.legs[0]?.intent.note ?? null;
-  return splitReplies.confirm(formatUsd(p.total), ways, shares, p.mine === null ? null : formatUsd(p.mine), note, p.code, p.approveUrl);
+  const chain = chainLabel(p.legs[0]?.intent.chain ?? "tempo");
+  return splitReplies.confirm(formatUsd(p.total), ways, shares, p.mine === null ? null : formatUsd(p.mine), chain, note, p.code, p.approveUrl);
 }
 
 /** SMS path for "split $30 between …". Returns the reply for the person who texted. */
 export async function prepareSplit(deps: BotDeps, user: User, cmd: SplitCommand): Promise<string> {
   // Chain and head count are checked before anyone is looked up, so a split that can't run never creates accounts.
-  const chain = cmd.chain ?? user.defaultChain;
-  if (chain !== "tempo") return splitReplies.tempoOnly(chainLabel(chain));
+  const picked = splitChain(deps, user, cmd.chain);
+  if (!picked.ok) return picked.error.message;
   if (cmd.people.length + (cmd.includeMe ? 1 : 0) > MAX_SPLIT_PEOPLE) return splitReplies.tooMany(MAX_SPLIT_PEOPLE);
   const resolved = await resolvePeople(deps, user, cmd.people);
   if (!resolved.ok) return resolved.error.message;
@@ -237,7 +254,7 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
   let result: { txHash: string; explorerUrl: string };
   try {
     const adapter = deps.adapters[head.chain];
-    if (!adapter?.settleBatch) throw new Error(`No batch settlement on ${head.chain}`);
+    if (!adapter?.batch) throw new Error(`No batch settlement on ${head.chain}`);
     const wallet = await getWallet(deps.db, head.senderId, head.chain);
     if (!wallet) throw new Error("Missing sender wallet");
     const balance = await adapter.getBalance(wallet.address);
@@ -245,9 +262,9 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
       await notify(deps, sender.phone, replies.insufficientNow(formatUsd(balance)));
       return failAll("Insufficient balance at approval");
     }
-    await notify(deps, sender.phone, splitReplies.sending(formatUsd(pays), legs.length));
+    await notify(deps, sender.phone, splitReplies.sending(formatUsd(pays), legs.length, chainLabel(head.chain)));
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
-    result = await adapter.settleBatch({
+    result = await adapter.batch.settleBatch({
       fromSecret,
       legs: legs.map((l) => ({ to: l.recipientAddress, amount: l.amount, memo: l.id })),
     });
@@ -274,7 +291,7 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
     await markSettled(deps.db, leg.id, result, deps.now());
     await notify(deps, person.phone, replies.received(displayName(person), amount, displayName(sender), chain, leg.note, result.explorerUrl));
   }
-  await notify(deps, sender.phone, splitReplies.sent(shares, result.explorerUrl, waiting, deps.escrowTtlDays));
+  await notify(deps, sender.phone, splitReplies.sent(shares, chain, result.explorerUrl, waiting, deps.escrowTtlDays));
   return { ok: true, status: waiting.length === legs.length ? "escrowed" : "settled", ...result };
 }
 

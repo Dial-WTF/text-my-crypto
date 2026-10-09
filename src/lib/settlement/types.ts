@@ -1,14 +1,13 @@
 import type { Chain } from "@/lib/chains";
+import type { Capabilities } from "./capabilities";
 import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
 
 export type SettleResult = { txHash: string; explorerUrl: string };
 
-/** One transfer inside a batch: its own recipient, amount and memo (the leg's payment id). */
-export type BatchLeg = { to: string; amount: bigint; memo: string };
-
-export interface SettlementAdapter {
+/** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
+export interface SettlementAdapter extends Capabilities {
   chain: Chain;
   tokenId: string;
   isValidAddress(address: string): boolean;
@@ -22,16 +21,9 @@ export interface SettlementAdapter {
     memo: string;
     closeSource?: boolean;
   }): Promise<SettleResult>;
-  /**
-   * Several transfers from one wallet in a single atomic transaction: every leg lands or none do. Only chains
-   * whose transactions batch natively (Tempo's `calls`) have it; nothing fakes it with one transfer after another.
-   */
-  settleBatch?(args: { fromSecret: Uint8Array<ArrayBuffer>; legs: readonly BatchLeg[] }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
-  /** On-chain escrow for payments to people not on Dial yet. Absent: escrow is a server-held wallet. */
-  escrow?: EscrowProgram;
 }
 
 /**

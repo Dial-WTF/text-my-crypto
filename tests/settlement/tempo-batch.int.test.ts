@@ -24,7 +24,7 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
       { to: people[1]!.address, amount: 3_330_000n, memo: "pi_split_leg_b" },
       { to: people[2]!.address, amount: 3_330_000n, memo: "pi_split_leg_c" },
     ];
-    const res = await adapter.settleBatch!({ fromSecret: payer.secret, legs });
+    const res = await adapter.batch!.settleBatch({ fromSecret: payer.secret, legs });
     console.log(`split: ${res.explorerUrl}`);
 
     // The treasury paid the fee: the payer is drained to exactly zero and each person got their share.
@@ -64,7 +64,7 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
     expect(await adapter.getBalance(payer.address)).toBe(2_000_000n);
 
     // Through the adapter the same batch never leaves: estimation refuses it, and nothing moves.
-    await expect(adapter.settleBatch!({ fromSecret: payer.secret, legs })).rejects.toThrow();
+    await expect(adapter.batch!.settleBatch({ fromSecret: payer.secret, legs })).rejects.toThrow();
     expect(await adapter.getBalance(a.address)).toBe(0n);
   });
 });

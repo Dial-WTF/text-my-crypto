@@ -10,8 +10,17 @@ import {
   type PreparedIntent,
   resolveCounterparty,
 } from "@/lib/bot/money";
-import { confirmSplitText, createSplit, MAX_SPLIT_PEOPLE, type PreparedSplit, resolvePeople, type SplitErrorCode } from "@/lib/bot/split";
+import {
+  confirmSplitText,
+  createSplit,
+  MAX_SPLIT_PEOPLE,
+  type PreparedSplit,
+  resolvePeople,
+  splitChain,
+  type SplitErrorCode,
+} from "@/lib/bot/split";
 import { text } from "@/lib/bot/text";
+import { FEATURES, featuresOf } from "@/lib/settlement/capabilities";
 import type { BotDeps } from "@/lib/bot/types";
 import { CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
@@ -107,8 +116,9 @@ export const toolInputs = {
       .optional()
       .describe("True when the owner takes a share too and pays everyone else's (\"split $30 with @a @b\"). Default false."),
     note,
-    chain: z.enum(CHAINS).optional().describe("Splits settle on Tempo, in one transaction. Leave out or pass \"tempo\"; other chains are refused."),
+    chain: z.enum(CHAINS).optional().describe("Leave out: splits run on a chain that settles them as one transaction (Tempo). A chain that can't is refused."),
   }),
+  list_chain_features: z.object({}),
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
@@ -335,22 +345,32 @@ async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Prom
     paysUsd: usd(pays),
     ownShareUsd: s.mine === null ? null : usd(s.mine),
     asset: "USDC",
-    chain: "tempo",
+    chain: first?.intent.chain ?? null,
     legs: s.legs.map((l) => ({ intentId: l.intent.id, to: describe(l.person), amountUsd: usd(l.intent.amount), onDial: isClaimed(l.person) })),
     message: ownerTexted
-      ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one Tempo transaction, or none do. Poll get_payment on any leg.`
+      ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one transaction, or none do. Poll get_payment on any leg.`
       : "The owner has paused texts from Dial (STOP), so no code went out: they can approve at approveUrl with their passkey, or text START first.",
   });
 }
 
 async function splitPayment(deps: BotDeps, agent: Agent, input: ToolInput<"split_payment">): Promise<ToolResult> {
   const { user } = agent;
-  // Splits run on Tempo, so that's what an agent gets when it names no chain. Another chain is refused, not faked.
-  const chain = input.chain ?? "tempo";
-  if (chain !== "tempo") return err("split_tempo_only", `Splits settle in one transaction on Tempo, not ${chainLabel(chain)}. Pass chain "tempo" or leave it out.`);
+  // Checked before anyone is looked up, so a split that can't run never creates accounts.
+  const picked = splitChain(deps, user, input.chain);
+  if (!picked.ok && picked.error.code === "split_chain" && input.chain) {
+    return err("split_chain", `Splits settle in one transaction, which ${chainLabel(input.chain)} can't do. Leave chain out to use one that can (see list_chain_features).`);
+  }
+  if (!picked.ok) return err(picked.error.code, picked.error.message);
   const resolved = await resolvePeople(deps, user, input.people);
   if (!resolved.ok) return err(resolved.error.code, resolved.error.message);
-  const cmd = { kind: "split" as const, amountUsd: input.amountUsd, people: input.people, includeMe: input.includeMe ?? false, note: input.note, chain };
+  const cmd = {
+    kind: "split" as const,
+    amountUsd: input.amountUsd,
+    people: input.people,
+    includeMe: input.includeMe ?? false,
+    note: input.note,
+    chain: picked.chain,
+  };
   const r = await createSplit(deps, user, cmd, resolved.people);
   return r.ok ? splitCreated(deps, agent, r.split) : err(r.error.code, r.error.message);
 }
@@ -388,6 +408,16 @@ async function getPayLink(deps: BotDeps, agent: Agent, input: ToolInput<"get_pay
 
 async function walletTool(deps: BotDeps, agent: Agent): Promise<ToolResult> {
   return ok(walletJson(await walletView(deps, agent.user)));
+}
+
+/** Every enabled chain with the chain-native modules it carries, so an agent can see what each chain can do. */
+async function listChainFeatures(deps: BotDeps): Promise<ToolResult> {
+  const chains = enabledChains(deps).map(([chain, adapter]) => ({
+    chain,
+    name: chainLabel(chain),
+    features: featuresOf(adapter).map((id) => ({ id, ...FEATURES[id] })),
+  }));
+  return ok({ chains });
 }
 
 function withInput<S extends z.ZodType>(
@@ -434,6 +464,8 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return walletTool(deps, agent);
     case "split_payment":
       return withInput(toolInputs.split_payment, raw, (i) => splitPayment(deps, agent, i));
+    case "list_chain_features":
+      return listChainFeatures(deps);
   }
 }
 
@@ -486,11 +518,16 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   split_payment: {
     title: "Split payment",
     description:
-      "Split an amount between people, to the cent (any leftover cent goes to the first person). With includeMe the owner takes a share and pays everyone else's. Up to 10 people. Runs on Tempo: the owner approves once with one texted code, then every share settles in one transaction with each payment id as its memo, or none do. People not on Dial yet get their share held for them to claim. Returns splitId and an intentId per person; poll get_payment.",
+      "Split an amount between people, to the cent (any leftover cent goes to the first person). With includeMe the owner takes a share and pays everyone else's. Up to 10 people. Runs on a chain with batched transactions (Tempo, see list_chain_features): the owner approves once with one texted code, then every share settles in one transaction with each payment id as its memo, or none do. People not on Dial yet get their share held for them to claim. Returns splitId and an intentId per person; poll get_payment.",
   },
   get_wallet: {
     title: "Wallet",
     description:
       "The owner's wallet: balance and deposit address per chain, their pay link, recent activity and connected agents. Read-only.",
+  },
+  list_chain_features: {
+    title: "Chain features",
+    description:
+      "Each enabled chain and the chain-native features it carries (escrow, names, split payments, wallet pay links, private sends, venue transfers, assets), in plain words. Read-only.",
   },
 };

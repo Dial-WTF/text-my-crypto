@@ -15,7 +15,8 @@ import {
 import { tempo, tempoModerato } from "viem/chains";
 import { Abis, Account, createClient, http } from "viem/tempo";
 import { withRateLimitRetry as rl } from "./retry";
-import type { BatchLeg, SettlementAdapter, SettleResult } from "./types";
+import type { TransferLeg } from "./capabilities";
+import type { SettlementAdapter, SettleResult } from "./types";
 
 /** AlphaUSD on Moderato: TIP-20, 6 decimals. Also the fee token, since Tempo has no native gas coin. */
 export const ALPHA_USD: Address = "0x20c0000000000000000000000000000000000001";
@@ -52,7 +53,7 @@ export function deliveredTo(
  * One TIP-20 `transferWithMemo` call per leg, for a single Tempo transaction. Tempo transactions carry a
  * list of calls that execute atomically: every leg lands, or the whole transaction reverts and none do.
  */
-export function batchCalls(token: Address, legs: readonly BatchLeg[]): { to: Address; data: Hex }[] {
+export function batchCalls(token: Address, legs: readonly TransferLeg[]): { to: Address; data: Hex }[] {
   return legs.map((leg) => ({
     to: token,
     data: encodeFunctionData({
@@ -113,7 +114,7 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
   /** Every leg in one sponsored transaction: all of them land, or none do. */
   async function transferBatch(
     from: ReturnType<typeof Account.fromSecp256k1>,
-    legs: readonly BatchLeg[],
+    legs: readonly TransferLeg[],
   ): Promise<SettleResult> {
     if (legs.length === 0 || legs.length > MAX_BATCH_LEGS) throw new Error(`a batch carries 1 to ${MAX_BATCH_LEGS} legs`);
     const feePayer = from === treasury ? undefined : treasury;
@@ -148,8 +149,10 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
     async settle({ fromSecret, to, amount, memo }) {
       return transfer(Account.fromSecp256k1(bytesToHex(fromSecret)), to as Address, amount, memo);
     },
-    async settleBatch({ fromSecret, legs }) {
-      return transferBatch(Account.fromSecp256k1(bytesToHex(fromSecret)), legs);
+    // Tempo transactions carry a list of calls run atomically: a split pays everyone in one transaction, or nobody.
+    batch: {
+      maxLegs: MAX_BATCH_LEGS,
+      settleBatch: ({ fromSecret, legs }) => transferBatch(Account.fromSecp256k1(bytesToHex(fromSecret)), legs),
     },
     async treasuryAddress() {
       return treasury.address;

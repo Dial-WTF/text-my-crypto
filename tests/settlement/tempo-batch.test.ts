@@ -1,7 +1,7 @@
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, type Hex, hexToString, type Log } from "viem";
 import { Abis } from "viem/tempo";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BatchLeg } from "@/lib/settlement/types";
+import type { TransferLeg as BatchLeg } from "@/lib/settlement/capabilities";
 
 type SentTx = { account: { address: Hex }; feePayer?: { address: Hex }; calls: Array<{ to: Hex; data: Hex }> };
 const sent: SentTx[] = [];
@@ -65,7 +65,7 @@ describe("tempo batch settlement", () => {
   const fromSecret = new Uint8Array(32).fill(7);
 
   it("sends one transaction with a transferWithMemo call per leg, sponsored by the treasury", async () => {
-    const r = await adapter.settleBatch!({ fromSecret, legs });
+    const r = await adapter.batch!.settleBatch({ fromSecret, legs });
     expect(r).toEqual({ txHash: "0xbatch", explorerUrl: "https://explore.testnet.tempo.xyz/tx/0xbatch" });
     expect(sent).toHaveLength(1);
     const [tx] = sent;
@@ -88,7 +88,7 @@ describe("tempo batch settlement", () => {
 
   it("throws when the transaction reverts, so no leg is recorded as paid", async () => {
     receiptFor = () => ({ status: "reverted", transactionHash: "0xbad", logs: [] });
-    await expect(adapter.settleBatch!({ fromSecret, legs })).rejects.toThrow("tempo tx 0xbad reverted");
+    await expect(adapter.batch!.settleBatch({ fromSecret, legs })).rejects.toThrow("tempo tx 0xbad reverted");
   });
 
   it("throws when a leg's transfer isn't in the receipt", async () => {
@@ -96,13 +96,13 @@ describe("tempo batch settlement", () => {
       const r = delivered(tx);
       return { ...r, logs: r.logs.slice(0, 2) };
     };
-    await expect(adapter.settleBatch!({ fromSecret, legs })).rejects.toThrow(/did not deliver to 0x3333/);
+    await expect(adapter.batch!.settleBatch({ fromSecret, legs })).rejects.toThrow(/did not deliver to 0x3333/);
   });
 
   it("refuses an empty batch and one too big to send", async () => {
-    await expect(adapter.settleBatch!({ fromSecret, legs: [] })).rejects.toThrow();
-    const many = Array.from({ length: 17 }, () => legs[0]!);
-    await expect(adapter.settleBatch!({ fromSecret, legs: many })).rejects.toThrow();
+    await expect(adapter.batch!.settleBatch({ fromSecret, legs: [] })).rejects.toThrow();
+    const many = Array.from({ length: adapter.batch!.maxLegs + 1 }, () => legs[0]!);
+    await expect(adapter.batch!.settleBatch({ fromSecret, legs: many })).rejects.toThrow();
     expect(sent).toHaveLength(0);
   });
 });
