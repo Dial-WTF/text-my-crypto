@@ -13,7 +13,7 @@ describe("payphoneSender", () => {
     const [url, init] = fetchImpl.mock.calls[0] ?? [];
     expect(url).toBe("https://pp.test/api/v1/sms/send");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer k");
-    expect(JSON.parse(String(init?.body))).toEqual({ to: "+15550000001", message: "hi", from: "+18066071387" });
+    expect(JSON.parse(init?.body as string)).toEqual({ to: "+15550000001", message: "hi", from: "+18066071387" });
   });
 
   it("masks numbers Payphone echoes back in an error, since the error gets logged", async () => {

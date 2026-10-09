@@ -1,10 +1,40 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // Type-aware rules: the bugs a type checker can see but tsc doesn't report (floating promises, async handlers
+  // React drops, switches that miss a case, conditions that can't be false, objects stringified as "[object Object]").
+  {
+    files: ["**/*.ts", "**/*.tsx", "**/*.mts"],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      ...Object.fromEntries(tseslint.configs.recommendedTypeCheckedOnly.flatMap((c) => Object.entries(c.rules ?? {}))),
+      "@typescript-eslint/require-await": "off",
+      "@typescript-eslint/switch-exhaustiveness-check": ["error", { considerDefaultExhaustiveForUnions: true }],
+      "@typescript-eslint/no-unnecessary-condition": "error",
+      // Dead locals fail the gate, like dead exports do in `pnpm deadcode`.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+      // Stricter than recommended: a nullish, boolean or `any` value in a template is how "undefined" ends up in a text.
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true, allow: [{ from: "lib", name: ["URLSearchParams"] }], allowBoolean: false, allowNullish: false, allowAny: false, allowRegExp: false, allowNever: false },
+      ],
+    },
+  },
+  {
+    files: ["tests/**"],
+    rules: {
+      // `expect(adapter.fund).toHaveBeenCalled()` reads a vi.fn() off an object: no `this` involved.
+      "@typescript-eslint/unbound-method": "off",
+      // vitest's asymmetric matchers (expect.stringMatching, expect.objectContaining) are typed `any`.
+      "@typescript-eslint/no-unsafe-assignment": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

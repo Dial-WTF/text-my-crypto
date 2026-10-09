@@ -31,7 +31,7 @@ describe("public stats", () => {
       ["@alex", "@jeremy", 10_000_000n, "settled"],
     ]);
     // Public: no phone numbers, and no names people typed to get paid.
-    expect(JSON.stringify(feed, (_k, v) => (typeof v === "bigint" ? v.toString() : v))).not.toMatch(/555|Rivera/);
+    expect(JSON.stringify(feed, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toMatch(/555|Rivera/);
   });
 });
 

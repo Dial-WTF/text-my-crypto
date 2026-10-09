@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "@/lib/db/client";
 import { conversations } from "@/lib/db/schema";
 
-export const CONVERSATION_TTL_MS = 15 * 60_000;
+const CONVERSATION_TTL_MS = 15 * 60_000;
 
 const conversationSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("awaiting_name"), payload: z.object({}).strict() }),
@@ -29,7 +29,7 @@ export async function getConversation(db: Db, phone: string, now: Date): Promise
     .where(and(eq(conversations.phone, phone), gt(conversations.expiresAt, now)))
     .limit(1);
   if (!row) return null;
-  const parsed = conversationSchema.safeParse({ state: row.state, payload: JSON.parse(row.payload) });
+  const parsed = conversationSchema.safeParse({ state: row.state, payload: JSON.parse(row.payload) as unknown });
   return parsed.success ? { ...parsed.data, rev: row.expiresAt.getTime() } : null;
 }
 
@@ -52,8 +52,4 @@ export async function setConversation(db: Db, phone: string, c: Conversation, no
  */
 export async function clearConversationIf(db: Db, phone: string, rev: number): Promise<void> {
   await db.delete(conversations).where(and(eq(conversations.phone, phone), eq(conversations.expiresAt, new Date(rev))));
-}
-
-export async function clearConversation(db: Db, phone: string): Promise<void> {
-  await db.delete(conversations).where(eq(conversations.phone, phone));
 }

@@ -70,7 +70,7 @@ function declarations(body: string): Map<string, string> {
 /** The oklch(...) channels of a colour token's value. */
 function channels(value: string | undefined, what: string): string {
   const m = /^oklch\(([^)/]+)/.exec(value ?? "");
-  if (!m?.[1]) throw new Error(`${what} is not an oklch colour: ${value}`);
+  if (!m?.[1]) throw new Error(`${what} is not an oklch colour: ${value ?? "(missing)"}`);
   return m[1].trim();
 }
 

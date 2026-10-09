@@ -138,7 +138,7 @@ async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount:
  * Texts the person one code that claims every escrow waiting for them. Offered again (START after STOP),
  * the wrong guesses made so far still count, and one locked by them isn't offered: asking again never buys more tries.
  */
-export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
+async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
   const waiting = (await escrowedTo(deps.db, user.id, deps.now())).filter((i) => !isCodeLocked(i));
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
@@ -170,7 +170,7 @@ export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<
  * Someone asked a new person for money before they joined: show it again with a fresh code once they're in.
  * Like escrow claims, the tries already used still count, and a request locked by wrong guesses isn't offered.
  */
-export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
+async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
     if (isCodeLocked(intent)) continue;
     const requester = await getUserById(deps.db, intent.recipientId);

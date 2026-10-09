@@ -80,8 +80,9 @@ export async function payProfile(deps: BotDeps, user: User, ask: PayAsk = {}): P
     } else if (entry.kind === "zcash") {
       const amountZec = baseUnits !== undefined && entry.usdPerZec ? formatZec(usdToZats(baseUnits, entry.usdPerZec)) : undefined;
       uri = zip321Uri({ address, amountZec, label, message: ask.note });
-      const rate = `testnet ZEC at a demo rate of $${entry.usdPerZec} per coin`;
-      assetNote = amountZec ? `Pays ${amountZec} ${entry.asset}: ${rate}.` : `${entry.asset} is ${rate}.`;
+      // No demo rate (mainnet) means no dollar conversion to explain.
+      const rate = entry.usdPerZec ? `testnet ZEC at a demo rate of $${entry.usdPerZec} per coin` : null;
+      assetNote = rate && (amountZec ? `Pays ${amountZec} ${entry.asset}: ${rate}.` : `${entry.asset} is ${rate}.`);
     } else {
       uri = eip681TransferUri({ token, chainId: entry.viem.id, address, baseUnits });
     }

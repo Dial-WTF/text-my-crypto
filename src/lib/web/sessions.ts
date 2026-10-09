@@ -5,7 +5,7 @@ import { loginLinks, type User, users, webSessions } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/hash";
 import { randomToken } from "@/lib/ids";
 
-export const LOGIN_LINK_TTL_MS = 15 * 60_000;
+const LOGIN_LINK_TTL_MS = 15 * 60_000;
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60_000;
 export const SESSION_COOKIE = "dial_session";
 

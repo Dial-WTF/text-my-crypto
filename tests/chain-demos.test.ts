@@ -84,7 +84,7 @@ describe("venue mids", () => {
   it("asks the public info API with a POST and caches the answer", async () => {
     const fetcher = vi.fn(async () => Response.json({ HYPE: "40", BTC: "60000" }));
     expect(await loadMids("testnet", fetcher as unknown as typeof fetch)).toEqual({ HYPE: "40", BTC: "60000" });
-    await loadMids("testnet", fetcher as unknown as typeof fetch);
+    await loadMids("testnet", fetcher);
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]).toMatchObject(["https://api.hyperliquid-testnet.xyz/info", { method: "POST", body: '{"type":"allMids"}' }]);
   });

@@ -15,7 +15,7 @@ export function retryDelaySeconds(attempts: number): number {
   return Math.min(BASE_DELAY_S * 2 ** Math.max(0, attempts - 1), MAX_DELAY_S);
 }
 
-export function isInboundSms(v: unknown): v is InboundSms {
+function isInboundSms(v: unknown): v is InboundSms {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;
   return (

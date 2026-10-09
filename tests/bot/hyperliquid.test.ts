@@ -57,7 +57,7 @@ function stubInfoApi(mids: Record<string, string>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      calls.push({ url, body: JSON.parse(typeof init?.body === "string" ? init.body : "null") as Record<string, unknown> });
       return Response.json(mids);
     }),
   );

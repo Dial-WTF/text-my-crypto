@@ -175,7 +175,7 @@ export const toolInputs = {
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
-export type ToolInput<T extends ToolName> = z.infer<(typeof toolInputs)[T]>;
+type ToolInput<T extends ToolName> = z.infer<(typeof toolInputs)[T]>;
 
 /** Tools that create a PaymentIntent and text someone; they share a tighter rate limit. */
 export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
@@ -192,7 +192,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
 // Outputs
 // ---------------------------------------------------------------------------------------------
 
-export type ToolError = {
+type ToolError = {
   error: MoneyError["code"] | SplitErrorCode | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
@@ -212,7 +212,7 @@ function amountOut(i: Intent, network: Network): { amountUsd: string | null; sha
     : { amountUsd: usd(i.amount), asset: assetOf(i.chain, network) };
 }
 
-export type AgentPaymentStatus =
+type AgentPaymentStatus =
   | "awaiting_approval"
   | "expired"
   | "settling"
@@ -368,7 +368,7 @@ async function resolveRecipient(deps: BotDeps, agent: Agent, input: ToolInput<"r
   return ok({
     found: true,
     via: phone ? "phone" : "contact",
-    name: onDial && u ? describe(u) : contact ? contact.name : displayName({ handle: null, phone: target }),
+    name: onDial ? describe(u) : contact ? contact.name : displayName({ handle: null, phone: target }),
     onDial,
     ...(onDial ? {} : { note: escrowNote }),
   });
@@ -515,7 +515,10 @@ async function getPayLink(deps: BotDeps, agent: Agent, input: ToolInput<"get_pay
   const handle = input.handle?.replace(/^@/, "").toLowerCase();
   const target = handle ? await findUserByHandle(deps.db, handle) : agent.user;
   if (!target || !isClaimed(target) || !target.handle) {
-    return err("not_found", `No Dial user @${handle}. To pay a phone number, use send_payment.`);
+    return err(
+      "not_found",
+      handle ? `No Dial user @${handle}. To pay a phone number, use send_payment.` : "This account has no Dial handle, so it has no pay link.",
+    );
   }
   return ok(await payProfile(deps, target, cleanAsk(deps, { amount: input.amountUsd, note: input.note })));
 }

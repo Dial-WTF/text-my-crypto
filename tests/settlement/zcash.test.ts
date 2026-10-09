@@ -29,9 +29,9 @@ type Call = { method: string; path: string; auth: string | null; body: unknown }
 function fakeService(routes: Record<string, (body: unknown) => { status?: number; json: unknown }>) {
   const calls: Call[] = [];
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
+    const url = new URL(input instanceof Request ? input.url : input);
     const method = init?.method ?? "GET";
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const body = init?.body ? (JSON.parse(init.body as string) as unknown) : undefined;
     calls.push({ method, path: url.pathname, auth: new Headers(init?.headers).get("authorization"), body });
     const route = routes[`${method} ${url.pathname}`] ?? routes[`${method} ${url.pathname.replace(/[^/]+$/, ":address")}`];
     if (!route) return new Response(JSON.stringify({ error: "not_found", message: "no route" }), { status: 404 });
@@ -128,7 +128,7 @@ describe("zcash wallet secrets", () => {
 
 describe("zcash adapter", () => {
   it("carries the shielded module: every send is shielded", () => {
-    const a = adapter((async () => new Response("{}")) as typeof globalThis.fetch);
+    const a = adapter((async () => new Response("{}")));
     expect(a.shielded).toEqual({ pool: "Ironwood", byDefault: true });
     expect(featuresOf(a)).toEqual(["shielded"]);
   });
@@ -181,7 +181,7 @@ describe("zcash adapter", () => {
   });
 
   it("says what each kind of payment carries on top, in dollars", () => {
-    const a = adapter((async () => new Response("{}")) as typeof globalThis.fetch);
+    const a = adapter((async () => new Response("{}")));
     expect(a.carriedFees?.("escrow")).toBe(10_000n); // two 0.0001 TAZ fees at $50
     expect(a.carriedFees?.("dial")).toBe(5_000n);
     expect(a.carriedFees?.("outside")).toBe(0n);

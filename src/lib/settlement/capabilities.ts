@@ -54,7 +54,7 @@ export interface PaymentActions {
   findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { explorerUrl: string; payer: string; amount: bigint }>>;
 }
 
-export interface ShieldedTransfer {
+interface ShieldedTransfer {
   /** The pool payments go through, for receipts: "Orchard". */
   pool: string;
   /** True when this chain's sends are shielded by default; false when shielding is opt-in per payment. */
@@ -128,7 +128,7 @@ export function chainWith<F extends FeatureId>(
   for (const chain of candidates as Chain[]) {
     const adapter = adapters[chain];
     const found = adapter?.[feature];
-    if (adapter && found !== undefined) return { chain, adapter, module: found as NonNullable<Capabilities[F]> };
+    if (adapter && found !== undefined) return { chain, adapter, module: found };
   }
   return null;
 }

@@ -54,7 +54,10 @@ export function parseActionGet(json: unknown): ActionGetResponse | null {
   if (a.type !== "action" || !isString(a.title) || !isString(a.description) || !isString(a.icon) || !isString(a.label)) return null;
   const raw = (a.links as { actions?: unknown } | undefined)?.actions;
   const actions = Array.isArray(raw)
-    ? raw.filter((l): l is LinkedAction => typeof l === "object" && l !== null && isString(l.href) && isString(l.label))
+    ? (raw as unknown[]).filter((l): l is LinkedAction => {
+        const link = l as { href?: unknown; label?: unknown } | null;
+        return typeof link === "object" && link !== null && isString(link.href) && isString(link.label);
+      })
     : [];
   return {
     type: "action",

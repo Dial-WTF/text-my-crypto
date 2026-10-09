@@ -89,6 +89,7 @@ describe("pay action GET", () => {
       ["Pay", "https://tmc.test/api/actions/pay/alex?amount={amount}"],
     ]);
     expect(actions[3]?.parameters).toEqual([{ type: "number", name: "amount", label: "Amount in USD, up to $50", required: true, min: 0.01, max: 50 }]);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the type says so; this checks the JSON we serve
     expect(actions.every((a) => a.type === "transaction")).toBe(true);
   });
 
@@ -156,7 +157,7 @@ describe("pay action POST", () => {
 
     const [create, transfer, memo] = message.instructions;
     expect(message.instructions).toHaveLength(3);
-    expect(create?.programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
+    expect(create.programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
     expect(transfer?.programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
     expect(memo?.programAddress).toBe(MEMO_PROGRAM_ADDRESS);
 

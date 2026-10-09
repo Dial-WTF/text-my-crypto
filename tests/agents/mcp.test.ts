@@ -95,7 +95,7 @@ describe("MCP over Streamable HTTP", () => {
     expect(init.body.result?.serverInfo).toMatchObject({ name: "dial-operator" });
 
     const list = await rpc(key, "tools/list");
-    const tools = (list.body.result?.tools as Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }>) ?? [];
+    const tools = list.body.result?.tools as Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }>;
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         "create_invoice",
@@ -154,7 +154,7 @@ describe("MCP over Streamable HTTP", () => {
     const sent = await call(key, "send_payment", { to: "+15550000011", amountUsd: "3" });
     const intentId = String(sent.data.intentId);
     const list = await rpc(key, "tools/list");
-    const names = ((list.body.result?.tools as Array<{ name: string }>) ?? []).map((t) => t.name);
+    const names = (list.body.result?.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.some((n) => /approve|confirm|settle/.test(n))).toBe(false);
     expect((await getIntent(db, intentId))?.status).toBe("pending");
     // The texted code is the approval; approving directly still works for the human path.

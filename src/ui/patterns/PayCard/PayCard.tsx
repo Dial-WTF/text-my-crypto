@@ -9,7 +9,7 @@ import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
 /** `action`: Solana only, the pay link as a Solana Action (Blink): its solana-action: URI and Dial's checkout page for it. */
-export type PayCardChain = {
+type PayCardChain = {
   network: string;
   address: string;
   uri: string;

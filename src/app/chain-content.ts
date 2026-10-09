@@ -13,13 +13,13 @@ import type { LogoId } from "@/ui/brand/logoPaths";
  */
 
 /** A file in this repository, linked on GitHub. The label is short enough to stay on one line on a phone. */
-export type CodeLink = { path: string; label: string };
+type CodeLink = { path: string; label: string };
 
 /**
  * What one chain-native module (capabilities.ts) does on this chain, under "Built for <chain>". The module's
  * title and summary come from FEATURES; this adds the chain's own detail and code.
  */
-export type FeatureDetail = { detail: string[]; code: CodeLink[] };
+type FeatureDetail = { detail: string[]; code: CodeLink[] };
 
 export type ChainCopy = {
   /** "Hyperliquid": the name people know, which can differ from chainLabel ("HyperEVM"). */
@@ -362,7 +362,7 @@ export function notSettlingYet(chain: Chain, network: Network): string | null {
   return null;
 }
 
-export { DEAD_EXPLORER_HOSTS, liveExplorer } from "@/lib/explorers";
+export { liveExplorer } from "@/lib/explorers";
 
 /** The registry addresses a chain page links: the stablecoin contract and, on Solana, the escrow program. */
 export function registryProof(chain: Chain, network: Network): { label: string; address: string; url: string | null }[] {

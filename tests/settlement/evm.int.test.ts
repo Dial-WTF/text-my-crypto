@@ -13,10 +13,7 @@ describe.runIf(run)(`evm adapter (${chain} testnet, live)`, () => {
     const entry = REGISTRY[chain].testnet as EvmNetwork;
     const rpc = resolveRpc(entry, {
       alchemyKey: process.env.ALCHEMY_API_KEY || undefined,
-      overrides: Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith("RPC_") && v)) as Record<
-        string,
-        string
-      >,
+      overrides: Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith("RPC_") && v)),
     });
     const adapter = createEvmAdapter({ ...entry, chain, rpcUrl: rpc.url, treasuryKey: process.env.EVM_TREASURY_KEY as Hex });
     const treasury = await adapter.treasuryAddress();
@@ -28,6 +25,6 @@ describe.runIf(run)(`evm adapter (${chain} testnet, live)`, () => {
     const res = await adapter.settle({ fromSecret: wallet.secret, to: treasury, amount: 10_000n, memo: `pi_int${Date.now()}` });
     expect(res.explorerUrl).toContain(res.txHash);
     expect(await adapter.getBalance(wallet.address)).toBe(0n);
-    console.info(`${entry.network} drop ${drop.explorerUrl}\n${entry.network} signed transfer back ${res.explorerUrl}`);
+    console.info(`${entry.network} drop ${drop.explorerUrl ?? drop.txHash}\n${entry.network} signed transfer back ${res.explorerUrl ?? res.txHash}`);
   });
 });

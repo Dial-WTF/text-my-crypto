@@ -3,9 +3,9 @@ import type { Db } from "@/lib/db/client";
 import { watchdogProblems } from "@/lib/db/schema";
 
 /** At most one alert per check per this window, however long it stays broken or however often it flaps. */
-export const REALERT_MS = 30 * 60_000;
+const REALERT_MS = 30 * 60_000;
 /** Passing runs in a row before an open problem counts as resolved. */
-export const RESOLVE_AFTER = 2;
+const RESOLVE_AFTER = 2;
 
 /**
  * One check's outcome in a run. `ok: null` means it could not be evaluated this run (say the Payphone
@@ -96,7 +96,7 @@ const WORDS: Record<string, [problem: string, fixed: string]> = {
 export function checkWords(key: string): [problem: string, fixed: string] {
   const chain = /^(\w+)Balance$/.exec(key)?.[1];
   if (chain) {
-    const name = `${chain[0]?.toUpperCase()}${chain.slice(1)} network`;
+    const name = `${chain.charAt(0).toUpperCase()}${chain.slice(1)} network`;
     return [`${name} not answering`, `${name} is answering again`];
   }
   return WORDS[key] ?? [key, `${key} is fine again`];

@@ -36,7 +36,7 @@ type Common = {
  */
 export type SolanaNetwork = Common & { kind: "solana"; mint: string; caip2: string; escrowProgram?: string };
 /** A null token means the network is wired but has no stablecoin we settle in yet; it stays off. */
-export type TempoNetwork = Common & {
+type TempoNetwork = Common & {
   kind: "tempo";
   viem: typeof tempoModerato | typeof tempo;
   token: Address | null;
@@ -85,7 +85,7 @@ export type VenueNetwork = {
  * talks to it. People see dollars converted at `usdPerZec`, a fixed demo rate: testnet ZEC (TAZ)
  * has no price.
  */
-export type ZcashNetwork = Common & {
+type ZcashNetwork = Common & {
   kind: "zcash";
   asset: "TAZ" | "ZEC";
   usdPerZec: number | null;

@@ -62,7 +62,7 @@ describe("a stock gift on every public surface: shares and the ticker, never dol
     expect(await loadLatestPayment("robinhood")).toMatchObject({ id: giftId, amount: "0.1 TSLA" });
 
     const { GET } = await import("@/app/ledger.json/route");
-    const body = (await (await GET()).json()) as { payments: Array<Record<string, unknown>> };
+    const body = await (await GET()).json<{ payments: Array<Record<string, unknown>> }>();
     expect(body.payments[0]).toMatchObject({ id: giftId, amountUsd: null, shares: "0.1", asset: "TSLA", shielded: false });
   });
 

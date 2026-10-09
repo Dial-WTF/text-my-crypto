@@ -40,7 +40,7 @@ const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, b
  * Each links to its chain page and takes its chain's brand on hover and focus; `branded` also wears the
  * brand at rest (/judges).
  */
-export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): ChainStripItem[] {
+export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): (ChainStripItem & { href: string })[] {
   return [...statuses]
     .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
     .map((s) => ({

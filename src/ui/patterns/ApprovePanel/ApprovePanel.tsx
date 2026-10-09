@@ -8,10 +8,11 @@ import { Button, type ButtonState } from "@/ui/primitives/Button/Button";
 import { Field } from "@/ui/primitives/Field/Field";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { Notice } from "../Notice/Notice";
+import { formText } from "@/lib/form";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
-export type ApproveActions = {
+type ApproveActions = {
   beginPasskey: (intentId: string) => Promise<PublicKeyCredentialRequestOptionsJSON | null>;
   finishPasskey: (intentId: string, response: AuthenticationResponseJSON) => Promise<ActionResult>;
   approveWithCode: (intentId: string, code: string) => Promise<ActionResult>;
@@ -50,21 +51,26 @@ export function ApprovePanel({ intentId, passkey, code, actions }: ApprovePanelP
 
   const onCode = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const value = String(new FormData(e.currentTarget).get("code") ?? "").trim();
+    const value = formText(new FormData(e.currentTarget), "code").trim();
     setState("loading");
     setResult(null);
-    finish(await actions.approveWithCode(intentId, value));
+    // A failed server action (network, deploy) would otherwise leave the button spinning forever.
+    finish(
+      await actions
+        .approveWithCode(intentId, value)
+        .catch((): ActionResult => ({ ok: false, message: "Couldn't reach Dial. Check your texts, then try again." })),
+    );
   };
 
   return (
     <Stack gap="sm">
       {passkey ? (
-        <Button full state={state} onClick={onPasskey}>
+        <Button full state={state} onClick={() => void onPasskey()}>
           {state === "loading" ? "Waiting for your passkey…" : "Approve with passkey"}
         </Button>
       ) : null}
       {code ? (
-        <form onSubmit={onCode}>
+        <form onSubmit={(e) => void onCode(e)}>
           <Stack gap="sm">
             <Field
               label="Code from the operator"

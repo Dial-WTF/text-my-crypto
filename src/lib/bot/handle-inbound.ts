@@ -151,6 +151,9 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       await reply(result.reply);
       return offerWaiting(deps, result.user);
     }
+    default:
+      // Everything else needs a signed-up user: the switch below.
+      break;
   }
 
   const user = ctx.user;

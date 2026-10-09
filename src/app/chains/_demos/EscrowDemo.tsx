@@ -12,7 +12,7 @@ import styles from "./demos.module.css";
 import type { DemoProps } from "./types";
 
 /** The escrow life cycle, said once for every escrow program. */
-export const ESCROW_STEPS = [
+const ESCROW_STEPS = [
   {
     title: "Sender funds the vault",
     body: "The payment moves into a vault the program owns, at an address derived from the payment id.",

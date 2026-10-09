@@ -2,7 +2,7 @@
  * The one place to set the support contact the terms, privacy and help pages show. While it is null
  * they tell people to text HELP to the operator instead. Set it to a real, monitored inbox.
  */
-export const SUPPORT_EMAIL: string | null = null;
+const SUPPORT_EMAIL: string | null = null;
 
 export type SupportContact = { label: string; href: string };
 

@@ -5,9 +5,9 @@ import { type AgentKey, agentKeys, agentLinks, agentRate, type User, users } fro
 import { sha256Hex } from "@/lib/hash";
 import { newId, randomToken } from "@/lib/ids";
 
-export const AGENT_KEY_PREFIX = "dial_ak_";
-export const AGENT_LINK_TTL_MS = 15 * 60_000;
-export const DEFAULT_AGENT_LABEL = "agent";
+const AGENT_KEY_PREFIX = "dial_ak_";
+const AGENT_LINK_TTL_MS = 15 * 60_000;
+const DEFAULT_AGENT_LABEL = "agent";
 
 const KEY_RE = /^dial_ak_[A-Za-z0-9_-]{43}$/;
 

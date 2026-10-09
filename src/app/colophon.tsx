@@ -5,7 +5,7 @@ import { loadChainStatuses } from "./ledger-data";
 import { running, site } from "./site";
 
 /** Every page in the footer, in reading order: learn, check, the fine print, the code. */
-export const footerLinks = () => [
+const footerLinks = () => [
   { href: "/how-it-works", label: "How it works" },
   { href: "/agents", label: "Agents" },
   { href: "/judges", label: "For judges" },

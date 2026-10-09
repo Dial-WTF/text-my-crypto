@@ -17,7 +17,8 @@ export type MoneyCommand = {
 };
 
 /** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
-export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
+export type WithdrawCommand = { kind: "withdraw"; /** A USD amount, or "all". */
+  amountUsd: string; address: string; chain?: Chain };
 
 /** `venue` is the word they used ("hyperliquid", "hypercore", "hl"); the bot matches it to a chain's venue module. */
 export type VenueCommand = { kind: "venue"; venue: string; amountUsd: string; counterparty?: string };

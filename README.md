@@ -80,9 +80,17 @@ node --env-file=.env.local scripts/sim.mjs +15550001111 "hi"
 
 Local runs use `SMS_MODE=log`: replies are printed, never sent. `pnpm dev` handles inbound texts inline because `next dev` has no queue consumer; `pnpm run preview` runs the real worker (`worker.ts`) with a local queue, so it exercises the webhook → queue → consumer path. Preview reads secrets from `.dev.vars`. Tests use an in-memory SMS stub and SQLite (`pnpm test`); `SOLANA_INT=1 pnpm test` also runs the devnet settlement tests.
 
+### Checks
+
+- `pnpm lint`: ESLint with typescript-eslint's type-checked rules (floating promises, async handlers passed where React expects a plain function, switches that miss a case, conditions that can't be false, `undefined` in a template string).
+- `pnpm typecheck`: `tsc`. Needs `cloudflare-env.d.ts`, so run `pnpm cf-typegen` once in a fresh checkout.
+- `pnpm deadcode`: knip, for unused files, exports and dependencies.
+- `pnpm test:coverage`: the tests, plus a 95% per-file branch-coverage floor on the money paths (`vitest.config.mts` lists them). The suite includes fast-check property tests (`tests/property/`) and a migration check (`tests/db/migrations.test.ts`): every `drizzle/*.sql`, applied in order to an empty database, has to produce exactly `src/lib/db/schema.ts`.
+- `pnpm rust:check`: `cargo clippy -D warnings` and `cargo audit` on `solana/`, `contracts/arbitrum-escrow` and `services/zcash-wallet`. Slower, so it isn't part of `pnpm ship`; run it before merging Rust changes. Needs `cargo install cargo-audit --locked`.
+
 ## Deploy
 
-`pnpm ship` is the gated deploy: lint, typecheck and tests, one build, then **staging** (D1 migrations, deploy, `pnpm smoke --env staging`), and only if the smoke test passes, **production** (D1 migrations, deploy). Pushes to `main` run the same script in `.github/workflows/deploy.yml`, which needs the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `STAGING_SMS_WEBHOOK_SECRET` repository secrets. `pnpm run deploy` still deploys production directly, skipping the gate.
+`pnpm ship` is the gated deploy: lint, typecheck, deadcode and tests with the coverage floors, one build, then **staging** (D1 migrations, deploy, `pnpm smoke --env staging`), and only if the smoke test passes, **production** (D1 migrations, deploy). Pushes to `main` run the same script in `.github/workflows/deploy.yml`, which needs the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `STAGING_SMS_WEBHOOK_SECRET` repository secrets. `pnpm run deploy` still deploys production directly, skipping the gate.
 
 Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KEY`, `SOLANA_TREASURY_SEED`, optional `AI_GATEWAY_API_KEY`, optional `ALERT_PHONE`) live in the Worker: keep them in `.env.production.local` and run `pnpm secrets:push`.
 

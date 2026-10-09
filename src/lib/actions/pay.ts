@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { getAddressDecoder } from "@solana/kit";
 import { ensureWallet } from "@/lib/bot/accounts";
 import type { BotDeps } from "@/lib/bot/types";
@@ -15,7 +15,7 @@ import { cleanAsk } from "@/lib/views/pay";
 import type { ActionGetResponse, LinkedAction } from "./spec";
 
 /** How long the cron keeps looking for a payment after its transaction was handed out. */
-export const REFERENCE_TTL_MS = 30 * 60_000;
+const REFERENCE_TTL_MS = 30 * 60_000;
 /** Unpaid transactions one handle may have out at once: each is a row and a lookup every minute. */
 export const MAX_OPEN_PER_HANDLE = 30;
 const PRESETS = ["1", "5", "10"];
@@ -109,11 +109,11 @@ export async function preparePayment(
   if (wallet.address === input.account) return { ok: false, status: 400, message: `That is @${user.handle}'s own Dial wallet.` };
 
   const now = deps.now();
-  const [open] = await deps.db
-    .select({ n: count() })
-    .from(actionPayments)
-    .where(and(eq(actionPayments.recipientId, user.id), isNull(actionPayments.signature), gt(actionPayments.expiresAt, now)));
-  if ((open?.n ?? 0) >= MAX_OPEN_PER_HANDLE) {
+  const open = await deps.db.$count(
+    actionPayments,
+    and(eq(actionPayments.recipientId, user.id), isNull(actionPayments.signature), gt(actionPayments.expiresAt, now)),
+  );
+  if (open >= MAX_OPEN_PER_HANDLE) {
     return { ok: false, status: 429, message: `Too many unpaid payments to @${user.handle} right now. Try again in a few minutes.` };
   }
 

@@ -20,12 +20,12 @@ export async function markDataUrl(): Promise<string> {
   return MARK_DATA_URL;
 }
 
-export const DIM = "#0b6b23";
+const DIM = "#0b6b23";
 export const SOFT = "#8cf5a6";
 const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789";
 
 /** Deterministic rain columns so every card renders the same background. */
-export function rain(columns = 34, rows = 24): string[] {
+function rain(columns = 34, rows = 24): string[] {
   let seed = 7;
   const next = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   return Array.from({ length: columns }, () =>
@@ -77,7 +77,7 @@ export function ShareFrame({
 }
 
 /** A solid green tag, e.g. "LIVE · USDC ON SOLANA". */
-export function Tag({ children }: { children: React.ReactNode }) {
+function Tag({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", flexShrink: 0, padding: "6px 14px", background: GREEN, color: INK }}>{children}</div>;
 }
 

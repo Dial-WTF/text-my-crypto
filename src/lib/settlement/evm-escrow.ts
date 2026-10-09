@@ -68,12 +68,13 @@ export const fundingNonce = (id: Hex, expiry: bigint): Hex =>
 type Vrs = { v: number; r: Hex; s: Hex };
 
 function vrs(signature: Hex): Vrs {
-  const { r, s, v, yParity } = parseSignature(signature);
-  return { v: Number(v ?? BigInt(yParity + 27)), r, s };
+  // yParity is there whether the signature ends in 0/1 or 27/28; the contract takes v as 27/28.
+  const { r, s, yParity } = parseSignature(signature);
+  return { v: yParity + 27, r, s };
 }
 
 /** The sender's EIP-3009 receiveWithAuthorization for funding escrow `id`. Pure: no network. */
-export async function signFunding(args: {
+async function signFunding(args: {
   secret: Uint8Array<ArrayBuffer>;
   token: Address;
   domain: { name: string; version: string };

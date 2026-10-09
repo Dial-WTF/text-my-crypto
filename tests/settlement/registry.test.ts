@@ -6,7 +6,7 @@ import { activeChains, evmEscrow, solanaEscrow } from "@/lib/settlement";
 import { createEvmAdapter } from "@/lib/settlement/evm";
 import { createSolanaAdapter } from "@/lib/settlement/solana";
 import { findEscrowAddress, findVaultAddress, intentIdHash } from "@/lib/settlement/solana-escrow";
-import { ESCROW_CONTRACT_KEYS, type EvmNetwork, NETWORKS, REGISTRY, RPC_OVERRIDE_KEYS, resolveRpc, type SolanaNetwork } from "@/lib/settlement/registry";
+import { ESCROW_CONTRACT_KEYS, type EvmNetwork, NETWORKS, REGISTRY, RPC_OVERRIDE_KEYS, resolveRpc, type SolanaNetwork, venueOf } from "@/lib/settlement/registry";
 
 const solanaDevnet = REGISTRY.solana.testnet!;
 
@@ -46,6 +46,20 @@ describe("registry", () => {
         expect(entry.viem.testnet ?? false).toBe(network === "testnet");
       }
     }
+  });
+});
+
+describe("venueOf", () => {
+  it("finds HyperCore on HyperEVM, on both networks, with its own explorer", () => {
+    const a = "0x00000000000000000000000000000000000000aa";
+    expect(venueOf("hyperevm", "testnet")?.name).toBe("HyperCore");
+    expect(venueOf("hyperevm", "testnet")?.explorerAddress(a)).toBe(`https://app.hyperliquid-testnet.xyz/explorer/address/${a}`);
+    expect(venueOf("hyperevm", "mainnet")?.explorerAddress(a)).toBe(`https://app.hyperliquid.xyz/explorer/address/${a}`);
+  });
+
+  it("is null on EVM chains without a venue and on chains that aren't EVM", () => {
+    expect(venueOf("base", "testnet")).toBeNull();
+    expect(venueOf("solana", "testnet")).toBeNull();
   });
 });
 

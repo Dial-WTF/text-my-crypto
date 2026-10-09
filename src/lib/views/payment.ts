@@ -11,7 +11,7 @@ import { stockForToken } from "@/lib/stocks";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
-export type TxRef = { hash: string; url: string | null };
+type TxRef = { hash: string; url: string | null };
 
 export type PaymentView = {
   id: string;

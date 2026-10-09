@@ -8,6 +8,7 @@ import { Field } from "@/ui/primitives/Field/Field";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import type { ActionResult } from "../ApprovePanel/ApprovePanel";
 import { Notice } from "../Notice/Notice";
+import { formText } from "@/lib/form";
 
 /** Registration options once the texted code checks out, or why not. */
 export type PasskeyBegin = { ok: true; options: PublicKeyCredentialCreationOptionsJSON } | { ok: false; message: string };
@@ -24,7 +25,7 @@ export function PasskeySetup({ token, actions }: { token: string; actions: Passk
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const code = String(new FormData(e.currentTarget).get("code") ?? "").trim();
+    const code = formText(new FormData(e.currentTarget), "code").trim();
     setState("loading");
     setResult(null);
     let r: ActionResult;
@@ -39,7 +40,7 @@ export function PasskeySetup({ token, actions }: { token: string; actions: Passk
   };
 
   return (
-    <form onSubmit={onSubmit}>
+    <form onSubmit={(e) => void onSubmit(e)}>
       <Stack gap="sm">
         {result?.ok ? null : (
           <Field

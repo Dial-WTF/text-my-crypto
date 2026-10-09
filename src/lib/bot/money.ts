@@ -164,7 +164,7 @@ function shieldedPool(deps: BotDeps, chain: Chain): string {
   return deps.adapters[chain]?.shielded?.pool ?? "shielded";
 }
 
-export function startOfUtcDay(d: Date): Date {
+function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
@@ -528,6 +528,8 @@ export async function prepareMoney(
   const resolved = await resolveCounterparty(deps, user, cmd.counterparty);
   if ("error" in resolved) return resolved.error;
   if ("choose" in resolved) {
+    // A reply of "2" is looked up in the saved handles, so number exactly the people saved: those with a handle.
+    const options = resolved.choose.flatMap((u) => (u.handle ? [{ user: u, handle: u.handle }] : []));
     await setConversation(
       deps.db,
       user.phone,
@@ -536,12 +538,12 @@ export async function prepareMoney(
         payload: {
           name: cmd.counterparty,
           command: JSON.stringify(cmd),
-          handles: resolved.choose.flatMap((u) => (u.handle ? [u.handle] : [])),
+          handles: options.map((o) => o.handle),
         },
       },
       deps.now(),
     );
-    return replies.chooseRecipient(cmd.counterparty, resolved.choose.map(describe));
+    return replies.chooseRecipient(cmd.counterparty, options.map((o) => describe(o.user)));
   }
   if ("askFor" in resolved) {
     await setConversation(

@@ -15,8 +15,8 @@ const USER = "0x00000000000000000000000000000000000a11ce";
 function infoApi(answers: Record<string, unknown>, status = 200) {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
   const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    calls.push({ url: String(url), body });
+    const body = JSON.parse(typeof init?.body === "string" ? init.body : "null") as Record<string, unknown>;
+    calls.push({ url: url instanceof Request ? url.url : url.toString(), body });
     return new Response(JSON.stringify(answers[String(body.type)] ?? null), { status });
   });
   return { fetchFn: fetchFn as unknown as typeof fetch, calls };

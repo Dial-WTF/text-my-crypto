@@ -7,7 +7,7 @@ export { errorText, redactUrls } from "./redact";
 export type SettleResult = { txHash: string; explorerUrl: string | null };
 
 /** Where a payment goes: another Dial wallet, a per-payment escrow wallet, or an address outside Dial. */
-export type RecipientKind = "dial" | "escrow" | "outside";
+type RecipientKind = "dial" | "escrow" | "outside";
 
 /** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
 export interface SettlementAdapter extends Capabilities {
@@ -135,12 +135,12 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
-  const assets: AssetTransfers | undefined = adapter.assets && { ...adapter.assets, balanceOf: guard(adapter.assets.balanceOf) };
+  const assets: AssetTransfers | undefined = adapter.assets && { ...adapter.assets, balanceOf: guard(adapter.assets.balanceOf.bind(adapter.assets)) };
   return {
     ...adapter,
-    createWallet: guard(adapter.createWallet),
-    getBalance: guard(adapter.getBalance),
-    fund: guard(adapter.fund),
+    createWallet: guard(adapter.createWallet.bind(adapter)),
+    getBalance: guard(adapter.getBalance.bind(adapter)),
+    fund: guard(adapter.fund.bind(adapter)),
     ...(assets ? { assets } : {}),
   };
 }

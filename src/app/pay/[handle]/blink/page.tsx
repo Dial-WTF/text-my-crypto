@@ -12,10 +12,8 @@ import { pageMeta } from "../../../seo";
 
 export const dynamic = "force-dynamic";
 
-type Query = { amount?: string; note?: string };
-
 export async function generateMetadata({ params, searchParams }: PageProps<"/pay/[handle]/blink">): Promise<Metadata> {
-  const head = await loadPayHeader((await params).handle, (await searchParams) as Query);
+  const head = await loadPayHeader((await params).handle, await searchParams);
   if (!head) return { title: "Pay on Dial", robots: { index: false } };
   const { title, description } = payWords(head);
   // The pay page at /@handle is the one to index and share; this is its wallet checkout.
@@ -27,7 +25,7 @@ export async function generateMetadata({ params, searchParams }: PageProps<"/pay
  * handle's own action from this site; nothing in the query string names a URL.
  */
 export default async function BlinkPage({ params, searchParams }: PageProps<"/pay/[handle]/blink">) {
-  const head = await loadPayHeader((await params).handle, (await searchParams) as Query);
+  const head = await loadPayHeader((await params).handle, await searchParams);
   if (!head) notFound();
   const env = publicEnv();
   const solana = REGISTRY.solana[env.NETWORK];

@@ -5,7 +5,7 @@ import type { LlmInterpreter } from "@/lib/operator/brain";
 import { EscrowClosedError, type EscrowLookup, type EscrowProgram, type SettlementAdapter } from "@/lib/settlement/types";
 
 export type SettleCall = { to: string; amount: bigint; memo: string; closeSource: boolean };
-export type EscrowCall =
+type EscrowCall =
   | { op: "create"; intentId: string; amount: bigint; expiresAt: Date }
   | { op: "claim"; intentId: string; to: string }
   | { op: "refund"; intentId: string };
@@ -98,7 +98,7 @@ export function fakeAdapter(
   };
 }
 
-export const silentLlm: LlmInterpreter = vi.fn(async () => ({
+const silentLlm: LlmInterpreter = vi.fn(async () => ({
   intent: "chat" as const,
   counterparty: null,
   amountUsd: null,
