@@ -8,12 +8,13 @@ import { createEvmAdapter } from "./evm";
 import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc, type SolanaNetwork } from "./registry";
 import { createSolanaAdapter } from "./solana";
 import { createTempoAdapter } from "./tempo";
+import { createZcashAdapter } from "./zcash";
 import { type Adapters, guardAdapter, type SettlementAdapter } from "./types";
 
 /** What runs for one chain: its registry entry and the RPC it resolved to. */
 export type ActiveChain = { chain: Chain; entry: NetworkEntry; rpc: { url: string; source: RpcSource } };
 
-/** The chains listed in CHAINS that have a registry entry and a stablecoin on the selected network. */
+/** The chains listed in CHAINS that have a registry entry and something to settle in on the selected network. */
 export function activeChains(e: Env = env(), overrides: Record<string, string> = rpcOverrides()): ActiveChain[] {
   return enabledChains(e.CHAINS, e.NETWORK).flatMap((chain) => {
     const entry = REGISTRY[chain][e.NETWORK];
@@ -57,6 +58,16 @@ function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | 
       const names = evmNameService(chain, e.NETWORK, { viem: entry.viem, rpcUrl: rpc.url });
       return names ? { ...adapter, names } : adapter;
     }
+    case "zcash":
+      if (!e.ZCASH_SERVICE_URL || !e.ZCASH_SERVICE_TOKEN || entry.usdPerZec === null) return null;
+      return createZcashAdapter({
+        serviceUrl: e.ZCASH_SERVICE_URL,
+        token: e.ZCASH_SERVICE_TOKEN,
+        usdPerZec: entry.usdPerZec,
+        asset: entry.asset,
+        addressPrefix: entry.addressPrefix,
+        explorerTx: entry.explorerTx,
+      });
   }
 }
 
