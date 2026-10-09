@@ -6,6 +6,7 @@ import { Fine } from "@/ui/primitives/Fine/Fine";
 import { Mono } from "@/ui/primitives/Mono/Mono";
 import { Receipt, ReceiptLine, ReceiptRule } from "@/ui/primitives/Receipt/Receipt";
 import { Split } from "@/ui/patterns/Section/Section";
+import { liveExplorer } from "../../chain-content";
 import { quietly } from "../../ledger-data";
 import type { DemoProps } from "./types";
 
@@ -35,7 +36,7 @@ export async function ShieldedDemo({ chain, network, name, adapter }: DemoProps)
     <Split>
       <Receipt title="What the chain shows">
         <ReceiptLine label="Transaction">
-          <Mono value={payment.txHash} href={payment.explorerUrl} />
+          <Mono value={payment.txHash} href={liveExplorer(payment.explorerUrl)} />
         </ReceiptLine>
         {pool ? <ReceiptLine label="Pool">{pool}</ReceiptLine> : null}
         <ReceiptLine label="Amount">encrypted</ReceiptLine>

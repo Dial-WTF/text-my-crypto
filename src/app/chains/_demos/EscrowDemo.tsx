@@ -6,6 +6,7 @@ import { Fine } from "@/ui/primitives/Fine/Fine";
 import { Mono } from "@/ui/primitives/Mono/Mono";
 import { Receipt, ReceiptLine, ReceiptRule } from "@/ui/primitives/Receipt/Receipt";
 import { Stack } from "@/ui/primitives/Stack/Stack";
+import { liveExplorer } from "../../chain-content";
 import { quietly } from "../../ledger-data";
 import styles from "./demos.module.css";
 import type { DemoProps } from "./types";
@@ -46,7 +47,7 @@ export async function EscrowDemo({ chain, network, adapter }: DemoProps) {
       </ol>
       <Receipt title="Escrow program · on-chain">
         <ReceiptLine label="Program">
-          <Mono value={programId} href={entry.explorerAddress(programId)} />
+          <Mono value={programId} href={liveExplorer(entry.explorerAddress(programId))} />
         </ReceiptLine>
         <ReceiptRule />
         {rows === null ? (
@@ -61,12 +62,12 @@ export async function EscrowDemo({ chain, network, adapter }: DemoProps) {
               </ReceiptLine>
               {r.funded ? (
                 <ReceiptLine label="funded">
-                  <Mono value={r.funded.txHash} href={r.funded.explorerUrl} />
+                  <Mono value={r.funded.txHash} href={liveExplorer(r.funded.explorerUrl)} />
                 </ReceiptLine>
               ) : null}
               {r.closed ? (
                 <ReceiptLine label={r.status === "refunded" ? "refunded" : "claimed"}>
-                  <Mono value={r.closed.txHash} href={r.closed.explorerUrl} />
+                  <Mono value={r.closed.txHash} href={liveExplorer(r.closed.explorerUrl)} />
                 </ReceiptLine>
               ) : null}
             </Stack>

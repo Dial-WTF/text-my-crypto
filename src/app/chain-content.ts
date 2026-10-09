@@ -68,6 +68,7 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
       "Payments move USDC with the SPL Token transferChecked instruction. The operator's treasury pays every fee and any token account rent, so Dial wallets never hold SOL.",
       "Every transfer carries its payment id (pi_…) in a Memo instruction, so each ledger row matches one transaction.",
       "Pay pages (/@handle) give a Solana Pay link (solana:…?spl-token=…) that any Solana wallet opens as a filled-in transfer.",
+      "Every pay page is also a Solana Action, so a /@handle link unfurls as a Blink that any Solana wallet can pay.",
       "New accounts get a small drop of test USDC on Solana when they sign up.",
     ],
     features: {
@@ -80,6 +81,18 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
         code: [
           { path: "solana/programs/dial_escrow/src/lib.rs", label: "dial_escrow program" },
           { path: "tests/settlement/escrow-program.test.ts", label: "Program tests (LiteSVM)" },
+        ],
+      },
+      actions: {
+        detail: [
+          "GET /api/actions/pay/<handle> describes the payment: who is paid, $1, $5 and $10 buttons, and a custom amount up to the per-payment limit. POST builds the USDC transfer for the payer's wallet to sign. /actions.json maps /@handle pages to it.",
+          "Each transaction carries a fresh reference key. The operator finds the payment on-chain by that key, records it on the ledger once and texts the recipient a receipt.",
+          "The payer needs no Dial account: any Solana wallet or Blink client can pay.",
+        ],
+        code: [
+          { path: "src/lib/actions/pay.ts", label: "Pay action" },
+          { path: "src/lib/settlement/solana-actions.ts", label: "Solana actions module" },
+          { path: "src/lib/actions/record.ts", label: "Finding and recording" },
         ],
       },
     },
@@ -106,8 +119,21 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
       "A transfer counts as delivered only when its Transfer log shows the amount reaching the recipient: a receive policy can block funds in a transaction that still succeeds.",
       "On testnet the treasury tops itself up from the Tempo faucet when it runs low.",
       "Pay pages (/@handle) give an EIP-681 link with the token and Tempo's chain id.",
+      "Split payments: \"split $30 between @a @b @c\" pays everyone their share in one Tempo transaction.",
     ],
-    features: {},
+    features: {
+      batch: {
+        detail: [
+          "Text \"split $30 between @a @b @c\", or \"split $30 with @a @b\" to take a share yourself. Agents use the split_payment MCP tool. Up to 10 people, and the shares differ by at most a cent.",
+          "One code approves every share. All the shares go in one Tempo transaction, a list of TIP-20 transferWithMemo calls that run atomically: every share lands, or none do.",
+          "Each share carries its own payment id as its memo. A share for someone not on Dial yet lands in a wallet held for them, in the same transaction, and waits to be claimed.",
+        ],
+        code: [
+          { path: "src/lib/bot/split.ts", label: "Split payments" },
+          { path: "src/lib/settlement/tempo.ts", label: "Tempo adapter" },
+        ],
+      },
+    },
     textWord: "tempo",
     token: { testnet: "AlphaUSD", mainnet: null },
     code: [
@@ -238,8 +264,8 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
  * (no secrets) or the chain is switched off. tests/chain-content.test.ts keeps it in step with the adapters.
  */
 export const ATTACHED_FEATURES: Record<Chain, FeatureId[]> = {
-  solana: ["escrow"],
-  tempo: [],
+  solana: ["escrow", "actions"],
+  tempo: ["batch"],
   base: ["names"],
   ethereum: ["names"],
   arbitrum: [],
@@ -304,8 +330,25 @@ export function notSettlingYet(chain: Chain, network: Network): string | null {
   return null;
 }
 
+/**
+ * Explorer hosts the registry still names but that don't serve pages, so a chain page never offers their
+ * links as proof. HyperEVM testnet's testnet.purrsec.com answers 404. Remove a host once the registry
+ * points somewhere that works; a new host shows again with no change here.
+ */
+export const DEAD_EXPLORER_HOSTS: ReadonlySet<string> = new Set(["testnet.purrsec.com"]);
+
+/** `url` when its explorer serves pages, else null (shown without a link). */
+export function liveExplorer(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return DEAD_EXPLORER_HOSTS.has(new URL(url).host) ? null : url;
+  } catch {
+    return null;
+  }
+}
+
 /** The registry addresses a chain page links: the stablecoin contract and, on Solana, the escrow program. */
-export function registryProof(chain: Chain, network: Network): { label: string; address: string; url: string }[] {
+export function registryProof(chain: Chain, network: Network): { label: string; address: string; url: string | null }[] {
   const entry = REGISTRY[chain][network];
   const token = CHAIN_COPY[chain].token[network];
   if (!entry || !token) return [];
@@ -313,10 +356,10 @@ export function registryProof(chain: Chain, network: Network): { label: string; 
   // Zcash settles in its own coin: there is no token contract to link.
   const tokenAddress = entry.kind === "solana" ? entry.mint : entry.kind === "zcash" ? null : entry.token;
   if (tokenAddress) {
-    rows.push({ label: entry.kind === "solana" ? `${token} mint` : `${token} contract`, address: tokenAddress, url: entry.explorerAddress(tokenAddress) });
+    rows.push({ label: entry.kind === "solana" ? `${token} mint` : `${token} contract`, address: tokenAddress, url: liveExplorer(entry.explorerAddress(tokenAddress)) });
   }
   if (entry.kind === "solana" && entry.escrowProgram) {
-    rows.push({ label: "dial_escrow program", address: entry.escrowProgram, url: entry.explorerAddress(entry.escrowProgram) });
+    rows.push({ label: "dial_escrow program", address: entry.escrowProgram, url: liveExplorer(entry.explorerAddress(entry.escrowProgram)) });
   }
   return rows;
 }

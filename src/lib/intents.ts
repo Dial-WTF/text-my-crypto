@@ -27,6 +27,8 @@ export type NewIntent = {
   escrowProgram?: string | null;
   /** Preset when something keyed by the id (an escrow vault) has to be known before the row exists. */
   id?: string;
+  /** Groups the legs of one split. */
+  splitId?: string | null;
 };
 
 type Bound = Pick<
@@ -358,6 +360,8 @@ export async function findPendingDuplicate(
         eq(intents.chain, q.chain),
         eq(intents.status, "pending"),
         gt(intents.expiresAt, now),
+        // A share of a split is not the same payment as a send of that amount.
+        isNull(intents.splitId),
       ),
     )
     .orderBy(desc(intents.createdAt))
@@ -383,6 +387,7 @@ export async function findRecentCompletedDuplicate(
         eq(intents.kind, "send"),
         inArray(intents.status, ["settling", "settled", "escrowed"]),
         gte(intents.createdAt, since),
+        isNull(intents.splitId),
       ),
     )
     .limit(1);
@@ -549,4 +554,31 @@ export async function intentsFor(db: Db, userId: string, limit: number): Promise
     .where(or(eq(intents.senderId, userId), eq(intents.recipientId, userId), eq(intents.createdBy, userId)))
     .orderBy(desc(intents.createdAt))
     .limit(limit);
+}
+
+export function newSplitId(): string {
+  return newId("sp");
+}
+
+/** Every leg of a split, in the order the sender listed the people. */
+export async function splitLegs(db: Db, splitId: string): Promise<Intent[]> {
+  return db.select().from(intents).where(eq(intents.splitId, splitId)).orderBy(sql`rowid`);
+}
+
+/** Hash over every leg of a split, so one passkey approval covers exactly these payments. */
+export async function splitHash(legs: Intent[]): Promise<string> {
+  const each = await Promise.all(legs.map((l) => intentHash(l)));
+  return sha256Hex(JSON.stringify(["dial-split-v1", legs[0]?.splitId ?? null, ...each]));
+}
+
+/**
+ * Moves every pending, unexpired leg of a split to "settling" in one statement, so a split is approved whole.
+ * Returns the legs it moved; fewer than the split has means some leg was already cancelled or used.
+ */
+export async function claimSplitForSettlement(db: Db, splitId: string, now: Date): Promise<Intent[]> {
+  return db
+    .update(intents)
+    .set({ status: "settling", codeHash: null, approvedAt: now })
+    .where(and(eq(intents.splitId, splitId), eq(intents.status, "pending"), gt(intents.expiresAt, now)))
+    .returning();
 }

@@ -20,8 +20,8 @@ export function NameLookup({
   suffixes: string[];
   /** Shown as the input's placeholder. */
   example: string;
-  /** Explorer address URL with the address left off the end. */
-  explorerBase: string;
+  /** Explorer address URL with the address left off the end; none where the explorer doesn't serve pages. */
+  explorerBase?: string;
 }) {
   const [name, setName] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -69,7 +69,7 @@ export function NameLookup({
           <p className={styles.error}>{answer.error}</p>
         ) : answer.address ? (
           <ReceiptLine label={answer.name}>
-            <Mono value={answer.address} href={`${explorerBase}${answer.address}`} />
+            <Mono value={answer.address} href={explorerBase ? `${explorerBase}${answer.address}` : null} />
           </ReceiptLine>
         ) : (
           <Fine>{answer.name} doesn&apos;t point to an address.</Fine>

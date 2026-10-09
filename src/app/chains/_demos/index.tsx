@@ -4,7 +4,9 @@ import { errorText } from "@/lib/settlement/types";
 import { Fine } from "@/ui/primitives/Fine/Fine";
 import { Mono } from "@/ui/primitives/Mono/Mono";
 import { Receipt, ReceiptLine, ReceiptRule } from "@/ui/primitives/Receipt/Receipt";
-import { BatchPreview } from "./BatchPreview";
+import { liveExplorer } from "../../chain-content";
+import { ActionsDemo } from "./ActionsDemo";
+import { BatchDemo } from "./BatchDemo";
 import { EscrowDemo } from "./EscrowDemo";
 import { NameLookup } from "./NameLookup";
 import { ShieldedDemo } from "./ShieldedDemo";
@@ -15,6 +17,7 @@ import { loadMids } from "./venue";
 const NamesDemo: Demo = ({ chain, network, adapter }) => {
   const names = adapter?.names;
   const entry = REGISTRY[chain][network];
+  // Without a working explorer the address still shows, just unlinked.
   if (!names || !entry) return null;
   const basename = names.suffixes.find((s) => s.endsWith(network === "testnet" ? ".basetest.eth" : ".base.eth"));
   const example = basename ? `name${basename}` : "vitalik.eth";
@@ -23,15 +26,9 @@ const NamesDemo: Demo = ({ chain, network, adapter }) => {
       endpoint={`/api/chains/${chain}/names`}
       suffixes={names.suffixes}
       example={example}
-      explorerBase={entry.explorerAddress("")}
+      explorerBase={liveExplorer(entry.explorerAddress("")) ?? undefined}
     />
   );
-};
-
-/** batch: a split preview sized to the module's leg limit. Computed in the browser. */
-const BatchDemo: Demo = ({ name, adapter }) => {
-  const batch = adapter?.batch;
-  return batch ? <BatchPreview chainName={name} maxLegs={batch.maxLegs} /> : null;
 };
 
 /** venue: the live HYPE and BTC mids, and what a text into the venue does. */
@@ -64,7 +61,7 @@ const AssetsDemo: Demo = ({ chain, network, adapter }) => {
     <Receipt title="Assets you can send">
       {assets.map((a) => (
         <ReceiptLine key={a.address} label={`${a.symbol} · ${a.name}`}>
-          <Mono value={a.address} href={entry.explorerAddress(a.address)} />
+          <Mono value={a.address} href={liveExplorer(entry.explorerAddress(a.address))} />
         </ReceiptLine>
       ))}
     </Receipt>
@@ -82,7 +79,6 @@ export const FEATURE_DEMOS: Record<FeatureId, Demo | null> = {
   batch: BatchDemo,
   venue: VenueDemo,
   assets: AssetsDemo,
-  // Needs the pay link's Action URL, which the actions module will define.
-  actions: null,
+  actions: ActionsDemo,
   shielded: ShieldedDemo,
 };

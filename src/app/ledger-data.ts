@@ -5,15 +5,24 @@ import { getDb } from "@/lib/db/client";
 import { env, publicEnv } from "@/lib/env";
 import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
-import { memoizer } from "@/lib/web/memo";
 import { activeChains, getAdapters } from "@/lib/settlement";
 import { money } from "@/lib/settlement/amounts";
 import { type FeatureId, featuresOf } from "@/lib/settlement/capabilities";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
-import { type ChainActivity, chainActivity, type FeedItem, movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import {
+  type ChainActivity,
+  chainActivity,
+  type FeedItem,
+  groupSplits,
+  movedByChain,
+  type PublicStats,
+  publicStats,
+  recentPayments,
+} from "@/lib/stats";
+import { memoizer } from "@/lib/web/memo";
 import type { FeedEntry } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 import type { LatestPayment } from "@/ui/patterns/WatchSettle/WatchSettle";
-import { ATTACHED_FEATURES } from "./chain-content";
+import { ATTACHED_FEATURES, liveExplorer } from "./chain-content";
 
 export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[]; note: string };
 
@@ -47,8 +56,9 @@ export async function loadLedger(limit: number): Promise<Ledger> {
   return { stats, feed: feedEntries(rows, new Date()), proofs, note: proofNote(proofs) };
 }
 
+/** Feed rows as people read them, a split's legs folded into one entry. */
 function feedEntries(rows: FeedItem[], now: Date): FeedEntry[] {
-  return rows.map((r) => ({
+  return groupSplits(rows).map((r) => ({
     id: r.id,
     from: r.from,
     to: r.to,
@@ -59,14 +69,18 @@ function feedEntries(rows: FeedItem[], now: Date): FeedEntry[] {
     txHash: r.txHash,
     explorerUrl: r.explorerUrl,
     when: timeAgo(r.at, now),
+    ...(r.legs ? { legs: r.legs } : {}),
   }));
 }
 
 export type ChainLedger = {
   /** Null when the ledger can't be read: the page says so instead of showing a zero. */
   activity: (Omit<ChainActivity, "recent"> & { feed: FeedEntry[] }) | null;
-  /** The treasury (and escrow program) as the running adapter reports it; null while the chain is off. */
-  proof: ChainProof | null;
+  /**
+   * The treasury (and escrow program) as the running adapter reports it; null while the chain is off.
+   * `treasuryUrl` is null where the registry's explorer doesn't serve pages.
+   */
+  proof: (Omit<ChainProof, "treasuryUrl"> & { treasuryUrl: string | null }) | null;
 };
 
 const latestMemo = memoizer<LatestPayment | null>({ ttlMs: 10_000, maxKeys: 32 });
@@ -77,7 +91,11 @@ export async function loadLatestPayment(chain: Chain): Promise<LatestPayment | n
     const [row] = (await chainActivity(getDb(), chain, 1)).recent;
     if (!row) return null;
     const [entry] = feedEntries([row], new Date());
-    return entry ? { ...entry, amount: money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" } : null;
+    if (!entry) return null;
+    // Plain strings only: this goes out as JSON, so no bigints (a split's legs carry some).
+    const { id, from, to, network, state, txHash } = entry;
+    const explorerUrl = liveExplorer(entry.explorerUrl);
+    return { id, from, to, network, state, txHash, explorerUrl, amount: money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" };
   });
 }
 
@@ -101,9 +119,12 @@ export async function loadChainLedger(chain: Chain, limit: number): Promise<Chai
     quietly<ChainActivity | null>("chain activity unavailable", () => chainActivity(getDb(), chain, limit), null),
     quietly("chain proofs unavailable", () => chainProofs(getAdapters(), activeChains().filter((a) => a.chain === chain)), []),
   ]);
+  const proof = proofs[0] ?? null;
+  // A chain page never offers a link its explorer can't serve as proof.
+  const feed = activity ? feedEntries(activity.recent, new Date()).map((e) => ({ ...e, explorerUrl: liveExplorer(e.explorerUrl) })) : [];
   return {
-    activity: activity ? { moved: activity.moved, feed: feedEntries(activity.recent, new Date()) } : null,
-    proof: proofs[0] ?? null,
+    activity: activity ? { moved: activity.moved, feed } : null,
+    proof: proof && { ...proof, treasuryUrl: liveExplorer(proof.treasuryUrl) },
   };
 }
 

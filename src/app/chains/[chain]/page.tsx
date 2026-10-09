@@ -85,6 +85,7 @@ export default async function ChainPage({ params }: PageProps<"/chains/[chain]">
   const payLink = payLinkFormat(chain, network);
   const text = tryText(chain);
   const notYet = notSettlingYet(chain, network);
+  const unlinked = addresses.some((a) => a.url === null) || (ledger.proof !== null && ledger.proof.treasuryUrl === null);
   const testDrop = network === "testnet" && usdToBaseUnits(limits.signupDripUsd) > 0n;
   const moved = ledger.activity?.moved;
 
@@ -246,11 +247,17 @@ export default async function ChainPage({ params }: PageProps<"/chains/[chain]">
                   </ReceiptLine>
                 ))}
                 <ReceiptRule />
+                {unlinked ? (
+                  <Fine>
+                    Shown without links: the explorer the registry names for {status.network} doesn&apos;t serve pages right
+                    now.
+                  </Fine>
+                ) : null}
                 <Fine>
                   {addresses.length === 0
                     ? `${copy.name} has no stablecoin on this network yet, so there is nothing to check.`
                     : ledger.proof
-                      ? "The treasury funds new wallets and pays every fee. Its explorer page lists each drop, fee and payment."
+                      ? `The treasury funds new wallets and pays every fee.${ledger.proof.treasuryUrl ? " Its explorer page lists each drop, fee and payment." : ""}`
                       : on
                         ? "The treasury address can't be read right now."
                         : `The treasury shows here while ${copy.name} is switched on.`}

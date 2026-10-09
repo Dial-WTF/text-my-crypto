@@ -6,6 +6,7 @@ import {
   CHAIN_COPY,
   CHAIN_PAGES,
   codeUrl,
+  liveExplorer,
   mcpArgs,
   payLinkFormat,
   registryProof,
@@ -123,6 +124,16 @@ describe("registry proof", () => {
       },
     ]);
     expect(registryProof("zcash", "testnet")).toEqual([]);
+  });
+
+  it("never links an explorer that doesn't serve pages (HyperEVM testnet's purrsec answers 404)", () => {
+    expect(liveExplorer("https://testnet.purrsec.com/address/0xabc")).toBeNull();
+    expect(liveExplorer("https://sepolia.basescan.org/tx/0x1")).toBe("https://sepolia.basescan.org/tx/0x1");
+    expect(liveExplorer(null)).toBeNull();
+    expect(liveExplorer("not a url")).toBeNull();
+    for (const row of registryProof("hyperevm", "testnet")) {
+      if (row.url) expect(new URL(row.url).host).not.toBe("testnet.purrsec.com");
+    }
   });
 });
 

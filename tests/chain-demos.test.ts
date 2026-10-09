@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { settlesOn } from "@/app/landing-content";
+import { blinkFor } from "@/app/chains/_demos/ActionsDemo";
 import { cleanName } from "@/app/chains/_demos/names";
 import { dollars, parseRecipients, splitPreview } from "@/app/chains/_demos/split";
 import { loadMids, pickMids } from "@/app/chains/_demos/venue";
@@ -9,7 +10,7 @@ import { chainStatuses } from "@/lib/chain-status";
 import { createUser } from "@/lib/identity";
 import { claimForSettlement, createIntent, markEscrowed, markReleased, markSettled } from "@/lib/intents";
 import { FEATURES } from "@/lib/settlement/capabilities";
-import { recentEscrows } from "@/lib/stats";
+import { latestSplit, newestHandle, recentEscrows } from "@/lib/stats";
 import { memoizer } from "@/lib/web/memo";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { createTestDb } from "./helpers/db";
@@ -98,8 +99,8 @@ describe("feature demos", () => {
   it("renders nothing for a module the chain doesn't carry", async () => {
     const { FEATURE_DEMOS } = await import("@/app/chains/_demos");
     for (const demo of Object.values(FEATURE_DEMOS)) {
-      // Escrow and shielded demos read the ledger, not the module, so they render without an adapter.
-      if (!demo || demo.name === "EscrowDemo" || demo.name === "ShieldedDemo") continue;
+      // Escrow, shielded and batch demos read the ledger (or compute locally), so they render without an adapter.
+      if (!demo || ["EscrowDemo", "ShieldedDemo", "BatchDemo"].includes(demo.name)) continue;
       expect(await demo({ chain: "base", network: "testnet", name: "Base", adapter: null })).toBeNull();
     }
   });
@@ -143,5 +144,57 @@ describe("chain tiles", () => {
     expect(html).toContain('href="/chains/hyperevm" aria-label="Hyperliquid: how Dial uses it"');
     expect(html).toContain('data-brand="zcash"');
     expect(html.match(/<a /g)).toHaveLength(8);
+  });
+});
+
+describe("latestSplit", () => {
+  it("returns the newest split on a chain with every leg, its total and its one transaction", async () => {
+    const db = await createTestDb();
+    const now = new Date("2026-10-09T12:00:00Z");
+    const a = await createUser(db, { phone: "+15550000040", handle: "alex" }, now);
+    const b = await createUser(db, { phone: "+15550000041", handle: "sam" }, now);
+    const c = await createUser(db, { phone: "+15550000042", handle: "jo" }, now);
+    const leg = async (splitId: string, to: string, amount: bigint, tx: string, at: Date) => {
+      const i = await createIntent(
+        db,
+        { kind: "send", createdBy: a.id, senderId: a.id, recipientId: to, recipientAddress: "0x", chain: "tempo", token: "T", note: null, amount, splitId },
+        at,
+      );
+      await claimForSettlement(db, i.id, at);
+      await markSettled(db, i.id, { txHash: tx, explorerUrl: `https://explore.test/tx/${tx}` }, at);
+    };
+    expect(await latestSplit(db, "tempo")).toBeNull();
+    await leg("sp_old", b.id, 1_000_000n, "0xold", now);
+    const later = new Date(now.getTime() + 60_000);
+    await leg("sp_new", b.id, 3_340_000n, "0xnew", later);
+    await leg("sp_new", c.id, 3_330_000n, "0xnew", later);
+    expect(await latestSplit(db, "tempo")).toEqual({
+      splitId: "sp_new",
+      legs: [
+        { to: "@sam", amount: 3_340_000n },
+        { to: "@jo", amount: 3_330_000n },
+      ],
+      total: 6_670_000n,
+      txHash: "0xnew",
+      explorerUrl: "https://explore.test/tx/0xnew",
+      at: later,
+    });
+    expect(await latestSplit(db, "solana")).toBeNull();
+  });
+});
+
+describe("pay-link Blink", () => {
+  it("picks the newest person who joined, and builds the dial.to link and solana-action URI for their pay action", async () => {
+    const db = await createTestDb();
+    expect(await newestHandle(db)).toBeNull();
+    await createUser(db, { phone: "+15550000050", handle: "alex" }, new Date("2026-10-01T00:00:00Z"));
+    await createUser(db, { phone: "+15550000051", handle: "sam" }, new Date("2026-10-02T00:00:00Z"));
+    expect(await newestHandle(db)).toBe("sam");
+
+    expect(blinkFor("https://dial.example", "sam", true)).toEqual({
+      actionUrl: "https://dial.example/api/actions/pay/sam",
+      uri: "solana-action:https://dial.example/api/actions/pay/sam",
+      blink: "https://dial.to/?action=solana-action%3Ahttps%3A%2F%2Fdial.example%2Fapi%2Factions%2Fpay%2Fsam&cluster=devnet",
+    });
   });
 });
