@@ -13,6 +13,8 @@
     "PAYPHONE_BASE_URL": "https://payphone.wtf",
     "SMS_MODE": "payphone",
     "ESCROW_TTL_DAYS": "7",
+    // Escrow for people not on Dial yet: "on" uses the dial_escrow program (solana/README.md).
+    "ESCROW_PROGRAM": "off",
     "SIGNUP_DRIP_USD": "2"
   },
   "d1_databases": [
@@ -55,7 +57,8 @@
         "PAYPHONE_BASE_URL": "https://payphone.wtf",
         "SMS_MODE": "log",
         "ESCROW_TTL_DAYS": "7",
-        // Each smoke run signs up one new user; a $1 drop is all its $1 payment needs.
+        "ESCROW_PROGRAM": "on",
+        // Each smoke run signs up a sender and a newcomer; the sender's $1 drop covers its two $0.50 payments.
         "SIGNUP_DRIP_USD": "1"
       },
       "d1_databases": [

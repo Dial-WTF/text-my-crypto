@@ -12,7 +12,14 @@ import {
   isClaimed,
   searchDirectory,
 } from "@/lib/identity";
-import { createIntent, findPendingDuplicate, findRecentCompletedDuplicate, issueCode, sentSince } from "@/lib/intents";
+import {
+  createIntent,
+  findPendingDuplicate,
+  findRecentCompletedDuplicate,
+  issueCode,
+  newIntentId,
+  sentSince,
+} from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
@@ -196,10 +203,16 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
     if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
+    const id = newIntentId();
     let recipientAddress: string;
     let escrowSecretEnc: string | null = null;
+    let escrowProgram: string | null = null;
     if (isClaimed(other)) {
       recipientAddress = (await ensureWallet(deps, other.id, chain, adapter)).address;
+    } else if (adapter.escrow) {
+      // Not on Dial yet: the money will wait in the escrow program's vault for this intent.
+      recipientAddress = await adapter.escrow.vaultAddress(id);
+      escrowProgram = adapter.escrow.programId;
     } else {
       const escrow = await adapter.createWallet();
       recipientAddress = escrow.address;
@@ -208,6 +221,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
     const intent = await createIntent(
       deps.db,
       {
+        id,
         kind: "send",
         createdBy: user.id,
         senderId: user.id,
@@ -218,6 +232,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
         amount,
         note,
         escrowSecretEnc,
+        escrowProgram,
       },
       deps.now(),
     );

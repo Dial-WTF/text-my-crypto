@@ -8,7 +8,7 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
 import { passkeys } from "@/lib/db/schema";
 import { createTestDb } from "../helpers/db";
-import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
+import { type FakeAdapter, fakeAdapter, fakeEscrow, smsSink, testDeps } from "../helpers/fakes";
 
 const ALEX = "+15550000010";
 const JEREMY = "+15550000011";
@@ -186,6 +186,92 @@ describe("send to someone not on Dial (escrow)", () => {
     const alexWallet = await getWallet(db, (await findUserByPhone(db, ALEX))!.id, "solana");
     expect(sol.settled.at(-1)).toMatchObject({ to: alexWallet!.address, closeSource: true });
     expect((await getIntent(db, id))?.status).toBe("refunded");
+  });
+});
+
+describe("send to someone not on Dial (escrow program)", () => {
+  let esc: ReturnType<typeof fakeEscrow>;
+
+  beforeEach(async () => {
+    esc = fakeEscrow();
+    sol = fakeAdapter({ defaultBalance: 100_000_000n, escrow: esc });
+    deps = { ...deps, adapters: { solana: sol } };
+    await signUp(ALEX, "alex");
+  });
+
+  async function sendToNewbie(amount = "5") {
+    const confirm = await say(ALEX, `send $${amount} to (555) 000-0099`);
+    await say(ALEX, codeIn(confirm));
+    return intentIdIn(confirm);
+  }
+
+  async function claimAsRiley() {
+    await say(NEWBIE, "hey");
+    await say(NEWBIE, "riley");
+    const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
+    await say(NEWBIE, codeIn(offer));
+  }
+
+  it("funds the program's vault for the intent instead of a server-held wallet", async () => {
+    const id = await sendToNewbie();
+    const intent = await getIntent(db, id);
+    const expires = new Date(clock.getTime() + 7 * 86_400_000);
+    expect(intent).toMatchObject({
+      status: "escrowed",
+      escrowProgram: esc.programId,
+      escrowSecretEnc: null,
+      recipientAddress: `vault_${id}`,
+      escrowExpiresAt: expires,
+      txHash: `sig_create_${id}`,
+    });
+    expect(esc.calls).toEqual([{ op: "create", intentId: id, amount: 5_000_000n, expiresAt: expires }]);
+    expect(sol.settled).toEqual([]);
+    expect(sms.last(ALEX)).toBe('Sent $5 to +•••••••0099. They have 7 days to claim it. If they don\'t, text "reclaim" to get it back.');
+  });
+
+  it("claims with the attestor once the recipient proves their phone with the texted code", async () => {
+    const id = await sendToNewbie();
+    await claimAsRiley();
+    const riley = await findUserByPhone(db, NEWBIE);
+    const rw = await getWallet(db, riley!.id, "solana");
+    expect(esc.calls.at(-1)).toEqual({ op: "claim", intentId: id, to: rw!.address });
+    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+    expect(sms.last(ALEX)).toBe("riley claimed the $5 you sent.");
+    expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
+  });
+
+  it("keeps the escrow waiting when the program refuses the claim", async () => {
+    const id = await sendToNewbie();
+    esc.fail.next = new Error("custom program error: 0x1772");
+    await claimAsRiley();
+    expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", error: "custom program error: 0x1772" });
+    expect(sms.to(NEWBIE).some((m) => m.startsWith("Claimed"))).toBe(false);
+  });
+
+  it("refunds through the program only after expiry", async () => {
+    const id = await sendToNewbie("4");
+    expect(await say(ALEX, "reclaim")).toBe("Nothing to reclaim right now. Unclaimed payments can come back after 7 days.");
+    clock = new Date(clock.getTime() + 8 * 86_400_000);
+    expect(await say(ALEX, "reclaim")).toBe("Got back $4 from 1 unclaimed payment.");
+    expect(esc.calls.at(-1)).toEqual({ op: "refund", intentId: id });
+    expect(await getIntent(db, id)).toMatchObject({ status: "refunded", releaseTxHash: `sig_refund_${id}` });
+  });
+
+  it("won't move a program escrow through a server wallet when the program is switched off", async () => {
+    const id = await sendToNewbie();
+    deps = { ...deps, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } };
+    await claimAsRiley();
+    const intent = await getIntent(db, id);
+    expect(intent?.status).toBe("escrowed");
+    expect(intent?.error).toMatch(/Escrow program .* is not available on solana/);
+  });
+
+  it("still pays people already on Dial directly", async () => {
+    await signUp(JEREMY, "jeremy");
+    const confirm = await say(ALEX, "send @jeremy $2");
+    await say(ALEX, codeIn(confirm));
+    expect(esc.calls).toEqual([]);
+    expect(sol.settled).toHaveLength(1);
   });
 });
 

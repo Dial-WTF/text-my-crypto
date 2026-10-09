@@ -16,6 +16,9 @@ export async function GET(): Promise<Response> {
       network: env().NETWORK,
       stats: { payments: stats.payments, movedUsd: usd(stats.movedUsd), people: stats.people },
       treasuries: proofs.map(({ chain, network, treasury, treasuryUrl }) => ({ chain, network, address: treasury, explorer: treasuryUrl })),
+      escrowPrograms: proofs.flatMap(({ chain, network, escrowProgram }) =>
+        escrowProgram ? [{ chain, network, address: escrowProgram.address, explorer: escrowProgram.url }] : [],
+      ),
       payments: rows.map((r) => ({
         id: r.id,
         from: r.from,

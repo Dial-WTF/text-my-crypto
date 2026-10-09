@@ -57,6 +57,13 @@
       "when": 1791510777081,
       "tag": "0007_watchdog",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791513085657,
+      "tag": "0008_escrow_program",
+      "breakpoints": true
     }
   ]
 }

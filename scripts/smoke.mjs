@@ -4,8 +4,10 @@
 //   pnpm smoke --env staging   # https://text-my-crypto-staging…, secret from SMOKE_SECRET or .env.staging.local
 //   pnpm smoke --env local     # pnpm dev on :3100, secret from .env.local
 //
-// A fresh sender signs up (hi → name), checks its balance, pays the standing receiver $1 with the
-// texted code, and opens its wallet link. Exits 1 with the transcript on the first wrong or missing reply.
+// A fresh sender signs up (hi → name), checks its balance, pays the standing receiver $0.50 with the
+// texted code, sends $0.50 to a fresh number that isn't on Dial (escrow), which signs up and claims it
+// with its code, and opens its wallet link. Exits 1 with the transcript on the first wrong or missing reply.
+// The two payments spend the sender's whole $1 signup drop (SIGNUP_DRIP_USD on staging).
 import { existsSync, readFileSync } from "node:fs";
 
 const TARGETS = {
@@ -40,6 +42,9 @@ function readEnvFile(file) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Each payment: half the sender's $1 drop. */
+const PAY = "$0.50";
+const PAY_RE = "\\$0\\.50";
 const tail = (phone) => `…${phone.slice(-4)}`;
 const started = Date.now();
 const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
@@ -156,19 +161,47 @@ async function main() {
     await expectReply(sender, /You have \$\d/);
   });
 
-  const code = await step(`send @${handle} $1 asks for a code`, async () => {
-    await say(sender, `send @${handle} $1`);
+  const code = await step(`send @${handle} ${PAY} asks for a code`, async () => {
+    await say(sender, `send @${handle} ${PAY}`);
     return (await expectReply(sender, /Reply (\d{6}) to confirm/))[1];
   });
 
   await step("code settles: Sending… then Sent…", async () => {
     await say(sender, code);
-    await expectReply(sender, /^Sending \$1(?:\.00)? to /, { timeoutMs: 60_000 });
-    await expectReply(sender, /^Sent \$1(?:\.00)? to .* Receipt: https?:\/\//, { timeoutMs: 120_000 });
+    await expectReply(sender, new RegExp(`^Sending ${PAY_RE} to `), { timeoutMs: 60_000 });
+    await expectReply(sender, new RegExp(`^Sent ${PAY_RE} to .* Receipt: https?://`), { timeoutMs: 120_000 });
   });
 
   await step("receiver is told", async () => {
-    await expectReply(RECEIVER, /you got \$1(?:\.00)? from Smoke Sender/, { timeoutMs: 30_000 });
+    await expectReply(RECEIVER, new RegExp(`you got ${PAY_RE} from Smoke Sender`), { timeoutMs: 30_000 });
+  });
+
+  // Escrow: a number that isn't on Dial yet. With ESCROW_PROGRAM=on this is the Solana escrow program.
+  const newcomer = await freshSender();
+  await markSeen(newcomer);
+
+  const escrowCode = await step(`send ${PAY} to a number not on Dial asks for a code`, async () => {
+    await say(sender, `send ${PAY} to ${newcomer}`);
+    return (await expectReply(sender, /Reply (\d{6}) to confirm/))[1];
+  });
+
+  await step("code funds the escrow; the newcomer is told", async () => {
+    await say(sender, escrowCode);
+    await expectReply(sender, new RegExp(`^Sent ${PAY_RE} to .* They have \\d+ days? to claim it`), { timeoutMs: 120_000 });
+    await expectReply(newcomer, new RegExp(`Smoke Sender sent you ${PAY_RE} USDC on Dial\\. Reply to this text to claim it`));
+  });
+
+  const claimCode = await step("newcomer signs up and gets a claim code", async () => {
+    await say(newcomer, "hi");
+    await expectReply(newcomer, /What name should people use to pay you\?/);
+    await say(newcomer, "Smoke Newcomer");
+    return (await expectReply(newcomer, /Reply (\d{6}) to claim it\./, { timeoutMs: 90_000 }))[1];
+  });
+
+  await step("claim code pays the newcomer; the sender is told", async () => {
+    await say(newcomer, claimCode);
+    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. Receipt: https?://`), { timeoutMs: 120_000 });
+    await expectReply(sender, new RegExp(`claimed the ${PAY_RE} you sent`), { timeoutMs: 30_000 });
   });
 
   await step("wallet texts a link", async () => {

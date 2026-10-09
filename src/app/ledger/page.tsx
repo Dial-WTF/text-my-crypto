@@ -8,7 +8,7 @@ import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { Colophon } from "../colophon";
-import { loadLedger, PROOF_NOTE } from "../ledger-data";
+import { loadLedger } from "../ledger-data";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default async function LedgerPage() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();
-  const { stats, feed, proofs } = await loadLedger(100);
+  const { stats, feed, proofs, note } = await loadLedger(100);
   const stat = (v: string | number | undefined) => (stats ? String(v) : "—");
 
   return (
@@ -39,7 +39,7 @@ export default async function LedgerPage() {
           />
           <Split>
             <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
-            <OnchainProof rows={proofs} note={PROOF_NOTE} more={{ href: "/ledger.json", label: "Ledger as JSON →" }} />
+            <OnchainProof rows={proofs} note={note} more={{ href: "/ledger.json", label: "Ledger as JSON →" }} />
           </Split>
         </Stack>
       </Section>

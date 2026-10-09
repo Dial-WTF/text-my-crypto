@@ -2,12 +2,44 @@ import { vi } from "vitest";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import type { LlmInterpreter } from "@/lib/operator/brain";
-import type { SettlementAdapter } from "@/lib/settlement/types";
+import type { EscrowProgram, SettlementAdapter } from "@/lib/settlement/types";
 
 export type SettleCall = { to: string; amount: bigint; memo: string; closeSource: boolean };
+export type EscrowCall =
+  | { op: "create"; intentId: string; amount: bigint; expiresAt: Date }
+  | { op: "claim"; intentId: string; to: string }
+  | { op: "refund"; intentId: string };
+export type FakeEscrow = EscrowProgram & { calls: EscrowCall[]; fail: { next: Error | null } };
 export type FakeAdapter = SettlementAdapter & { settled: SettleCall[]; funded: string[]; balances: Map<string, bigint> };
 
-export function fakeAdapter(opts: { defaultBalance?: bigint; chain?: SettlementAdapter["chain"] } = {}): FakeAdapter {
+/** An escrow program that records what the app asked of it. `fail.next` makes the next call throw. */
+export function fakeEscrow(programId = "Escrow1111111111111111111111111111111111111"): FakeEscrow {
+  const calls: EscrowCall[] = [];
+  const fail: { next: Error | null } = { next: null };
+  const done = (call: EscrowCall) => {
+    if (fail.next) {
+      const e = fail.next;
+      fail.next = null;
+      throw e;
+    }
+    calls.push(call);
+    const sig = `sig_${call.op}_${call.intentId}`;
+    return { txHash: sig, explorerUrl: `https://explorer.test/${sig}` };
+  };
+  return {
+    programId,
+    calls,
+    fail,
+    vaultAddress: async (intentId) => `vault_${intentId}`,
+    create: async ({ intentId, amount, expiresAt }) => done({ op: "create", intentId, amount, expiresAt }),
+    claim: async ({ intentId, to }) => done({ op: "claim", intentId, to }),
+    refund: async ({ intentId }) => done({ op: "refund", intentId }),
+  };
+}
+
+export function fakeAdapter(
+  opts: { defaultBalance?: bigint; chain?: SettlementAdapter["chain"]; escrow?: EscrowProgram } = {},
+): FakeAdapter {
   const chain = opts.chain ?? "solana";
   let n = 0;
   const settled: SettleCall[] = [];
@@ -31,6 +63,7 @@ export function fakeAdapter(opts: { defaultBalance?: bigint; chain?: SettlementA
       funded.push(`${to}:${amount}`);
       return { txHash: "sig_fund", explorerUrl: "https://explorer.test/sig_fund" };
     },
+    ...(opts.escrow ? { escrow: opts.escrow } : {}),
   };
 }
 

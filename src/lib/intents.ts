@@ -22,6 +22,9 @@ export type NewIntent = {
   amount: bigint;
   note: string | null;
   escrowSecretEnc?: string | null;
+  escrowProgram?: string | null;
+  /** Preset when something keyed by the id (an escrow vault) has to be known before the row exists. */
+  id?: string;
 };
 
 type Bound = Pick<
@@ -58,11 +61,15 @@ export function intentHash(i: Bound): Promise<string> {
   return sha256Hex(canonicalIntent(i));
 }
 
+export function newIntentId(): string {
+  return newId("pi");
+}
+
 export async function createIntent(db: Db, n: NewIntent, now: Date): Promise<Intent> {
   const ttl = n.kind === "send" ? SEND_TTL_MS : REQUEST_TTL_MS;
   const [row] = await db
     .insert(intents)
-    .values({ ...n, id: newId("pi"), nonce: randomToken(16), createdAt: now, expiresAt: new Date(now.getTime() + ttl) })
+    .values({ ...n, id: n.id ?? newIntentId(), nonce: randomToken(16), createdAt: now, expiresAt: new Date(now.getTime() + ttl) })
     .returning();
   if (!row) throw new Error("createIntent returned no row");
   return row;

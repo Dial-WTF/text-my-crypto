@@ -1,0 +1,566 @@
+{
+  "address": "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3",
+  "metadata": {
+    "name": "dial_escrow",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Escrow for Dial payments to phone numbers that are not on Dial yet"
+  },
+  "instructions": [
+    {
+      "name": "claim",
+      "docs": [
+        "Pays the vault to `recipient`'s token account and closes it. Needs the attestor's signature, which",
+        "the operator gives once the recipient proves their phone. Only before expiry."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "attestor",
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.intent_id_hash",
+                "account": "Escrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient_token",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "recipient",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "create_escrow",
+      "docs": [
+        "Moves `amount` from the sender into a fresh vault for this intent. The payer covers rent for the",
+        "escrow and vault accounts and gets it back when the escrow closes."
+      ],
+      "discriminator": [
+        253,
+        215,
+        165,
+        116,
+        36,
+        108,
+        68,
+        80
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent and fees (the operator's treasury). Gets the rent back when the escrow closes."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sender",
+          "signer": true
+        },
+        {
+          "name": "sender_token",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "attestor"
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "intent_id_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "intent_id_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "expires_at",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "refund",
+      "docs": [
+        "Sends the vault back to the sender after expiry. Anyone can call it; nobody needs Dial."
+      ],
+      "discriminator": [
+        2,
+        96,
+        183,
+        251,
+        63,
+        208,
+        46,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.intent_id_hash",
+                "account": "Escrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sender",
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "sender_token",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Escrow",
+      "discriminator": [
+        31,
+        213,
+        123,
+        187,
+        186,
+        22,
+        218,
+        155
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "EscrowClaimed",
+      "discriminator": [
+        32,
+        116,
+        46,
+        229,
+        165,
+        72,
+        108,
+        78
+      ]
+    },
+    {
+      "name": "EscrowCreated",
+      "discriminator": [
+        70,
+        127,
+        105,
+        102,
+        92,
+        97,
+        7,
+        173
+      ]
+    },
+    {
+      "name": "EscrowRefunded",
+      "discriminator": [
+        132,
+        209,
+        49,
+        109,
+        135,
+        138,
+        28,
+        81
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "Amount must be more than zero"
+    },
+    {
+      "code": 6001,
+      "name": "ExpiryInPast",
+      "msg": "Expiry must be in the future"
+    },
+    {
+      "code": 6002,
+      "name": "Expired",
+      "msg": "This escrow has expired; it can only be refunded"
+    },
+    {
+      "code": 6003,
+      "name": "NotExpired",
+      "msg": "This escrow has not expired yet"
+    },
+    {
+      "code": 6004,
+      "name": "WrongAttestor",
+      "msg": "Claims must be signed by the escrow's attestor"
+    },
+    {
+      "code": 6005,
+      "name": "NotAssociatedTokenAccount",
+      "msg": "Payouts go to the owner's associated token account"
+    }
+  ],
+  "types": [
+    {
+      "name": "Escrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id_hash",
+            "docs": [
+              "SHA-256 of the Dial intent id, e.g. sha256(\"pi_…\"). Matches the escrow to the ledger row."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Paid the rent; gets it back on claim or refund."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "docs": [
+              "The operator key whose signature releases the escrow to a recipient."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EscrowClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EscrowCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EscrowRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import {
   createSolanaRpc,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
+  getBase64Encoder,
   getSignatureFromTransaction,
   isAddress,
   type Instruction,
@@ -24,7 +25,18 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { withRateLimitRetry as rl } from "./retry";
-import type { SettlementAdapter, SettleResult } from "./types";
+import {
+  decodeEscrowAccount,
+  type EscrowAccount,
+  escrowEventsFromLogs,
+  findEscrowAddress,
+  findVaultAddress,
+  getClaimInstruction,
+  getCreateEscrowInstruction,
+  getRefundInstruction,
+  intentIdHash,
+} from "./solana-escrow";
+import type { EscrowProgram, SettlementAdapter, SettleResult } from "./types";
 
 const DECIMALS = 6;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -34,6 +46,8 @@ export function createSolanaAdapter(cfg: {
   mint: string;
   explorerTx: (sig: string) => string;
   treasurySeed: Uint8Array<ArrayBuffer>;
+  /** The dial_escrow program and the attestor key that signs claims. Absent: escrow stays server-held. */
+  escrow?: { programId: string; attestorSeed: Uint8Array<ArrayBuffer> };
 }): SettlementAdapter {
   const rpc = createSolanaRpc(cfg.rpcUrl);
   const mint = address(cfg.mint);
@@ -88,6 +102,95 @@ export function createSolanaAdapter(cfg: {
     return { txHash: sig, explorerUrl: cfg.explorerTx(sig) };
   }
 
+  function escrowProgram(e: { programId: string; attestorSeed: Uint8Array<ArrayBuffer> }): EscrowProgram {
+    const programId = address(e.programId);
+    const attestor = createKeyPairSignerFromPrivateKeyBytes(e.attestorSeed);
+    const result = (sig: string): SettleResult => ({ txHash: sig, explorerUrl: cfg.explorerTx(sig) });
+
+    async function pdas(intentId: string) {
+      const hash = await intentIdHash(intentId);
+      const escrow = await findEscrowAddress(programId, hash);
+      return { hash, escrow, vault: await findVaultAddress(programId, escrow) };
+    }
+
+    async function read(escrow: Address): Promise<EscrowAccount | null> {
+      const { value } = await rl(() => rpc.getAccountInfo(escrow, { encoding: "base64", commitment: "confirmed" }).send());
+      return value ? decodeEscrowAccount(getBase64Encoder().encode(value.data[0])) : null;
+    }
+
+    /** The escrow is gone: find the transaction that closed it, and accept it only if it closed the way we wanted. */
+    async function closedBy(escrow: Address, want: "EscrowClaimed" | "EscrowRefunded"): Promise<SettleResult> {
+      const sigs = await rl(() => rpc.getSignaturesForAddress(escrow, { limit: 10, commitment: "confirmed" }).send());
+      for (const { signature, err } of sigs) {
+        if (err) continue;
+        const tx = await rl(() =>
+          rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send(),
+        );
+        const closing = escrowEventsFromLogs(tx?.meta?.logMessages ?? []).find((ev) => ev.escrow === escrow && ev.name !== "EscrowCreated");
+        if (!closing) continue;
+        if (closing.name === want) return result(signature);
+        throw new Error(`Escrow ${escrow} was already ${closing.name === "EscrowClaimed" ? "claimed" : "refunded"} in ${signature}`);
+      }
+      throw new Error(`No escrow at ${escrow}`);
+    }
+
+    return {
+      programId: e.programId,
+      async vaultAddress(intentId) {
+        return (await pdas(intentId)).vault;
+      },
+      async create({ fromSecret, intentId, amount, expiresAt }) {
+        const [payer, sender, att] = await Promise.all([treasury, createKeyPairSignerFromPrivateKeyBytes(fromSecret), attestor]);
+        const { hash, escrow, vault } = await pdas(intentId);
+        const sig = await sendAndConfirm([
+          getCreateEscrowInstruction({
+            programId,
+            payer,
+            sender,
+            senderToken: await ataOf(sender.address),
+            mint,
+            attestor: att.address,
+            escrow,
+            vault,
+            intentIdHash: hash,
+            amount,
+            expiresAt: BigInt(Math.floor(expiresAt.getTime() / 1000)),
+          }),
+          getAddMemoInstruction({ memo: intentId }),
+        ]);
+        return result(sig);
+      },
+      async claim({ intentId, to }) {
+        const { escrow, vault } = await pdas(intentId);
+        const state = await read(escrow);
+        if (!state) return closedBy(escrow, "EscrowClaimed");
+        const [payer, att] = await Promise.all([treasury, attestor]);
+        if (state.attestor !== att.address) throw new Error(`Escrow ${escrow} names another attestor`);
+        const recipient = address(to);
+        const recipientToken = await ataOf(recipient);
+        const sig = await sendAndConfirm([
+          getCreateAssociatedTokenIdempotentInstruction({ payer, ata: recipientToken, owner: recipient, mint }),
+          getClaimInstruction({ programId, attestor: att, escrow, vault, recipient, recipientToken, mint, payer: state.payer }),
+          getAddMemoInstruction({ memo: intentId }),
+        ]);
+        return result(sig);
+      },
+      async refund({ intentId }) {
+        const { escrow, vault } = await pdas(intentId);
+        const state = await read(escrow);
+        if (!state) return closedBy(escrow, "EscrowRefunded");
+        const payer = await treasury;
+        const senderToken = await ataOf(state.sender);
+        const sig = await sendAndConfirm([
+          getCreateAssociatedTokenIdempotentInstruction({ payer, ata: senderToken, owner: state.sender, mint }),
+          getRefundInstruction({ programId, escrow, vault, sender: state.sender, senderToken, mint, payer: state.payer }),
+          getAddMemoInstruction({ memo: intentId }),
+        ]);
+        return result(sig);
+      },
+    };
+  }
+
   return {
     chain: "solana",
     tokenId: cfg.mint,
@@ -114,5 +217,6 @@ export function createSolanaAdapter(cfg: {
     async fund(to, amount) {
       return transfer(await treasury, address(to), amount, "dial signup drip");
     },
+    ...(cfg.escrow ? { escrow: escrowProgram(cfg.escrow) } : {}),
   };
 }

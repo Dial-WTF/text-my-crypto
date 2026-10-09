@@ -1,0 +1,21 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+dial_escrow = "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3"
+
+[programs.devnet]
+dial_escrow = "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3"
+
+[provider]
+cluster = "devnet"
+# The upgrade authority. Kept out of git; see solana/README.md.
+wallet = "~/.config/solana/dial/deploy-authority.json"
+
+[scripts]
+# The program's tests run with the app's tests (tests/settlement/escrow-program.test.ts), against the built artifact.
+test = "cd .. && pnpm exec vitest run tests/settlement/escrow-program.test.ts"

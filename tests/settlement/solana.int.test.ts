@@ -41,3 +41,53 @@ describe.runIf(run)("solana escrow (devnet)", () => {
     expect(await adapter.getBalance(escrow.address)).toBe(0n);
   });
 });
+
+const attestorSeed = process.env.SOLANA_ESCROW_ATTESTOR_SEED;
+
+describe.runIf(run && attestorSeed)("solana escrow program (devnet)", () => {
+  const adapter = () =>
+    createSolanaAdapter({
+      rpcUrl: process.env.RPC_SOLANA_DEVNET ?? devnet.publicRpc,
+      mint: devnet.mint,
+      explorerTx: devnet.explorerTx,
+      treasurySeed: b64ToBytes(process.env.SOLANA_TREASURY_SEED ?? ""),
+      escrow: { programId: devnet.escrowProgram ?? "", attestorSeed: b64ToBytes(attestorSeed ?? "") },
+    });
+
+  it("escrows, claims with the attestor, and a repeated claim returns the same transaction", { timeout: 180_000 }, async () => {
+    const a = adapter();
+    const escrow = a.escrow!;
+    const sender = await a.createWallet();
+    const recipient = await a.createWallet();
+    await a.fund(sender.address, 1_000_000n);
+    const intentId = `pi_int_${Date.now()}`;
+
+    await escrow.create({ fromSecret: sender.secret, intentId, amount: 1_000_000n, expiresAt: new Date(Date.now() + 3_600_000) });
+    expect(await a.getBalance(sender.address)).toBe(0n);
+
+    const claimed = await escrow.claim({ intentId, to: recipient.address });
+    expect(await a.getBalance(recipient.address)).toBe(1_000_000n);
+    expect(await escrow.claim({ intentId, to: recipient.address })).toEqual(claimed);
+    await expect(escrow.refund({ intentId })).rejects.toThrow(/already claimed/);
+  });
+
+  it("refunds to the sender once the escrow expires", { timeout: 240_000 }, async () => {
+    const a = adapter();
+    const escrow = a.escrow!;
+    const sender = await a.createWallet();
+    await a.fund(sender.address, 1_000_000n);
+    const intentId = `pi_int_${Date.now()}`;
+
+    await escrow.create({ fromSecret: sender.secret, intentId, amount: 1_000_000n, expiresAt: new Date(Date.now() + 30_000) });
+    await expect(escrow.refund({ intentId })).rejects.toThrow();
+
+    let refunded: Awaited<ReturnType<typeof escrow.refund>> | null = null;
+    for (let i = 0; i < 20 && !refunded; i++) {
+      await new Promise((r) => setTimeout(r, 6_000));
+      refunded = await escrow.refund({ intentId }).catch(() => null);
+    }
+    expect(refunded).not.toBeNull();
+    expect(await a.getBalance(sender.address)).toBe(1_000_000n);
+    expect(await escrow.refund({ intentId })).toEqual(refunded);
+  });
+});
