@@ -38,11 +38,20 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [ ] build · Turn on each funded EVM chain: add it to `CHAINS` in `wrangler.jsonc`, deploy, check the health route; tile goes Live after one real payment
 - [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
 - [x] build · Chain registry (`src/lib/settlement/registry.ts`): testnet and mainnet per chain, `NETWORK` picks one, mainnet needs `ALLOW_MAINNET=yes`. RPC order: `RPC_<NETWORK>` secret, then `ALCHEMY_API_KEY`, then public. Secrets live in `.env.production.local` and go up with `pnpm secrets:push`
-- [ ] you · Enable Tempo Moderato, HyperEVM testnet and Robinhood testnet on the Alchemy app (Workers can't use Tempo's public RPC)
+- [x] you · Enable Tempo Moderato, HyperEVM testnet and Robinhood testnet on the Alchemy app (Workers can't use Tempo's public RPC)
 - [ ] you · One real Tempo payment by text ("send @someone $1 on tempo") → then flip Tempo to Live
 - [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
 - [x] build · MCP server at `/api/mcp` (send / request / invoice / withdraw / balance / payments) with per-user agent keys
 - [x] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
+- [x] build · Dial Pay: crypto-Zelle pay pages at `/@handle` (pay by text or any wallet via Solana Pay / EIP-681, JSON at `/@handle.json`), `/wallet` (texted link + code, passkey, or agent key at `/api/wallet`), MCP `get_pay_link` and `get_wallet`
+- [x] build · On-chain ledger: treasury links per chain, `/ledger`, `/ledger.json`
+
+## Reliability
+
+- [ ] Payphone dev · Raise the inbound webhook cap (3 texts per sender per 5 min held back a code on 2026-10-09) and retry held texts in seconds; a proposed PR is in the Payphone repo
+- [ ] build · Staging Worker + scripted smoke conversation gating every prod deploy (in progress)
+- [ ] build · Prod watchdog every minute: health, unanswered texts, Payphone inbox vs our log; alerts by text (in progress)
+- [ ] you · Add `ALERT_PHONE` to `.env.production.local`, then `pnpm secrets:push`
 - [ ] build · Solana smart wallet with passkey authority (stretch)
 
 ## Tranche 3 · On-chain escrow
