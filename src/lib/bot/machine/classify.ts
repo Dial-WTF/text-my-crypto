@@ -3,7 +3,8 @@ import { normalizePhone } from "@/lib/phone";
 /** Every inbound text becomes exactly one of these, before any account state is considered. */
 export type Input =
   | { kind: "empty" }
-  | { kind: "stop" }
+  /** `cancel`: the word was CANCEL, which may also mean "cancel my payment". */
+  | { kind: "stop"; cancel?: true }
   | { kind: "start" }
   | { kind: "help" }
   | { kind: "nevermind" }
@@ -34,7 +35,7 @@ const PHONE_SHAPED = /^[+\d\s().-]{7,}$/;
 export function classify(raw: string): Input {
   const text = raw.trim().replace(/[.!]+$/, "");
   if (!text) return { kind: "empty" };
-  if (STOP.test(text)) return { kind: "stop" };
+  if (STOP.test(text)) return /^cancel$/i.test(text) ? { kind: "stop", cancel: true } : { kind: "stop" };
   if (START.test(text)) return { kind: "start" };
   if (HELP.test(text)) return { kind: "help" };
   if (NEVERMIND.test(text)) return { kind: "nevermind" };

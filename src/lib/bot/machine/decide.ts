@@ -1,3 +1,4 @@
+import { type Chain, parseChain } from "@/lib/chains";
 import type { Conversation } from "@/lib/conversations";
 import { parseCommand } from "@/lib/operator/grammar";
 import type { Input } from "./classify";
@@ -14,7 +15,8 @@ export type Session = {
 /** The single thing the operator will do with this text. */
 export type Action =
   | { do: "silence" }
-  | { do: "optOut" }
+  /** `cancelPending`: they texted CANCEL, so payments they started and haven't approved are cancelled too. */
+  | { do: "optOut"; cancelPending?: true }
   | { do: "optIn" }
   | { do: "help" }
   | { do: "welcome" }
@@ -29,6 +31,7 @@ export type Action =
   | { do: "confirmNew" }
   | { do: "pick"; index: number }
   | { do: "useNumber"; phone: string }
+  | { do: "useChain"; chain: Chain }
   | { do: "command"; text: string };
 
 /**
@@ -37,7 +40,10 @@ export type Action =
  */
 export function decide(s: Session, input: Input): Action {
   // 1. Compliance: STOP always wins; while opted out, only START gets a reply.
-  if (input.kind === "stop") return s.optedOut ? { do: "silence" } : { do: "optOut" };
+  if (input.kind === "stop") {
+    if (s.optedOut) return { do: "silence" };
+    return input.cancel && s.account === "claimed" ? { do: "optOut", cancelPending: true } : { do: "optOut" };
+  }
   if (s.optedOut) return input.kind === "start" ? { do: "optIn" } : { do: "silence" };
   if (input.kind === "start" || input.kind === "help") return { do: "help" };
   if (input.kind === "empty") {
@@ -61,6 +67,10 @@ export function decide(s: Session, input: Input): Action {
     if (input.kind === "phone") return { do: "useNumber", phone: input.phone };
   }
   if (s.convo?.state === "awaiting_number" && input.kind === "phone") return { do: "useNumber", phone: input.phone };
+  if (s.convo?.state === "awaiting_chain" && input.kind === "text") {
+    const chain = parseChain(input.text.replace(/^on\s+/i, ""));
+    if (chain) return { do: "useChain", chain };
+  }
   if (s.convo?.state === "awaiting_duplicate" && (input.kind === "new" || input.kind === "affirm")) {
     return { do: "confirmNew" };
   }

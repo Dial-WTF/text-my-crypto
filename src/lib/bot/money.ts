@@ -30,7 +30,8 @@ import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
-import { dripOnce, ensureSenderWallet, ensureWallet } from "./accounts";
+import { getWallet } from "@/lib/wallets";
+import { dripOnce, enabledChains, ensureSenderWallet, ensureWallet } from "./accounts";
 import { notify, text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -41,6 +42,17 @@ export const moneyCommandSchema = z.object({
   note: z.string().optional(),
   chain: z.enum(CHAINS).optional(),
 });
+
+export const withdrawCommandSchema = z.object({
+  kind: z.literal("withdraw"),
+  amountUsd: z.string(),
+  address: z.string(),
+  chain: z.enum(CHAINS).optional(),
+});
+
+/** Testnets where Circle's faucet hands out test USDC. Tempo and Robinhood use other test tokens. */
+const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum"]);
+const CIRCLE_FAUCET = "faucet.circle.com";
 
 /** Why a payment wasn't created. `message` is the plain-English reply the operator texts. */
 export type MoneyError = {
@@ -55,6 +67,7 @@ export type MoneyError = {
     | "self"
     | "bad_address"
     | "nothing_to_withdraw"
+    | "which_chain"
     | "duplicate";
   message: string;
 };
@@ -121,6 +134,14 @@ async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAda
     console.error("short-send drip failed", wallet.chain, errorText(e));
     return false;
   }
+}
+
+/** Not enough money: where to add more (their pay page lists deposit options) and, on testnet, a faucet. */
+function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
+  const testnet = deps.network === "testnet";
+  const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
+  const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
+  return replies.insufficient(formatUsd(balance), payUrl, testnet, faucet);
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -225,7 +246,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
       balance += deps.dripAmount;
       await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
     }
-    if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
+    if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
     const id = newIntentId();
@@ -288,19 +309,56 @@ function shortAddress(a: string): string {
   return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
 }
 
+type ChainPick = { ok: true; chain: Chain; adapter: SettlementAdapter } | { ok: false; error: MoneyError };
+
+/**
+ * Which chain a withdrawal leaves from: the one they named; else their default chain if the address fits it;
+ * else the only enabled chain the address fits (a 0x address on a Solana account). Several fit: ask which.
+ */
+function withdrawChain(deps: BotDeps, user: User, cmd: WithdrawCommand): ChainPick {
+  const named = cmd.chain ?? user.defaultChain;
+  const adapter = deps.adapters[named];
+  if (adapter?.isValidAddress(cmd.address)) return { ok: true, chain: named, adapter };
+  if (!cmd.chain) {
+    const fits = enabledChains(deps).filter(([, a]) => a.isValidAddress(cmd.address));
+    const [only] = fits;
+    if (fits.length === 1 && only) return { ok: true, chain: only[0], adapter: only[1] };
+    if (fits.length > 1) {
+      const message = replies.whichChain(fits.map(([c]) => c).sort());
+      return { ok: false, error: { code: "which_chain", message } };
+    }
+  }
+  if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(named)) } };
+  return { ok: false, error: { code: "bad_address", message: replies.badAddress(chainLabel(named)) } };
+}
+
+/** Nothing on this chain: say where the money is, if it's on another chain. */
+async function nothingToWithdrawReply(deps: BotDeps, user: User, chain: Chain): Promise<string> {
+  const elsewhere: Array<[Chain, bigint]> = [];
+  for (const [other, adapter] of enabledChains(deps)) {
+    if (other === chain) continue;
+    const wallet = await getWallet(deps.db, user.id, other);
+    if (!wallet) continue;
+    // A chain that won't answer just isn't mentioned.
+    const balance = await adapter.getBalance(wallet.address).catch(() => 0n);
+    if (balance > 0n) elsewhere.push([other, balance]);
+  }
+  const lines = elsewhere.map(([c, b]) => `${formatUsd(b)} on ${chainLabel(c)}`);
+  return replies.nothingToWithdraw(chainLabel(chain), lines, elsewhere[0]?.[0]);
+}
+
 /** Moves funds out to an address the user controls. Same code/limit rules as a send. Texts nobody. */
 export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<Prepared> {
-  const chain = cmd.chain ?? user.defaultChain;
-  const adapter = deps.adapters[chain];
-  if (!adapter) return fail("chain_unavailable", replies.chainUnavailable(chainLabel(chain)));
-  if (!adapter.isValidAddress(cmd.address)) return fail("bad_address", replies.badAddress(chainLabel(chain)));
+  const picked = withdrawChain(deps, user, cmd);
+  if (!picked.ok) return picked;
+  const { chain, adapter } = picked;
 
   const mine = await ensureWallet(deps, user.id, chain, adapter);
   const balance = await adapter.getBalance(mine.address);
   const amount = cmd.amountUsd === "all" ? balance : isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
-  if (amount <= 0n) return fail("nothing_to_withdraw", replies.nothingToWithdraw());
+  if (amount <= 0n) return fail("nothing_to_withdraw", await nothingToWithdrawReply(deps, user, chain));
   if (amount > deps.perTxCap) return fail("over_cap", replies.overCap(formatUsd(deps.perTxCap)));
-  if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
+  if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
   if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
   const intent = await createIntent(
@@ -336,11 +394,24 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
       return replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
+    // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
-      await text(deps, p.counterparty.phone, replies.payRequest(displayName(user), amount, intent.note, code, link));
+      await text(
+        deps,
+        p.counterparty.phone,
+        isClaimed(p.counterparty)
+          ? replies.payRequest(displayName(user), amount, intent.note, code, link)
+          : replies.payRequestNewcomer(displayName(user), amount, intent.note),
+      );
       return replies.requestSent(amount, other);
     case "invoice":
-      await text(deps, p.counterparty.phone, replies.payInvoice(displayName(user), amount, intent.note, code, link));
+      await text(
+        deps,
+        p.counterparty.phone,
+        isClaimed(p.counterparty)
+          ? replies.payInvoice(displayName(user), amount, intent.note, code, link)
+          : replies.payInvoiceNewcomer(displayName(user), amount, intent.note),
+      );
       return replies.invoiceSent(amount, other, link);
   }
 }
@@ -403,8 +474,12 @@ export async function prepareMoney(
   return r.ok ? announce(deps, user, r.prepared) : r.error.message;
 }
 
-/** SMS path for withdrawals. Returns the reply for the person who texted. */
+/** SMS path for withdrawals. Returns the reply for the person who texted. Asking which chain waits for the answer. */
 export async function prepareWithdraw(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<string> {
   const r = await createWithdrawIntent(deps, user, cmd);
-  return r.ok ? announce(deps, user, r.prepared) : r.error.message;
+  if (r.ok) return announce(deps, user, r.prepared);
+  if (r.error.code === "which_chain") {
+    await setConversation(deps.db, user.phone, { state: "awaiting_chain", payload: { command: JSON.stringify(cmd) } }, deps.now());
+  }
+  return r.error.message;
 }

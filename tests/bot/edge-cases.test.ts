@@ -60,7 +60,29 @@ describe("STOP / START / HELP", () => {
   it("works for strangers too, and HELP always explains how to stop", async () => {
     expect(await say(NEWBIE, "stop")).toMatch(/^You're unsubscribed/);
     expect(await send(NEWBIE, "hi")).toEqual([]);
-    expect(await say(ALEX, "HELP")).toMatch(/Reply STOP to stop texts\./);
+    expect(await send(ALEX, "HELP")).toEqual([
+      "Dial operator by Dial.Work: send and get paid in crypto by text. Help: https://tmc.test/how-it-works. Msg & data rates may apply. Reply STOP to cancel.",
+      "Commands: send @name $5, request $5 from @name, invoice @name $5, balance, receive, wallet, withdraw all to <address>, reclaim, 411 name, connect agent, status.",
+    ]);
+  });
+
+  it("CANCEL with a payment waiting on its code cancels it and says so in the opt-out", async () => {
+    const confirm = await say(ALEX, "send @jeremy $5");
+    const id = intentIdIn(confirm);
+    expect(await say(ALEX, "CANCEL")).toBe(
+      "You're unsubscribed from the Dial operator. No more texts. Your pending payment won't go through. Your money stays in your wallet: reply START anytime to get back to it.",
+    );
+    expect((await getIntent(db, id))?.status).toBe("declined");
+    await say(ALEX, "start");
+    expect(await say(ALEX, codeIn(confirm))).not.toMatch(/^Sending/);
+    expect(sol.settled).toHaveLength(0);
+  });
+
+  it("CANCEL with nothing pending is a plain opt-out, and STOP leaves a pending payment alone", async () => {
+    expect(await say(JEREMY, "cancel")).toMatch(/^You're unsubscribed from the Dial operator\. No more texts\. Your money stays/);
+    const id = intentIdIn(await say(ALEX, "send @jeremy $5"));
+    expect(await say(ALEX, "stop")).not.toMatch(/pending payment/);
+    expect((await getIntent(db, id))?.status).toBe("pending");
   });
 
   it("never texts an opted-out recipient, and tells the sender the money is waiting", async () => {
@@ -180,7 +202,9 @@ describe("test-funds drip", () => {
     );
     expect(broke.funded).toHaveLength(1);
 
-    expect(await say(NEWBIE, "send @jeremy $30")).toMatch(/^You have \$0 in test USDC, not enough for that one\./);
+    expect(await say(NEWBIE, "send @jeremy $30")).toBe(
+      "You have $0 in test USDC, not enough for that one. Add more: https://tmc.test/@sam Free test USDC: faucet.circle.com",
+    );
     expect(broke.funded).toHaveLength(1);
   });
 });
@@ -201,6 +225,10 @@ describe("things the operator can't parse", () => {
 describe("requests to people who aren't on Dial yet", () => {
   it("shows the request again with a fresh code after they sign up", async () => {
     await say(JEREMY, "request $8 from (555) 000-0099 for lunch");
+    // No code yet: they can't use one until they sign up.
+    expect(sms.last(NEWBIE)).toBe(
+      "Jeremy is asking you for $8 USDC (lunch) on Dial. Reply HI to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
+    );
     await say(NEWBIE, "hey");
     await send(NEWBIE, "Riley");
     const thread = sms.to(NEWBIE);
@@ -210,5 +238,12 @@ describe("requests to people who aren't on Dial yet", () => {
     expect(offer).toMatch(/Reply \d{6} to pay or NO to decline/);
     await say(NEWBIE, codeIn(offer));
     expect(sms.last(JEREMY)).toMatch(/^Riley paid you \$8 \(lunch\)\./);
+  });
+
+  it("an invoice to someone not on Dial carries no code and the opt-out line", async () => {
+    await say(JEREMY, "invoice (555) 000-0098 $20 for design");
+    expect(sms.last("+15550000098")).toBe(
+      "Jeremy sent you an invoice for $20 USDC (design) on Dial. Reply HI to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
+    );
   });
 });
