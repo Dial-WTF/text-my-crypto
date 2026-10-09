@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { usdToBaseUnits } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { money, namesItsCoin } from "@/lib/settlement/amounts";
+import { featuresOf } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
 import { ChainDownError, guardAdapter } from "@/lib/settlement/types";
 import { SettlementUnknownError } from "@/lib/settlement/unconfirmed";
@@ -125,6 +126,12 @@ describe("zcash wallet secrets", () => {
 });
 
 describe("zcash adapter", () => {
+  it("carries the shielded module: every send is shielded", () => {
+    const a = adapter((async () => new Response("{}")) as typeof globalThis.fetch);
+    expect(a.shielded).toEqual({ pool: "Ironwood", byDefault: true });
+    expect(featuresOf(a)).toEqual(["shielded"]);
+  });
+
   it("creates wallets as service accounts and authenticates every call", async () => {
     const svc = fakeService({ "POST /v1/accounts": () => ({ json: { account: 3, address: UA } }) });
     const w = await adapter(svc.fetch).createWallet();

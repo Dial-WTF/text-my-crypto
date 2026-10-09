@@ -187,6 +187,9 @@ export function createZcashAdapter(cfg: ZcashConfig): SettlementAdapter {
   return {
     chain: "zcash",
     tokenId: cfg.asset,
+    // Every Dial send on Zcash is shielded. Since NU6.3, new shielded value lands in the Ironwood pool
+    // (Orchard receivers, Orchard protocol v3); the wallet never sends to a transparent address.
+    shielded: { pool: "Ironwood", byDefault: true },
 
     isValidAddress: (address) => isZcashShieldedAddress(address, cfg.addressPrefix),
 
