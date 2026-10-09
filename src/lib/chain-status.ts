@@ -4,7 +4,8 @@ import { type Network, REGISTRY } from "@/lib/settlement/registry";
 /**
  * "live": switched on by CHAINS and at least one payment has moved on it (settled, escrowed or refunded).
  * "ready": switched on, but no payment has moved on it yet. "wired": the registry has a stablecoin for it,
- * but CHAINS leaves it off. "building": no stablecoin or no adapter on this network yet.
+ * but CHAINS leaves it off. "building": no stablecoin or no adapter on this network yet, or (Zcash) no
+ * real round-trip yet.
  */
 export type ChainState = "live" | "ready" | "wired" | "building";
 
@@ -17,10 +18,13 @@ export type ChainStatus = {
   label: string;
 };
 
-/** True when the registry can settle this chain on this network: an entry, and a stablecoin for it. */
+/** True when the registry can settle this chain on this network: an entry, and a stablecoin for it (or, on Zcash, a demo rate for its own coin). */
 function settles(chain: Chain, network: Network): boolean {
   const entry = REGISTRY[chain][network];
-  return entry !== null && (entry.kind === "solana" || entry.token !== null);
+  if (entry === null) return false;
+  if (entry.kind === "solana") return true;
+  if (entry.kind === "zcash") return entry.usdPerZec !== null;
+  return entry.token !== null;
 }
 
 /**
@@ -54,7 +58,7 @@ export function chainStatuses(chainsSetting: string, network: Network, moved: Re
       ? moved.has(chain)
         ? "live"
         : "ready"
-      : settles(chain, network)
+      : settles(chain, network) && !(entry?.kind === "zcash" && !entry.proven)
         ? "wired"
         : "building";
     const suffix = state === "building" ? "" : networkSuffix(chain, name);

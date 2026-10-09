@@ -4,6 +4,7 @@ import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { paymentNetwork } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { type Network, venueOf } from "@/lib/settlement/registry";
 
 export type StatusTone = "done" | "waiting" | "bad";
@@ -86,7 +87,7 @@ export async function buildPaymentView(
   const open = i.status === "pending" && i.expiresAt > now;
   const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
   const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
-  const to = i.kind === "withdraw" ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}` : name(recipient);
+  const to = i.kind === "withdraw" ? withdrawTarget(i) : name(recipient);
   return {
     id: i.id,
     kindLabel: kindLabel(i, opts.network),

@@ -1,12 +1,12 @@
-import { reconcileEscrows } from "@/lib/bot/settle";
+import { reconcileEscrows, resumeUnknownSettlements } from "@/lib/bot/settle";
 import { getDb } from "@/lib/db/client";
 import { botDeps } from "@/lib/deps";
 import { env } from "@/lib/env";
 import { normalizePhone } from "@/lib/phone";
 import { safeEqual } from "@/lib/runtime";
 import { getAdapters } from "@/lib/settlement";
-import { logSender, payphoneSender } from "@/lib/sms/payphone";
 import { errorText } from "@/lib/settlement/types";
+import { logSender, payphoneSender } from "@/lib/sms/payphone";
 import { runWatchdog } from "@/lib/watchdog/run";
 
 export const dynamic = "force-dynamic";
@@ -39,5 +39,11 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     console.error(JSON.stringify({ evt: "reconcile_escrows", error: errorText(err) }));
     return null;
   });
-  return Response.json({ ...report, escrows });
+  // Payments whose send went out without an answer (Zcash's wallet service timed out, say) get asked
+  // again with the same arguments until they settle or definitely fail. Never blocks the report.
+  const resumed = await resumeUnknownSettlements(botDeps()).catch((err: unknown) => {
+    console.error(JSON.stringify({ evt: "resume_settlements", error: errorText(err) }));
+    return [];
+  });
+  return Response.json({ ...report, escrows, ...(resumed.length ? { resumed: resumed.length } : {}) });
 }

@@ -19,6 +19,8 @@ export type NewIntent = {
   chain: Chain;
   token: string;
   recipientAddress: string;
+  /** The name recipientAddress was resolved from, when the person gave a name instead of an address. */
+  recipientName?: string | null;
   amount: bigint;
   note: string | null;
   escrowSecretEnc?: string | null;
@@ -224,6 +226,54 @@ export async function revertToEscrowed(db: Db, id: string, error: string): Promi
     .update(intents)
     .set({ status: "escrowed", error: error.slice(0, 500) })
     .where(eq(intents.id, id));
+}
+
+/**
+ * A settlement whose outcome isn't known yet (the money may have moved) stays "settling" with one of
+ * these in `error`: waiting for the resume job, or taken by a resume run since the ISO time that
+ * follows. A run that dies mid-retry leaves its marker, and the claim goes stale after RETRY_STALE_MS.
+ */
+const UNKNOWN = "outcome unknown: ";
+const RETRYING = "outcome unknown, retrying since ";
+const RETRY_STALE_MS = 5 * 60_000;
+
+export async function markOutcomeUnknown(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ error: `${UNKNOWN}${error}`.slice(0, 500) })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling")));
+}
+
+/** Waiting for a retry, or taken by a run that started before `staleBefore` (and so likely died). */
+function retryable(staleBefore: Date) {
+  const isoLength = staleBefore.toISOString().length;
+  return or(
+    sql`${intents.error} like ${`${UNKNOWN}%`}`,
+    and(
+      sql`${intents.error} like ${`${RETRYING}%`}`,
+      sql`substr(${intents.error}, 1, ${RETRYING.length + isoLength}) < ${`${RETRYING}${staleBefore.toISOString()}`}`,
+    ),
+  );
+}
+
+/** Settlements left with an unknown outcome, oldest first, for the resume job to drive to an answer. */
+export async function unknownSettlements(db: Db, now: Date, limit = 10): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.status, "settling"), retryable(new Date(now.getTime() - RETRY_STALE_MS))))
+    .orderBy(intents.createdAt)
+    .limit(limit);
+}
+
+/** Takes one unknown settlement for a retry, so two resume runs never drive the same one at once. */
+export async function claimUnknownForRetry(db: Db, id: string, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ error: `${RETRYING}${now.toISOString()}` })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling"), retryable(new Date(now.getTime() - RETRY_STALE_MS))))
+    .returning();
+  return row ?? null;
 }
 
 export async function markFailed(db: Db, id: string, error: string): Promise<void> {

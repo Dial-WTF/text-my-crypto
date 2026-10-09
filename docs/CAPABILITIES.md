@@ -7,10 +7,10 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 | Module | What it does | Carried by |
 |---|---|---|
 | `escrow` | Money for someone not on Dial waits in an on-chain program: the attestor releases it, and the sender can take a refund after expiry | Solana (`dial_escrow`) |
-| `names` | Pay or withdraw to a name instead of an address | planned: Ethereum (ENS), Base (Basenames) |
+| `names` | Withdraw to a name instead of an address. The name resolves once, when the payment is created; the payment keeps that address | Ethereum (ENS), Base (Basenames) |
 | `batch` | Several transfers in one transaction, all or none | planned: Tempo |
 | `actions` | Anyone can pay a Dial pay link from their own wallet | planned: Solana (Actions / Blinks) |
-| `shielded` | Amount, parties and memo encrypted on-chain | planned: Zcash |
+| `shielded` | Amount, parties and memo encrypted on-chain | Zcash (testnet, Ironwood pool, every send) |
 | `venue` | Move money into the chain's own trading venue | HyperEVM to HyperCore through `DialCoreDeposit` and Circle's CoreDepositWallet; attached once the contract's address is in the registry (`pnpm hypercore deploy`) |
 | `assets` | Send assets beyond the stablecoin | planned: Robinhood Chain |
 

@@ -27,6 +27,7 @@ import {
 } from "@/lib/identity";
 import { getIntent, intentsFor } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
+import { assetOf, money } from "@/lib/settlement/amounts";
 import type { MoneyKind } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
@@ -79,7 +80,14 @@ export const toolInputs = {
   create_invoice: z.object({ to: person, amountUsd, note, chain }),
   withdraw: z.object({
     amountUsd: z.union([z.literal("all"), amountUsd]).describe('Dollar amount, or "all" for the whole balance.'),
-    address: z.string().trim().min(20).max(128).describe("A wallet address the owner controls on that chain."),
+    address: z
+      .string()
+      .trim()
+      .min(3)
+      .max(128)
+      .describe(
+        "A wallet address the owner controls on that chain, or an ENS name (name.eth) or Basename (name.base.eth; name.basetest.eth on testnet). A name is resolved once, now; the payment keeps that address. A Basename picks Base and any other .eth name Ethereum, unless chain is set.",
+      ),
     chain,
   }),
   get_payment: z.object({ intentId }),
@@ -174,7 +182,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     status,
     statusLabel: view.status.label,
     amountUsd: usd(i.amount),
-    asset: "USDC",
+    asset: assetOf(i.chain, deps.network),
     from: view.from,
     to: view.to,
     chain: i.chain,
@@ -207,8 +215,9 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     approveBy: i.expiresAt.toISOString(),
     kind: i.kind,
     amountUsd: usd(i.amount),
-    asset: "USDC",
+    asset: assetOf(i.chain, deps.network),
     chain: i.chain,
+    ...(i.kind === "withdraw" ? { toAddress: i.recipientAddress, toName: i.recipientName } : {}),
     message: payerIsOwner && !ownerTexted
       ? paused
       : payerIsOwner
@@ -246,8 +255,10 @@ async function getBalance(deps: BotDeps, agent: Agent): Promise<ToolResult> {
     const w = await getWallet(deps.db, agent.user.id, c);
     if (!w) continue;
     const amount = await adapter.getBalance(w.address);
-    total += amount;
-    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset: "USDC" });
+    const asset = assetOf(c, deps.network);
+    // Testnet ZEC converts at a demo rate, so it's listed but not added to the dollar total.
+    if (asset === "USDC") total += amount;
+    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset, display: money(amount, c, deps.network) });
   }
   return ok({ balances, totalUsd: usd(total) });
 }
@@ -258,7 +269,7 @@ async function getReceiveAddress(deps: BotDeps, agent: Agent): Promise<ToolResul
   const addresses: Array<Record<string, string>> = [];
   for (const [c] of enabledChains(deps)) {
     const w = await getWallet(deps.db, user.id, c);
-    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: "USDC" });
+    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: assetOf(c, deps.network) });
   }
   return ok({ handle, byText: `Anyone can text the Dial operator "send ${handle} $5".`, addresses });
 }
@@ -490,7 +501,7 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   withdraw: {
     title: "Withdraw",
     description:
-      "Move the owner's USDC to an outside address on the same chain. Texts the owner to approve, like send_payment.",
+      "Move the owner's USDC to an outside address, ENS name or Basename on the same chain. Texts the owner to approve, like send_payment. Returns toAddress, the address the payment will go to.",
   },
   get_payment: {
     title: "Get payment",
