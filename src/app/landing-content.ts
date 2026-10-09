@@ -6,6 +6,7 @@ import type { LogoId } from "@/ui/brand/logoPaths";
 import type { ChainStripItem } from "@/ui/patterns/ChainStrip/ChainStrip";
 import type { Limit } from "@/ui/patterns/Limits/Limits";
 import type { TranscriptLine } from "@/ui/patterns/Transcript/Transcript";
+import { chainPath } from "./chain-content";
 
 export const transcript: TranscriptLine[] = [
   { from: "you", text: "hi" },
@@ -34,11 +35,21 @@ const CHAIN_COPY: Record<Chain, { name: string; logo: LogoId; role: string }> = 
 
 const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, building: 3 };
 
-/** One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building. */
-export function settlesOn(statuses: ChainStatus[]): ChainStripItem[] {
+/**
+ * One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building.
+ * Each links to its chain page; `branded` also colours each tile in its chain's brand (/judges).
+ */
+export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): ChainStripItem[] {
   return [...statuses]
     .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
-    .map((s) => ({ ...CHAIN_COPY[s.chain], status: s.state === "live" ? "live" : "next", statusLabel: s.label }));
+    .map((s) => ({
+      ...CHAIN_COPY[s.chain],
+      status: s.state === "live" ? "live" : "next",
+      statusLabel: s.label,
+      href: chainPath(s.chain),
+      linkLabel: `${CHAIN_COPY[s.chain].name}: how Dial uses it`,
+      ...(branded ? { brand: s.chain } : {}),
+    }));
 }
 
 /**

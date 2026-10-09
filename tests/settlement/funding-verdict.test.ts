@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fundingVerdict } from "@/lib/settlement/solana";
+import { fundingVerdict } from "@/lib/settlement/unconfirmed";
 import type { EscrowLookup } from "@/lib/settlement/types";
 
 const funded = { txHash: "sig_create", explorerUrl: "https://explorer.test/sig_create" };

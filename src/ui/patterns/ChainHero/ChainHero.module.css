@@ -1,0 +1,67 @@
+.hero {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--gutter) 0;
+  min-width: 0;
+}
+
+/* The brand's colours as a fill, never under text. */
+.band {
+  width: min(100%, 18rem);
+  height: var(--rule-thick);
+  background: var(--fill-brand);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+  font: 800 var(--text-3xl) / 0.95 var(--font-display);
+  text-transform: var(--display-case);
+  min-width: 0;
+}
+
+.logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-on-canvas-muted);
+}
+
+.status {
+  padding: var(--space-3xs) var(--space-2xs);
+  border: var(--rule-thin) solid currentColor;
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.live {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+  text-shadow: none;
+}
+
+.lede {
+  max-width: var(--measure);
+  margin: 0;
+  font-size: var(--text-lg);
+}

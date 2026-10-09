@@ -34,7 +34,7 @@ ${a.tools.map(([name, what]) => `- ${name}: ${what}`).join("\n")}
 ## Chains
 Live: switched on and a payment has settled there. Ready: switched on, no payment settled yet. Wired: built and tested, switched off. Building: not settling yet.
 ${settlesOn(chains)
-  .map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`)
+  .map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}. ${s.url}${c.href}`)
   .join("\n")}
 
 ## Limits
@@ -46,6 +46,7 @@ ${limitItems(now.limits, now.network)
 - Site: ${s.url}
 - Ledger: ${s.url}/ledger (every settled payment, linked to its transaction)
 - Ledger JSON: ${s.url}/ledger.json (payments, stats and treasury addresses)
+- For judges: ${s.url}/judges (what it is, how to try it, one page per chain)
 - How it works: ${s.url}/how-it-works
 - Agents: ${s.url}/agents
 - Status: ${s.url}/status

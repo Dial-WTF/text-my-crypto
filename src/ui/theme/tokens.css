@@ -61,3 +61,11 @@
   /* Optional theme effects; off unless a theme opts in */
   --text-glow: none;
 }
+
+/* Brand fill (./brands): a band or swatch in a brand's colours, always an image (a gradient), so it works as
+ * a background-image. Unbranded, it is the mode's accent.
+ * Declared on every theme scope so it follows that scope's accent, not the page's. */
+:root,
+[data-theme] {
+  --fill-brand: linear-gradient(var(--color-accent), var(--color-accent));
+}
