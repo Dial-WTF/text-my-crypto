@@ -57,9 +57,11 @@ function statusOf(i: Intent, now: Date): PaymentView["status"] {
  * Who sees the view. "public" is the /a/<id> page, which anyone holding the id can open (ids are
  * on the public ledger): once a payment is past pending it names people by @handle only and drops
  * the note. A pending payment keeps names and note, since the payer needs them to approve.
- * "party" is for the account owner (their agent), who sees everything.
+ * "party" is for the account owner (their agent), who sees everything. "card" is the link preview for
+ * /a/<id>: chat apps fetch and cache it for everyone in the thread, so it is @handles only and no note
+ * at every status, pending included.
  */
-export type PaymentAudience = "public" | "party";
+export type PaymentAudience = "public" | "party" | "card";
 
 /** "@handle" for people with one, "someone new" for a number that hasn't signed up. */
 function publicName(u: User | null): string {
@@ -75,7 +77,7 @@ export async function buildPaymentView(
 ): Promise<PaymentView> {
   const [sender, recipient] = await Promise.all([getUserById(db, i.senderId), getUserById(db, i.recipientId)]);
   const open = i.status === "pending" && i.expiresAt > now;
-  const full = opts.audience === "party" || i.status === "pending";
+  const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
   const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
   const to = i.kind === "withdraw" ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}` : name(recipient);
   return {

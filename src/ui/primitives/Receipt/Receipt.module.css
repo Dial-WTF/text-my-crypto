@@ -21,6 +21,8 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-on-card-muted);
+  /* "Dial pay · @<32-character handle>" in spaced caps is wider than a phone; let the handle break. */
+  overflow-wrap: anywhere;
 }
 
 .body {
@@ -60,12 +62,13 @@
 
 /*
  * The value keeps its width (up to 70% of the line, wrapping past that) and the label gives way, so
- * "$12.50" never splits because the label beside it is long.
+ * "$12.50" never splits because the label beside it is long. It always leaves room for an 8-character
+ * label and the leader, so a one-word label like "Address" never breaks mid-word beside a long address.
  */
 .value {
   flex: 0 0 auto;
   min-width: 0;
-  max-width: 70%;
+  max-width: min(70%, calc(100% - 8ch - var(--space-sm) - 2 * var(--space-2xs)));
   text-align: right;
   overflow-wrap: anywhere;
 }

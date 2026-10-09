@@ -1,0 +1,28 @@
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-md) var(--space-lg);
+  margin: 0;
+  padding: var(--space-md) 0;
+  border-block: var(--rule-thin) solid var(--color-canvas-rule);
+}
+
+.item {
+  display: grid;
+  gap: var(--space-3xs);
+  align-content: start;
+  min-width: 0;
+}
+
+.value {
+  font: 800 var(--text-xl) / 1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-on-canvas-muted);
+}
