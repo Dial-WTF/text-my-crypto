@@ -95,7 +95,7 @@ export async function loadLatestPayment(chain: Chain): Promise<LatestPayment | n
     // Plain strings only: this goes out as JSON, so no bigints (a split's legs carry some).
     const { id, from, to, network, state, txHash } = entry;
     const explorerUrl = liveExplorer(entry.explorerUrl);
-    return { id, from, to, network, state, txHash, explorerUrl, amount: money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" };
+    return { id, from, to, network, state, txHash, explorerUrl, amount: entry.amount === null ? "shielded" : money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" };
   });
 }
 
