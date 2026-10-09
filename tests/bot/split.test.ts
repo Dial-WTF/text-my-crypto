@@ -1,16 +1,18 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { authenticateAgent, redeemAgentLink } from "@/lib/agents/keys";
 import { runTool } from "@/lib/agents/tools";
 import { handleInbound } from "@/lib/bot/handle-inbound";
-import { approveIntent } from "@/lib/bot/settle";
+import { approveIntent, reconcileTransfers } from "@/lib/bot/settle";
 import { splitShares } from "@/lib/bot/split";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { intents } from "@/lib/db/schema";
 import { findUserByPhone } from "@/lib/identity";
-import { matchPageCode, splitLegs } from "@/lib/intents";
+import { matchPageCode, splitLegs, unconfirmedTransferTx } from "@/lib/intents";
 import type { TransferLeg as BatchLeg } from "@/lib/settlement/capabilities";
+import { HeldBackError, type TransferOutcome } from "@/lib/settlement/types";
+import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
 import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
@@ -277,6 +279,166 @@ describe("split over SMS", () => {
     await say(JEREMY, "split $30 between @alex @sam on tempo");
     expect(await say(JEREMY, "send @alex $15 on tempo")).toMatch(/^Send \$15 USDC to @alex on Tempo\?/);
   });
+});
+
+describe("a split whose transaction goes out without an answer", () => {
+  const SPLIT_TX = "0xsplit_went_out";
+  let outcome: TransferOutcome;
+  let asked: Array<{ txHash: string; sentAt: Date; legs: unknown }>;
+
+  beforeEach(() => {
+    outcome = { state: "pending" };
+    asked = [];
+    tempo.transferOutcome = async (txHash, { sentAt }, legs) => {
+      asked.push({ txHash, sentAt, legs });
+      return outcome;
+    };
+  });
+
+  /** Approves "split $30 between @alex @sam" with the batch failing as `e`. */
+  async function approveFailingWith(e: Error) {
+    const confirm = await say(JEREMY, "split $30 between @alex @sam on tempo");
+    tempo.failNext = e;
+    await say(JEREMY, codeIn(confirm));
+    return confirm;
+  }
+  const unanswered = () => approveFailingWith(new TransferUnconfirmedError("tempo", SPLIT_TX, new Error("fetch failed")));
+
+  it("is never called failed: every leg waits on the one transaction, and the sender is told not to resend", async () => {
+    const confirm = await unanswered();
+    const legs = await legsOf(JEREMY);
+    expect(legs.map((l) => [l.status, unconfirmedTransferTx(l)])).toEqual([
+      ["settling", SPLIT_TX],
+      ["settling", SPLIT_TX],
+    ]);
+    expect(sms.last(JEREMY)).toBe("Your $30 split is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.");
+    expect(sms.to(JEREMY).join("\n")).not.toContain("No funds moved");
+    expect(sms.last(ALEX)).not.toMatch(/you got/);
+    expect(await say(JEREMY, "status")).toBe("Sending your $30 split now. I'll text you the receipt.");
+    // The code is spent: nothing goes out a second time.
+    await say(JEREMY, codeIn(confirm));
+    expect(tempo.batches).toHaveLength(0);
+  });
+
+  it("settles every leg once it lands, asking the chain once for the split, and sends one receipt", async () => {
+    await unanswered();
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 0 });
+    const legs = await legsOf(JEREMY);
+    expect(asked).toEqual([
+      { txHash: SPLIT_TX, sentAt: legs[0]!.approvedAt!, legs: legs.map((l) => ({ to: l.recipientAddress, amount: 15_000_000n })) },
+    ]);
+
+    outcome = { state: "landed", result: { txHash: SPLIT_TX, explorerUrl: `https://explore.test/tx/${SPLIT_TX}` } };
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 2, failed: 0 });
+    expect((await legsOf(JEREMY)).map((l) => [l.status, l.txHash, l.error])).toEqual([
+      ["settled", SPLIT_TX, null],
+      ["settled", SPLIT_TX, null],
+    ]);
+    const receipts = sms.to(JEREMY).filter((m) => m.startsWith("Split sent"));
+    expect(receipts).toEqual([`Split sent on Tempo in one transaction: $15 each to @alex, @sam. Receipt: https://explore.test/tx/${SPLIT_TX}`]);
+    expect(sms.last(ALEX)).toBe(`Alex, you got $15 from Jeremy on Tempo. Receipt: https://explore.test/tx/${SPLIT_TX}`);
+    expect(sms.last(SAM)).toBe(`Sam, you got $15 from Jeremy on Tempo. Receipt: https://explore.test/tx/${SPLIT_TX}`);
+
+    const texts = sms.sent.length;
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 0 });
+    expect(sms.sent).toHaveLength(texts);
+  });
+
+  it("fails every leg, with one text, once the chain says it can't land", async () => {
+    await unanswered();
+    outcome = { state: "failed" };
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 2 });
+    expect((await legsOf(JEREMY)).map((l) => l.status)).toEqual(["failed", "failed"]);
+    expect(sms.to(JEREMY).filter((m) => m === "That payment didn't go through. No funds moved.")).toHaveLength(1);
+  });
+
+  it("two runs at once finish it once: one receipt, one text each", async () => {
+    await unanswered();
+    outcome = { state: "landed", result: { txHash: SPLIT_TX, explorerUrl: `https://explore.test/tx/${SPLIT_TX}` } };
+    const runs = await Promise.all([reconcileTransfers(deps), reconcileTransfers(deps)]);
+    expect(runs.map((r) => r.settled).sort()).toEqual([0, 2]);
+    expect(sms.to(JEREMY).filter((m) => m.startsWith("Split sent"))).toHaveLength(1);
+    expect(sms.to(ALEX).filter((m) => m.includes("you got $15"))).toHaveLength(1);
+  });
+
+  it("two runs at once fail it once: one text", async () => {
+    await unanswered();
+    outcome = { state: "failed" };
+    const runs = await Promise.all([reconcileTransfers(deps), reconcileTransfers(deps)]);
+    expect(runs.map((r) => r.failed).sort()).toEqual([0, 2]);
+    expect(sms.to(JEREMY).filter((m) => m === "That payment didn't go through. No funds moved.")).toHaveLength(1);
+  });
+
+  it("waits for a person when a recipient's account is gone", async () => {
+    await unanswered();
+    const [, second] = await legsOf(JEREMY);
+    await db.run(sql`PRAGMA foreign_keys = OFF`);
+    await db.update(intents).set({ recipientId: "usr_gone" }).where(eq(intents.id, second!.id));
+    outcome = { state: "landed", result: { txHash: SPLIT_TX, explorerUrl: null } };
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 0 });
+    expect((await legsOf(JEREMY)).map((l) => l.status)).toEqual(["settling", "settling"]);
+  });
+
+  it("landed with a share held back: the rest are paid and only that leg fails", async () => {
+    await unanswered();
+    outcome = { state: "landed", result: { txHash: SPLIT_TX, explorerUrl: `https://explore.test/tx/${SPLIT_TX}` }, heldBack: [0] };
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 1, failed: 1 });
+    expect((await legsOf(JEREMY)).map((l) => [l.status, l.error])).toEqual([
+      ["failed", `Held back by a transfer policy in ${SPLIT_TX}`],
+      ["settled", null],
+    ]);
+    expect(sms.last(JEREMY)).toBe(
+      "Split sent on Tempo in one transaction: $15 to @sam. Tempo held back $15 to @alex: the receiving wallet doesn't accept the transfer, " +
+        `so the network is holding that money and it's marked not sent. Receipt: https://explore.test/tx/${SPLIT_TX}`,
+    );
+    expect(sms.last(ALEX)).not.toMatch(/you got/);
+    expect(sms.last(SAM)).toMatch(/^Sam, you got \$15 from Jeremy/);
+  });
+
+  it("waits while the chain can't say, and for a person when it can't be asked", async () => {
+    await unanswered();
+    tempo.transferOutcome = async () => {
+      throw new Error("503");
+    };
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 0 });
+    delete tempo.transferOutcome;
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 0, failed: 0 });
+    expect((await legsOf(JEREMY)).map((l) => l.status)).toEqual(["settling", "settling"]);
+  });
+});
+
+describe("a split that lands with a share held back", () => {
+  const held = (heldBack: number[]) => new HeldBackError(TX, heldBack, heldBack.map(() => "0xheld"));
+
+  it("pays the shares that arrived, fails only the held one, and tells the sender exactly that", async () => {
+    await approveHeld(held([1]));
+    expect((await legsOf(JEREMY)).map((l) => [l.status, l.txHash])).toEqual([
+      ["settled", "0xsplit"],
+      ["failed", null],
+    ]);
+    expect(sms.last(JEREMY)).toBe(
+      "Split sent on Tempo in one transaction: $15 to @alex. Tempo held back $15 to @sam: the receiving wallet doesn't accept the transfer, " +
+        "so the network is holding that money and it's marked not sent. Receipt: https://explore.test/tx/0xsplit",
+    );
+    expect(sms.last(ALEX)).toBe("Alex, you got $15 from Jeremy on Tempo. Receipt: https://explore.test/tx/0xsplit");
+    expect(sms.last(SAM)).not.toMatch(/you got/);
+    expect(sms.to(JEREMY).join("\n")).not.toContain("No funds moved");
+  });
+
+  it("every share held back: nothing arrived, and the sender hears that", async () => {
+    await approveHeld(held([0, 1]));
+    expect((await legsOf(JEREMY)).map((l) => l.status)).toEqual(["failed", "failed"]);
+    expect(sms.last(JEREMY)).toBe(
+      "None of your split arrived. Tempo held back $15 each to @alex, @sam: the receiving wallet doesn't accept the transfer, " +
+        "so the network is holding that money and it's marked not sent. Receipt: https://explore.test/tx/0xsplit",
+    );
+  });
+
+  async function approveHeld(e: HeldBackError) {
+    const confirm = await say(JEREMY, "split $30 between @alex @sam on tempo");
+    tempo.failNext = e;
+    await say(JEREMY, codeIn(confirm));
+  }
 });
 
 describe("split_payment over MCP", () => {

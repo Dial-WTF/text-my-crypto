@@ -249,6 +249,9 @@ export const replies = {
       : `Your balance is $0. Nothing to withdraw.`,
   chainDown: (chain: string) => `The ${chain} network isn't answering right now. Nothing moved. Try again in a minute.`,
   failed: () => `That payment didn't go through. No funds moved.`,
+  /** A Tempo transfer that landed but never reached them: a receive or transfer policy blocked it. */
+  heldBack: (amount: string, who: string, chain: string) =>
+    `Your ${amount} to ${who} didn't arrive. Their wallet doesn't accept the transfer, so ${chain} is holding the money instead. It's marked not sent.`,
   sendUnconfirmed: (amount: string, who: string) =>
     `Your ${amount} to ${who} is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.`,
 } as const;
