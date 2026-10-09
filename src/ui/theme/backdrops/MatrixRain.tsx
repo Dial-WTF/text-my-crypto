@@ -85,5 +85,5 @@ export function MatrixRain() {
     };
   }, []);
 
-  return <canvas ref={ref} className={styles.rain} aria-hidden="true" />;
+  return <canvas ref={ref} className={styles.rain} data-backdrop-layer aria-hidden="true" />;
 }

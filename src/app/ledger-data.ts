@@ -5,9 +5,15 @@ import { getDb } from "@/lib/db/client";
 import { env, publicEnv } from "@/lib/env";
 import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
-import { errorText } from "@/lib/settlement/types";
-import { movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { memoizer } from "@/lib/web/memo";
+import { activeChains, getAdapters } from "@/lib/settlement";
+import { money } from "@/lib/settlement/amounts";
+import { type FeatureId, featuresOf } from "@/lib/settlement/capabilities";
+import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
+import { type ChainActivity, chainActivity, type FeedItem, movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import type { FeedEntry } from "@/ui/patterns/PaymentFeed/PaymentFeed";
+import type { LatestPayment } from "@/ui/patterns/WatchSettle/WatchSettle";
+import { ATTACHED_FEATURES } from "./chain-content";
 
 export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[]; note: string };
 
@@ -38,8 +44,11 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     quietly("ledger payments unavailable", () => recentPayments(getDb(), limit), []),
     quietly("chain proofs unavailable", () => chainProofs(), []),
   ]);
-  const now = new Date();
-  const feed = rows.map((r) => ({
+  return { stats, feed: feedEntries(rows, new Date()), proofs, note: proofNote(proofs) };
+}
+
+function feedEntries(rows: FeedItem[], now: Date): FeedEntry[] {
+  return rows.map((r) => ({
     id: r.id,
     from: r.from,
     to: r.to,
@@ -51,7 +60,51 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     explorerUrl: r.explorerUrl,
     when: timeAgo(r.at, now),
   }));
-  return { stats, feed, proofs, note: proofNote(proofs) };
+}
+
+export type ChainLedger = {
+  /** Null when the ledger can't be read: the page says so instead of showing a zero. */
+  activity: (Omit<ChainActivity, "recent"> & { feed: FeedEntry[] }) | null;
+  /** The treasury (and escrow program) as the running adapter reports it; null while the chain is off. */
+  proof: ChainProof | null;
+};
+
+const latestMemo = memoizer<LatestPayment | null>({ ttlMs: 10_000, maxKeys: 32 });
+
+/** The newest payment on `chain`, read at most every 10 seconds per isolate. Null when there is none; throws when D1 can't be read. */
+export async function loadLatestPayment(chain: Chain): Promise<LatestPayment | null> {
+  return latestMemo(chain, async () => {
+    const [row] = (await chainActivity(getDb(), chain, 1)).recent;
+    if (!row) return null;
+    const [entry] = feedEntries([row], new Date());
+    return entry ? { ...entry, amount: money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" } : null;
+  });
+}
+
+/**
+ * The chain-native modules a chain carries: the running adapter's own list when it can be built, else
+ * what the code attaches (ATTACHED_FEATURES), so a page without secrets still says what is built.
+ */
+export function loadChainFeatures(chain: Chain): { features: FeatureId[]; adapter: SettlementAdapter | null } {
+  try {
+    const adapter = getAdapters()[chain];
+    if (adapter) return { features: featuresOf(adapter), adapter };
+  } catch (e) {
+    console.error("chain features unavailable", chain, errorText(e));
+  }
+  return { features: ATTACHED_FEATURES[chain], adapter: null };
+}
+
+/** One chain's page of the ledger, read per request: what moved there, the latest payments, its treasury. */
+export async function loadChainLedger(chain: Chain, limit: number): Promise<ChainLedger> {
+  const [activity, proofs] = await Promise.all([
+    quietly<ChainActivity | null>("chain activity unavailable", () => chainActivity(getDb(), chain, limit), null),
+    quietly("chain proofs unavailable", () => chainProofs(getAdapters(), activeChains().filter((a) => a.chain === chain)), []),
+  ]);
+  return {
+    activity: activity ? { moved: activity.moved, feed: feedEntries(activity.recent, new Date()) } : null,
+    proof: proofs[0] ?? null,
+  };
 }
 
 const PROOF_NOTE =

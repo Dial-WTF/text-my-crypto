@@ -13,6 +13,7 @@ describe("sitemapEntries", () => {
       "https://dial.example/",
       "https://dial.example/how-it-works",
       "https://dial.example/agents",
+      "https://dial.example/judges",
       "https://dial.example/ledger",
       "https://dial.example/status",
       "https://dial.example/terms",

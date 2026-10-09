@@ -1,4 +1,4 @@
-import { and, count, desc, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents, users } from "@/lib/db/schema";
@@ -41,11 +41,18 @@ export type FeedItem = {
   at: Date;
 };
 
-export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]> {
+/** The newest payments that moved money, on every chain or only on `chain`. */
+export async function recentPayments(db: Db, limit: number, chain?: Chain): Promise<FeedItem[]> {
   const rows = await db
     .select()
     .from(intents)
-    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])))
+    .where(
+      and(
+        inArray(intents.status, MOVED),
+        inArray(intents.kind, ["send", "request", "invoice"]),
+        chain ? eq(intents.chain, chain) : undefined,
+      ),
+    )
     .orderBy(desc(intents.createdAt))
     .limit(limit);
   const ids = [...new Set(rows.flatMap((r) => [r.senderId, r.recipientId]))];
@@ -66,4 +73,51 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
     explorerUrl: r.explorerUrl,
     at: r.createdAt,
   }));
+}
+
+export type EscrowItem = {
+  id: string;
+  status: Intent["status"];
+  /** The transaction that funded the vault. */
+  funded: { txHash: string; explorerUrl: string } | null;
+  /** The claim (status settled) or refund (status refunded) that closed it, once one has. */
+  closed: { txHash: string; explorerUrl: string } | null;
+  at: Date;
+};
+
+/** The newest payments that went through an on-chain escrow program on `chain`. Ids and transactions only. */
+export async function recentEscrows(db: Db, chain: Chain, limit: number): Promise<EscrowItem[]> {
+  const rows = await db
+    .select()
+    .from(intents)
+    .where(and(inArray(intents.status, MOVED), eq(intents.chain, chain), isNotNull(intents.escrowProgram)))
+    .orderBy(desc(intents.createdAt))
+    .limit(limit);
+  const tx = (hash: string | null, url: string | null) => (hash && url ? { txHash: hash, explorerUrl: url } : null);
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    funded: tx(r.txHash, r.explorerUrl),
+    closed: tx(r.releaseTxHash, r.releaseExplorerUrl),
+    at: r.createdAt,
+  }));
+}
+
+export type ChainActivity = {
+  /** Everything that moved money on the chain, withdrawals included: the same count that makes it "live". */
+  moved: number;
+  /** The newest payments on it, by handle only. */
+  recent: FeedItem[];
+};
+
+/** One chain's slice of the public ledger, for its chain page. */
+export async function chainActivity(db: Db, chain: Chain, limit: number): Promise<ChainActivity> {
+  const [[row], recent] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(intents)
+      .where(and(inArray(intents.status, MOVED), eq(intents.chain, chain))),
+    recentPayments(db, limit, chain),
+  ]);
+  return { moved: row?.n ?? 0, recent };
 }

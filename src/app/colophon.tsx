@@ -8,6 +8,7 @@ import { running, site } from "./site";
 export const footerLinks = () => [
   { href: "/how-it-works", label: "How it works" },
   { href: "/agents", label: "Agents" },
+  { href: "/judges", label: "For judges" },
   { href: "/ledger", label: "Ledger" },
   { href: "/status", label: "Status" },
   { href: "/terms", label: "Terms" },
