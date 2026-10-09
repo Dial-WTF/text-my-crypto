@@ -18,12 +18,19 @@ const awaitingChoice: Conversation = {
   payload: { name: "jeremy", command: "{}", handles: ["a1", "b2"] },
 };
 const awaitingDuplicate: Conversation = { state: "awaiting_duplicate", payload: { command: "{}" } };
+const awaitingChain: Conversation = { state: "awaiting_chain", payload: { command: "{}" } };
 
 describe("decide: compliance", () => {
   it("STOP always opts out, once", () => {
     expect(decide(s(), { kind: "stop" })).toEqual({ do: "optOut" });
     expect(decide(s({ account: "unknown" }), { kind: "stop" })).toEqual({ do: "optOut" });
     expect(decide(s({ optedOut: true }), { kind: "stop" })).toEqual({ do: "silence" });
+  });
+
+  it("CANCEL opts out and, for a member, cancels what they haven't approved", () => {
+    expect(decide(s(), { kind: "stop", cancel: true })).toEqual({ do: "optOut", cancelPending: true });
+    expect(decide(s({ account: "unknown" }), { kind: "stop", cancel: true })).toEqual({ do: "optOut" });
+    expect(decide(s({ optedOut: true }), { kind: "stop", cancel: true })).toEqual({ do: "silence" });
   });
 
   it("opted-out numbers get silence until START", () => {
@@ -92,6 +99,14 @@ describe("decide: answers to the operator's questions", () => {
     });
   });
 
+  it("a chain name answers 'which chain?'; anything else is a new request", () => {
+    expect(decide(s({ convo: awaitingChain }), text("ethereum"))).toEqual({ do: "useChain", chain: "ethereum" });
+    expect(decide(s({ convo: awaitingChain }), text("on Tempo"))).toEqual({ do: "useChain", chain: "tempo" });
+    expect(decide(s({ convo: awaitingChain }), text("eth"))).toEqual({ do: "useChain", chain: "ethereum" });
+    expect(decide(s({ convo: awaitingChain }), text("balance"))).toEqual({ do: "command", text: "balance" });
+    expect(decide(s(), text("ethereum"))).toEqual({ do: "command", text: "ethereum" });
+  });
+
   it("a new request drops whatever was pending", () => {
     expect(decide(s({ convo: awaitingNumber }), text("balance"))).toEqual({ do: "command", text: "balance" });
     expect(decide(s({ convo: awaitingChoice }), text("send @alex $1"))).toEqual({ do: "command", text: "send @alex $1" });
@@ -107,10 +122,11 @@ describe("decide: answers to the operator's questions", () => {
 
 describe("decide: totality", () => {
   const accounts: Session["account"][] = ["unknown", "unclaimed", "claimed"];
-  const convos: Array<Conversation | null> = [null, awaitingName, awaitingNumber, awaitingChoice, awaitingDuplicate];
+  const convos: Array<Conversation | null> = [null, awaitingName, awaitingNumber, awaitingChoice, awaitingDuplicate, awaitingChain];
   const inputs: Input[] = [
     { kind: "empty" },
     { kind: "stop" },
+    { kind: "stop", cancel: true },
     { kind: "start" },
     { kind: "help" },
     { kind: "nevermind" },
@@ -121,6 +137,7 @@ describe("decide: totality", () => {
     { kind: "phone", phone: "+15550000003" },
     text("send jeremy $5"),
     text("hello there"),
+    text("ethereum"),
   ];
 
   it("maps every combination to exactly one action, and never speaks to opted-out numbers except START", () => {
@@ -134,10 +151,10 @@ describe("decide: totality", () => {
               expect(a.do).toBeTruthy();
               if (optedOut) expect(["silence", "optIn"]).toContain(a.do);
               if (account !== "claimed" && !optedOut) {
-                expect(["approve", "pick", "useNumber", "command", "confirmNew", "codeHint", "nevermind"]).not.toContain(a.do);
+                expect(["approve", "pick", "useNumber", "useChain", "command", "confirmNew", "codeHint", "nevermind"]).not.toContain(a.do);
               }
               n++;
             }
-    expect(n).toBe(3 * 2 * 5 * 2 * 12);
+    expect(n).toBe(3 * 2 * 6 * 2 * 14);
   });
 });

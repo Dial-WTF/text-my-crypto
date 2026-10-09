@@ -22,13 +22,13 @@ flowchart LR
   F --> G[act + reply]
 ```
 
-`classify` turns any text into exactly one input: `stop`, `start`, `help`, `nevermind`, `new`, `affirm`, `status`, `thanks`, `code` (spaces and dashes allowed), `pick` (1–5), `phone`, `empty`, or free `text`.
+`classify` turns any text into exactly one input: `stop` (marked when the word was CANCEL), `start`, `help`, `nevermind`, `new`, `affirm`, `status`, `thanks`, `code` (spaces and dashes allowed), `pick` (1–5), `phone`, `empty`, or free `text`.
 
 `decide` applies these rules in order:
 
-1. **Compliance.** STOP opts out (one confirmation). While opted out, only START gets a reply. HELP always answers.
+1. **Compliance.** STOP opts out (one confirmation). CANCEL also cancels the member's unapproved payments. While opted out, only START gets a reply. HELP always answers, in two texts: who this is and where to get help, then the commands.
 2. **Onboarding.** Strangers are welcomed and asked for a name; nothing else happens until they give one. A command sent instead of a name gets "first, your name".
-3. **Answers to a question the operator asked.** A code approves; nevermind cancels; 1–5 picks from a list; a number answers "what's their number?"; NEW confirms a deliberate repeat; "yes" while a code is pending explains codes.
+3. **Answers to a question the operator asked.** A code approves; nevermind cancels; 1–5 picks from a list; a number answers "what's their number?"; a chain name answers "which chain?"; NEW confirms a deliberate repeat; "yes" while a code is pending explains codes.
 4. **Everything else** is a fresh request and drops any pending question.
 
 ## 2. The conversation (per phone number)
@@ -44,10 +44,13 @@ stateDiagram-v2
   Ready --> AwaitingDuplicate: same payment already waiting or just sent
   AwaitingNumber --> Ready: number / confirm, saved as contact
   AwaitingChoice --> Ready: 1–5 or a number / confirm
+  Ready --> AwaitingChain: withdraw to an address several chains take
   AwaitingDuplicate --> Ready: NEW / second payment
+  AwaitingChain --> Ready: chain name / confirm withdrawal
   AwaitingNumber --> Ready: anything else / handled as new request
   AwaitingChoice --> Ready: anything else / handled as new request
   AwaitingDuplicate --> Ready: anything else / handled as new request
+  AwaitingChain --> Ready: anything else / handled as new request
   Ready --> OptedOut: STOP
   Stranger --> OptedOut: STOP
   AwaitingName --> OptedOut: STOP
@@ -93,6 +96,10 @@ Every arrow is a conditional UPDATE, so a payment moves at most once even if two
 | Balance dropped between asking and approving | "You only have $X now… nothing moved" | Re-checked at approval |
 | Slow chain | "Sending…" immediately, receipt after | Acknowledge first |
 | STOP / UNSUBSCRIBE / CANCEL / END / QUIT | Unsubscribed, one confirmation, then silence until START | Carrier compliance |
+| CANCEL while a payment waits on their code | Unsubscribed, and their unapproved payments are cancelled; the confirmation adds "Your pending payment won't go through." | CANCEL is an opt-out word that may also mean "cancel that"; never leave a payment they think is cancelled |
+| First text from a stranger | Welcome names the program (Dial operator by Dial.Work), says message frequency varies, "Msg & data rates may apply", "Reply HELP for help, STOP to opt out" and links /terms, then asks for a name. Fits two segments; if a long name pushes it over, the disclosure leads on its own line | Carrier (A2P 10DLC) first-contact rules |
+| HELP | Two texts: program name, what it does, "Help: <app>/how-it-works", "Msg & data rates may apply. Reply STOP to cancel."; then the command list | Carrier HELP rules, and a real answer to "what can I text?" |
+| Signup finishes | "You're in…" ends with "Text HELP anytime." | Point at the way out of any dead end |
 | Recipient opted out | Never texted; sender told the money waits 7 days | Respect opt-out, keep sender informed |
 | Unknown name | "What's their number?", saved as a contact | Ask, then remember |
 | Name matches several people | Numbered list, reply 1–5 or a number | Never guess between people |
@@ -102,6 +109,10 @@ Every arrow is a conditional UPDATE, so a payment moves at most once even if two
 | $0 or above the cap | Range explained | Clear limits |
 | Command before giving a name | "First, your name" | Account first |
 | Request or payment to someone not on Dial | Escrow / request waits; offered again with a fresh code after they join, after their welcome | Nothing gets stuck or lost |
+| Text to someone who never texted the operator (money waiting, request, invoice) | No code (they can't use one yet): a request or invoice says "Reply HI to see it". Every such text ends "Dial operator: msg & data rates may apply. Reply STOP to opt out." | Don't show what they can't use; carrier rules for unsolicited first contact |
+| Not enough money to send or withdraw | Balance, then "Add more:" with their pay page (it lists deposit options); on a testnet Circle's faucet covers, "Free test USDC: faucet.circle.com" | Say where to get more, not just that it's short |
+| Withdraw to an address without a chain, and the default chain doesn't take it (0x address on a Solana account) | The only enabled chain that takes it is used; if several do, "Which chain: ethereum, robinhood, tempo?" and the chain name answers it. None: "doesn't look like a Solana address" | Infer what's obvious, ask what isn't |
+| "withdraw all" with $0 on that chain | Checks every enabled chain: "Your Solana balance is $0. You have $5 on Tempo. To move it, text "withdraw all to <address> on tempo"." Nothing anywhere: "Your balance is $0." | Money on another chain isn't "nothing" |
 | Any name format ("J. P. Meyer, crypto anarchist") | Becomes "J. P. Meyer", @jpmeyer | Accept people as they type |
 | Free-form chat | Language model replies with the last few lines as context | Conversational, never invents balances |
 | "Did it work?", "status", "any update?", "??" | The latest payment in one text: sent with receipt, sending, escrowed until a date, expired, cancelled, or waiting. If it is waiting on them, a fresh code | People ask when a reply goes missing; give the answer and the way forward |
