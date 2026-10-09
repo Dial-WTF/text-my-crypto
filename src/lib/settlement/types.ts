@@ -1,5 +1,5 @@
 import type { Chain } from "@/lib/chains";
-import type { AssetTransfers, Capabilities } from "./capabilities";
+import type { AssetTransfers, Capabilities, TransferLeg } from "./capabilities";
 import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
@@ -41,12 +41,19 @@ export interface SettlementAdapter extends Capabilities {
   /**
    * What became of a transfer that went out without an answer (`settle` threw TransferUnconfirmedError):
    * it landed, it failed, or it can still land. `sentAt` is about when it went out, for chains where a
-   * transfer stops being able to land after a while. Absent: such transfers wait for a person to look.
+   * transfer stops being able to land after a while. `legs` are what the transaction was meant to deliver, for
+   * chains where it can succeed without delivering some of them (see HeldBackError). Absent: such transfers
+   * wait for a person to look.
    */
-  transferOutcome?(txHash: string, at: { sentAt: Date; now: Date }): Promise<TransferOutcome>;
+  transferOutcome?(
+    txHash: string,
+    at: { sentAt: Date; now: Date },
+    legs?: readonly Pick<TransferLeg, "to" | "amount">[],
+  ): Promise<TransferOutcome>;
 }
 
-export type TransferOutcome = { state: "landed"; result: SettleResult } | { state: "failed" } | { state: "pending" };
+/** `heldBack`: indexes into the `legs` asked about that the chain kept from their recipients (see HeldBackError). */
+export type TransferOutcome = { state: "landed"; result: SettleResult; heldBack?: number[] } | { state: "failed" } | { state: "pending" };
 
 /**
  * An escrow program: the money waits in a vault keyed by the intent id. The operator's attestor key can
@@ -99,6 +106,22 @@ export class EscrowUnconfirmedError extends Error {
   constructor(intentId: string, cause: unknown) {
     super(`Escrow for ${intentId} unconfirmed: ${errorText(cause)}`.slice(0, 300), { cause });
     this.name = "EscrowUnconfirmedError";
+  }
+}
+
+/**
+ * The transaction landed, but the chain kept some of its transfers from their recipients: a Tempo receive or
+ * transfer policy blocked them, and the network holds that money for the sender to reclaim. The other legs
+ * were delivered. `heldBack` holds the indexes of the legs that weren't.
+ */
+export class HeldBackError extends Error {
+  constructor(
+    readonly result: SettleResult,
+    readonly heldBack: number[],
+    recipients: string[],
+  ) {
+    super(`tempo tx ${result.txHash} did not deliver to ${recipients.join(", ")} (blocked by receive policy?)`);
+    this.name = "HeldBackError";
   }
 }
 

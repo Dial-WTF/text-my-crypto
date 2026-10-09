@@ -56,6 +56,12 @@ describe("tempo delivery check", () => {
     expect(deliveredTo([transferLog(alice, bob, 1_000_000n, guard)], expected)).toBe(false);
   });
 
+  it("without a sender, matches any sender but still the token, recipient and amount", () => {
+    const anyone = { token: ALPHA_USD, to: bob, amount: 1_000_000n };
+    expect(deliveredTo([transferLog(guard, bob, 1_000_000n)], anyone)).toBe(true);
+    expect(deliveredTo([transferLog(alice, guard, 1_000_000n)], anyone)).toBe(false);
+  });
+
   it("rejects receipts with no Transfer event", () => {
     expect(deliveredTo([], expected)).toBe(false);
   });

@@ -4,14 +4,17 @@ import { describe, displayName, getUserById, isClaimed } from "@/lib/identity";
 import {
   claimSplitForSettlement,
   createIntent,
+  finishUnconfirmedTransfer,
   isCodeLocked,
   issueSharedCode,
   markEscrowed,
   markFailed,
   markSettled,
+  markTransferUnconfirmed,
   newIntentId,
   newSplitId,
   splitLegs,
+  unconfirmedTransferTx,
 } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import type { SplitCommand } from "@/lib/operator/grammar";
@@ -20,7 +23,8 @@ import { shareList, splitReplies } from "@/lib/operator/split-replies";
 import { hasPasskey } from "@/lib/passkeys";
 import { seal } from "@/lib/secretbox";
 import { type BatchTransfer, chainWith } from "@/lib/settlement/capabilities";
-import { errorText, type SettlementAdapter, type SettleResult } from "@/lib/settlement/types";
+import { errorText, HeldBackError, type SettlementAdapter, type SettleResult, type TransferOutcome } from "@/lib/settlement/types";
+import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureSenderWallet, ensureWallet } from "./accounts";
@@ -235,7 +239,8 @@ export async function prepareSplit(deps: BotDeps, user: User, cmd: SplitCommand)
 
 /**
  * Settles an approved split: claims every leg at once, then pays them all in one transaction on the chain's batch module.
- * All or nothing: if the transaction doesn't land, every leg is marked failed and nothing moved.
+ * All or nothing: if the transaction doesn't land, every leg is marked failed and nothing moved. If it went out with
+ * no answer, every leg waits on it (reconcileSplit). If it landed with some shares held back, only those failed.
  */
 export async function approveSplit(deps: BotDeps, splitId: string): Promise<SettleOutcome> {
   const claimed = await claimSplitForSettlement(deps.db, splitId, deps.now());
@@ -257,8 +262,8 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
     await notify(deps, sender.phone, replies.overDaily(formatUsd(deps.perDayCap)));
     return failAll("Over the daily limit at approval");
   }
-  const shares = sharesText(legs.map((l, i) => ({ amount: l.amount, person: people[i] as User })));
   let result: SettleResult;
+  let heldBack: number[] = [];
   try {
     const adapter = deps.adapters[head.chain];
     if (!adapter?.batch) throw new Error(`No batch settlement on ${head.chain}`);
@@ -277,29 +282,123 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
     });
   } catch (e) {
     const error = errorText(e);
-    await notify(deps, sender.phone, replies.failed());
-    return failAll(error);
+    if (e instanceof TransferUnconfirmedError) {
+      // It went out and may still land: never call it failed, and never send it again (that could pay twice).
+      // Every leg waits on the one transaction until reconcileSplit learns from the chain what became of it.
+      for (const leg of legs) await markTransferUnconfirmed(deps.db, leg.id, e.txHash);
+      await notify(deps, sender.phone, splitReplies.unconfirmed(formatUsd(pays)));
+      return { ok: false, reason: "unconfirmed", error };
+    }
+    if (!(e instanceof HeldBackError)) {
+      await notify(deps, sender.phone, replies.failed());
+      return failAll(error);
+    }
+    // It landed, but the chain kept some shares from their recipients. The rest were paid.
+    ({ result, heldBack } = e);
   }
+  const markNow: FinishLeg = async (leg, end) => {
+    if (end.status === "failed") await markFailed(deps.db, leg.id, end.error);
+    else if (end.status === "escrowed") await markEscrowed(deps.db, leg.id, end, end.escrowExpiresAt);
+    else await markSettled(deps.db, leg.id, end, end.settledAt);
+    return true;
+  };
+  return (await deliverSplit(deps, { sender, head, legs, people: people as User[], result, heldBack }, markNow)).outcome;
+}
 
-  const escrowExpiresAt = new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS);
-  const chain = chainLabel(head.chain);
-  const waiting: string[] = [];
+type LegEnd =
+  | { status: "settled"; txHash: string; explorerUrl: string | null; settledAt: Date }
+  | { status: "escrowed"; txHash: string; explorerUrl: string | null; escrowExpiresAt: Date }
+  | { status: "failed"; error: string };
+/** Records how one leg ended. False when it was already finished elsewhere, so nobody hears about it twice. */
+type FinishLeg = (leg: Intent, end: LegEnd) => Promise<boolean>;
+
+/**
+ * A split's transaction landed: each leg is settled (or escrowed, for someone not on Dial yet) unless the chain
+ * held it back, which fails that leg alone. Every leg is recorded before anyone is texted, stopping at the first
+ * one another run already finished (that run owns the split). Then every recipient paid hears about it, and the
+ * sender gets one receipt saying which shares arrived and which didn't.
+ */
+async function deliverSplit(
+  deps: BotDeps,
+  split: { sender: User; head: Intent; legs: Intent[]; people: User[]; result: SettleResult; heldBack: number[] },
+  finish: FinishLeg,
+): Promise<{ outcome: SettleOutcome; delivered: number; held: number }> {
+  const { sender, head, legs, people, result, heldBack } = split;
+  const now = deps.now();
+  const escrowExpiresAt = new Date(now.getTime() + deps.escrowTtlDays * DAY_MS);
+  const ended: Array<{ leg: Intent; person: User; end: LegEnd }> = [];
   for (const [i, leg] of legs.entries()) {
-    const person = people[i] as User;
+    const end: LegEnd = heldBack.includes(i)
+      ? { status: "failed", error: `Held back by a transfer policy in ${result.txHash}` }
+      : leg.escrowSecretEnc
+        ? { status: "escrowed", ...result, escrowExpiresAt }
+        : { status: "settled", ...result, settledAt: now };
+    if (!(await finish(leg, end))) break;
+    ended.push({ leg, person: people[i] as User, end });
+  }
+  const chain = chainLabel(head.chain);
+  const delivered: Array<{ amount: bigint; person: User }> = [];
+  const held: Array<{ amount: bigint; person: User }> = [];
+  const waiting: string[] = [];
+  for (const { leg, person, end } of ended) {
     const amount = formatUsd(leg.amount);
-    if (leg.escrowSecretEnc) {
-      await markEscrowed(deps.db, leg.id, result, escrowExpiresAt);
+    if (end.status === "failed") {
+      held.push({ amount: leg.amount, person });
+    } else if (end.status === "escrowed") {
+      delivered.push({ amount: leg.amount, person });
       waiting.push(shortName(person));
       if (!(await isOptedOut(deps.db, person.phone))) {
         await notify(deps, person.phone, replies.receivedUnclaimed(amount, displayName(sender), leg.note, `${deps.appUrl}/a/${leg.id}`));
       }
-      continue;
+    } else {
+      delivered.push({ amount: leg.amount, person });
+      await notify(deps, person.phone, replies.received(displayName(person), amount, displayName(sender), chain, leg.note, receiptUrl(deps, leg, result)));
     }
-    await markSettled(deps.db, leg.id, result, deps.now());
-    await notify(deps, person.phone, replies.received(displayName(person), amount, displayName(sender), chain, leg.note, receiptUrl(deps, leg, result)));
   }
-  await notify(deps, sender.phone, splitReplies.sent(shares, chain, receiptUrl(deps, head, result), waiting, deps.escrowTtlDays));
-  return { ok: true, status: waiting.length === legs.length ? "escrowed" : "settled", ...result };
+  const counts = { delivered: delivered.length, held: held.length };
+  if (ended.length === 0) return { outcome: { ok: false, reason: "not_claimable" }, ...counts };
+  const receipt = receiptUrl(deps, head, result);
+  await notify(
+    deps,
+    sender.phone,
+    held.length
+      ? splitReplies.partlySent(delivered.length ? sharesText(delivered) : null, sharesText(held), chain, receipt, waiting, deps.escrowTtlDays)
+      : splitReplies.sent(sharesText(delivered), chain, receipt, waiting, deps.escrowTtlDays),
+  );
+  if (delivered.length === 0) return { outcome: { ok: false, reason: "failed", error: "Every share was held back" }, ...counts };
+  return { outcome: { ok: true, status: waiting.length === delivered.length ? "escrowed" : "settled", ...result }, ...counts };
+}
+
+/**
+ * A split whose one transaction (`txHash`) went out without an answer (approveSplit); `head` is one of its legs. `ask` gets the chain's
+ * word on it for the legs still waiting. Landed: they settle at once, as if it had confirmed straight away, and
+ * the sender gets one receipt. Can't land any more: they fail, and the sender hears once. Otherwise they wait
+ * for the next run. From reconcileTransfers.
+ */
+export async function reconcileSplit(
+  deps: BotDeps,
+  head: Intent & { splitId: string },
+  txHash: string,
+  ask: (legs: Array<{ to: string; amount: bigint }>) => Promise<TransferOutcome | null>,
+): Promise<{ settled: number; failed: number }> {
+  const done = { settled: 0, failed: 0 };
+  const legs = (await splitLegs(deps.db, head.splitId)).filter((l) => unconfirmedTransferTx(l) === txHash);
+  const outcome = await ask(legs.map((l) => ({ to: l.recipientAddress, amount: l.amount })));
+  if (!outcome || outcome.state === "pending") return done;
+  const [sender, ...people] = await Promise.all([head.senderId, ...legs.map((l) => l.recipientId)].map((id) => getUserById(deps.db, id)));
+  if (!sender || people.some((p) => !p)) return done;
+  const finish: FinishLeg = (leg, end) => finishUnconfirmedTransfer(deps.db, leg, end);
+  if (outcome.state === "failed") {
+    for (const leg of legs) {
+      if (!(await finish(leg, { status: "failed", error: `Transaction ${txHash} did not land` }))) break;
+      done.failed++;
+    }
+    if (done.failed > 0) await notify(deps, sender.phone, replies.failed());
+    return done;
+  }
+  const split = { sender, head, legs, people: people as User[], result: outcome.result, heldBack: outcome.heldBack ?? [] };
+  const r = await deliverSplit(deps, split, finish);
+  return { settled: r.delivered, failed: r.held };
 }
 
 /**

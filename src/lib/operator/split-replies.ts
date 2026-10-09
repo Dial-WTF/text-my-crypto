@@ -16,6 +16,9 @@ export function shareList(shares: Array<{ name: string; amount: string }>): stri
   return shares.map((s) => `${s.name} ${s.amount}`).join(", ");
 }
 
+const waitingText = (waiting: string[], days: number) =>
+  waiting.length ? ` ${waiting.join(", ")} ${waiting.length === 1 ? "has" : "have"} ${days} days to claim.` : "";
+
 export const splitReplies = {
   /** `named` is the chain they asked for; `batches` a chain that can carry a split, `word` what to type for it. */
   needsBatch: (named: string, batches: string, word: string) =>
@@ -41,9 +44,17 @@ export const splitReplies = {
     `Split ${total}${forNote(note)} ${ways} ways on ${chain}: ${shares}${mine ? `, and ${mine} is your share` : ""}. ${approveWith(code, link)}`,
   /** `waiting` names people not on Dial yet, who have `days` to claim their share. */
   sent: (shares: string, chain: string, explorerUrl: string, waiting: string[], days: number) =>
-    `Split sent on ${chain} in one transaction: ${shares}.` +
-    (waiting.length ? ` ${waiting.join(", ")} ${waiting.length === 1 ? "has" : "have"} ${days} days to claim.` : "") +
+    `Split sent on ${chain} in one transaction: ${shares}.${waitingText(waiting, days)} Receipt: ${explorerUrl}`,
+  /**
+   * The transaction landed but the chain held some shares back (a receive or transfer policy): `held` lists
+   * them, `shares` what did arrive (null for none).
+   */
+  partlySent: (shares: string | null, held: string, chain: string, explorerUrl: string, waiting: string[], days: number) =>
+    (shares ? `Split sent on ${chain} in one transaction: ${shares}.${waitingText(waiting, days)}` : `None of your split arrived.`) +
+    ` ${chain} held back ${held}: the receiving wallet doesn't accept the transfer, so the network is holding that money and it's marked not sent.` +
     ` Receipt: ${explorerUrl}`,
+  unconfirmed: (total: string) =>
+    `Your ${total} split is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.`,
   statusWaitingOnYou: (total: string, shares: string, code: string | null, link: string) =>
     code
       ? `Still waiting on you: your ${total} split, ${shares}. New code: reply ${code} to confirm, or "nevermind" to cancel.`

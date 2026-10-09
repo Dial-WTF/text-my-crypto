@@ -39,6 +39,7 @@ import {
   type EscrowProgram,
   EscrowUnconfirmedError,
   errorText,
+  HeldBackError,
   moverFor,
   type SettlementAdapter,
   type SettleResult,
@@ -50,7 +51,7 @@ import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { balanceLines, ensureWallet } from "./accounts";
 import { overDailyCapAtApproval } from "./money";
-import { approveSplit } from "./split";
+import { approveSplit, reconcileSplit } from "./split";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
 
@@ -169,6 +170,12 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
       if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), who));
       return { ok: false, reason: "unconfirmed", error };
     }
+    if (e instanceof HeldBackError) {
+      // It landed, but the chain kept it from them (a receive or transfer policy): not paid, and not "nothing moved".
+      await markFailed(deps.db, intent.id, error);
+      await notify(deps, sender.phone, replies.heldBack(formatAmount(intent, deps.network), describe(recipient), chainLabel(intent.chain)));
+      return { ok: false, reason: "failed", error };
+    }
     if (e instanceof SettlementUnknownError) {
       // The money may have moved: never call it failed. resumeUnknownSettlements asks again with the
       // same arguments, which the adapter's idempotent sends turn into the same transaction.
@@ -220,25 +227,42 @@ async function announceSettled(deps: BotDeps, intent: Intent, sender: User, reci
 /**
  * Transfers that went out without an answer (see execute): asks the chain about each one's transaction.
  * Landed: settled (or escrowed, for a server-held escrow) and both people hear, as if it had confirmed at once.
- * Can't land any more: failed, and the sender hears. Otherwise it waits for the next run. Runs every minute.
+ * Can't land any more, or landed but held back from the recipient: failed, and the sender hears. Otherwise
+ * it waits for the next run. A split's legs share one transaction and are finished together (reconcileSplit).
+ * Runs every minute.
  */
 export async function reconcileTransfers(deps: BotDeps): Promise<{ settled: number; failed: number }> {
   const done = { settled: 0, failed: 0 };
+  const splits = new Set<string>();
   for (const intent of await unconfirmedTransfers(deps.db)) {
     const txHash = unconfirmedTransferTx(intent);
     const adapter = deps.adapters[intent.chain];
-    if (!txHash || !adapter?.transferOutcome) continue;
+    const outcomeOf = adapter?.transferOutcome?.bind(adapter);
+    if (!txHash || !outcomeOf || (intent.splitId && splits.has(intent.splitId))) continue;
     const now = deps.now();
-    const outcome = await adapter.transferOutcome(txHash, { sentAt: intent.approvedAt ?? intent.createdAt, now }).catch((e: unknown) => {
-      console.error("transfer lookup failed", intent.id, errorText(e));
-      return null;
-    });
+    const at = { sentAt: intent.approvedAt ?? intent.createdAt, now };
+    const ask = (legs: Array<{ to: string; amount: bigint }>) =>
+      outcomeOf(txHash, at, legs).catch((e: unknown) => {
+        console.error("transfer lookup failed", intent.id, errorText(e));
+        return null;
+      });
+    if (intent.splitId) {
+      splits.add(intent.splitId);
+      const r = await reconcileSplit(deps, { ...intent, splitId: intent.splitId }, txHash, ask);
+      done.settled += r.settled;
+      done.failed += r.failed;
+      continue;
+    }
+    const outcome = await ask([{ to: intent.recipientAddress, amount: intent.amount }]);
     if (!outcome || outcome.state === "pending") continue;
     const [sender, recipient] = await Promise.all([getUserById(deps.db, intent.senderId), getUserById(deps.db, intent.recipientId)]);
     if (!sender || !recipient) continue;
-    if (outcome.state === "failed") {
-      if (await finishUnconfirmedTransfer(deps.db, intent, { status: "failed", error: `Transaction ${txHash} did not land` })) {
-        await notify(deps, sender.phone, replies.failed());
+    if (outcome.state === "failed" || outcome.heldBack?.length) {
+      const heldBack = outcome.state === "landed";
+      const error = heldBack ? `Held back by a transfer policy in ${txHash}` : `Transaction ${txHash} did not land`;
+      if (await finishUnconfirmedTransfer(deps.db, intent, { status: "failed", error })) {
+        const amount = formatAmount(intent, deps.network);
+        await notify(deps, sender.phone, heldBack ? replies.heldBack(amount, describe(recipient), chainLabel(intent.chain)) : replies.failed());
         done.failed++;
       }
       continue;
