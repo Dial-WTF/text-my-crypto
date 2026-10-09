@@ -137,10 +137,44 @@ export default function HowItWorksPage() {
             when you approve with a code or your passkey. That&apos;s what lets it work on any phone without a seed
             phrase.
           </p>
-          <h3>Can I take my money out?</h3>
+          <h3 id="got-paid">I just got paid. Now what?</h3>
           <p>
-            Any time. Text <code>withdraw all to &lt;address&gt; on &lt;chain&gt;</code>, or a dollar amount instead of
-            &ldquo;all&rdquo;. You approve it like any other payment.
+            Nothing to set up: the money is already in your Dial wallet, which came with your @handle. From the same
+            text thread you can:
+          </p>
+          <ul>
+            <li>
+              see what you have: <code>balance</code>
+            </li>
+            <li>
+              pay a friend: <code>send @friend $1</code>, or <code>send $1 to +1 555 123 4567</code> for someone not on
+              Dial yet
+            </li>
+            <li>
+              open your dashboard on the web: <code>wallet</code> (you get a one-time link and a code)
+            </li>
+            <li>
+              share your pay link so people can pay you: <code>receive</code>
+            </li>
+          </ul>
+          <h3 id="cash-out">Can I take my money out?</h3>
+          <p>Any time, to a wallet you own. Three steps:</p>
+          <ol>
+            <li>
+              Get an address from a wallet app. For Solana that&apos;s an app like Phantom or Solflare (the address
+              looks like <code>7xKX…gAsU</code>). For Ethereum, Base, Arbitrum and the other EVM chains it&apos;s an
+              app like MetaMask or Coinbase Wallet (the address starts with <code>0x</code>).
+            </li>
+            <li>
+              Text <code>withdraw all to &lt;your address&gt;</code>, or an amount like{" "}
+              <code>withdraw $5 to &lt;your address&gt;</code>. For an <code>0x</code> address add the chain, like{" "}
+              <code>on base</code>. ENS names and Basenames work too: <code>withdraw $5 to yourname.eth</code>.
+            </li>
+            <li>Reply with the code the operator texts you. The receipt links the transaction on-chain.</li>
+          </ol>
+          <p>
+            Dial runs on test networks today, so the money is test USDC. To see it in your wallet app, switch the app
+            to the matching test network (Solana devnet, Base Sepolia and so on).
           </p>
           <h3>Which chains does it settle on?</h3>
           {networks.length ? (

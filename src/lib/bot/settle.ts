@@ -4,6 +4,7 @@ import { describe, displayName, getUserById, isClaimed } from "@/lib/identity";
 import {
   claimEscrowForRefund,
   claimEscrowForRelease,
+  claimedCount,
   claimForSettlement,
   claimUnknownForRetry,
   declineIntent,
@@ -47,7 +48,7 @@ import type { VenueTransfer } from "@/lib/settlement/capabilities";
 import { formatAmount, formatTotals, stockForToken } from "@/lib/stocks";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
-import { ensureWallet } from "./accounts";
+import { balanceLines, ensureWallet } from "./accounts";
 import { overDailyCapAtApproval } from "./money";
 import { approveSplit } from "./split";
 import { notify } from "./text";
@@ -346,6 +347,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
     const amount = formatAmount(intent, deps.network);
     await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
+    await tourAfterFirstClaim(deps, recipient);
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
   } catch (e) {
@@ -394,7 +396,21 @@ async function recordLateClaim(deps: BotDeps, intent: Intent, result: SettleResu
   if (!sender || !recipient) return;
   const amount = formatAmount(intent, deps.network);
   await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
+  await tourAfterFirstClaim(deps, recipient);
   await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
+}
+
+/**
+ * Someone's first claim is often their first time holding crypto: tell them what the wallet holds, that
+ * paying anyone is a text, how to cash out and where the dashboard is. Once, and never at the cost of the claim.
+ */
+async function tourAfterFirstClaim(deps: BotDeps, recipient: User): Promise<void> {
+  try {
+    if ((await claimedCount(deps.db, recipient.id)) !== 1) return;
+    await notify(deps, recipient.phone, replies.firstClaimTour(await balanceLines(deps, recipient, { quiet: true }), deps.appUrl));
+  } catch (e) {
+    console.error("claim tour failed", errorText(e));
+  }
 }
 
 /**

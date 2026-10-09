@@ -29,7 +29,6 @@ import {
   matchCode,
   matchesExpiredCode,
 } from "@/lib/intents";
-import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName } from "@/lib/names";
 import { formatAmount } from "@/lib/stocks";
 import { interpret } from "@/lib/operator/brain";
@@ -39,7 +38,7 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { isBurstRepeat, lastOutbound, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
-import { completeSignup, enabledChains, expiredClaimReply, offerWaiting, retryEscrowClaims } from "./accounts";
+import { balanceLines, completeSignup, enabledChains, expiredClaimReply, offerWaiting, retryEscrowClaims } from "./accounts";
 import { connectAgentReply, revokeAgentsReply } from "./agents";
 import { endSessionsForUser } from "@/lib/web/sessions";
 import { walletLinkReply } from "./web";
@@ -228,6 +227,8 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await receiveReply(deps, user));
     case "reclaim":
       return reply(await reclaimExpired(deps, user.id));
+    case "withdraw_help":
+      return reply(replies.withdrawHowTo(deps.appUrl));
     case "decline":
       return reply(await declineLatest(deps, user.id));
     case "directory": {
@@ -340,14 +341,7 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
 }
 
 async function balanceReply(deps: BotDeps, user: User): Promise<string> {
-  const lines: string[] = [];
-  for (const [chain, adapter] of enabledChains(deps)) {
-    const w = await getWallet(deps.db, user.id, chain);
-    if (w) {
-      const amount = money(await adapter.getBalance(w.address), chain, deps.network);
-      lines.push(`${namesItsCoin(amount) ? amount : `${amount} USDC`} on ${chainLabel(chain)}`);
-    }
-  }
+  const lines = await balanceLines(deps, user);
   return lines.length ? replies.balance(lines) : replies.chainUnavailable(chainLabel(user.defaultChain));
 }
 
