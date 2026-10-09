@@ -64,6 +64,7 @@ export default async function WalletPage() {
             from: a.direction === "in" ? a.other : "you",
             to: a.direction === "in" ? "you" : a.other,
             amount: a.amount,
+            stock: a.stock,
             network: a.network,
             state: stateLabel(a.status, a.expiresAt, now),
             txHash: a.txHash,

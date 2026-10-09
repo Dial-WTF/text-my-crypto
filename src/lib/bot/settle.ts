@@ -8,6 +8,7 @@ import {
   claimUnknownForRetry,
   declineIntent,
   expiredEscrowsFrom,
+  finishUnconfirmedTransfer,
   getIntent,
   latestPendingRequestFor,
   markEscrowed,
@@ -16,14 +17,18 @@ import {
   markOutcomeUnknown,
   markReleased,
   markSettled,
+  markTransferUnconfirmed,
   revertToEscrowed,
   settleUnconfirmed,
   unconfirmedEscrowFunding,
+  unconfirmedTransfers,
+  unconfirmedTransferTx,
   unknownSettlements,
 } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
+import { stockReplies } from "@/lib/operator/stock-replies";
 import { withdrawTarget } from "@/lib/payment-labels";
 import { open } from "@/lib/secretbox";
 import {
@@ -32,12 +37,15 @@ import {
   type EscrowProgram,
   EscrowUnconfirmedError,
   errorText,
+  moverFor,
   type SettleResult,
 } from "@/lib/settlement/types";
-import { SettlementUnknownError } from "@/lib/settlement/unconfirmed";
+import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import { formatAmount, formatTotals, stockForToken } from "@/lib/stocks";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
+import { overDailyCapAtApproval } from "./money";
 import { approveSplit } from "./split";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -92,6 +100,12 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     await markFailed(deps.db, intent.id, "Missing sender or recipient");
     return { ok: false, reason: "failed", error: "Missing sender or recipient" };
   }
+  if (!resume && (await overDailyCapAtApproval(deps, intent.senderId))) {
+    const error = "Over the daily limit at approval";
+    await markFailed(deps.db, intent.id, error);
+    await notify(deps, sender.phone, replies.overDaily(formatUsd(deps.perDayCap)));
+    return { ok: false, reason: "failed", error };
+  }
 
   let result: { txHash: string; explorerUrl: string };
   const escrowExpiresAt = new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS);
@@ -100,13 +114,15 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
     const wallet = await getWallet(deps.db, intent.senderId, intent.chain);
     if (!wallet) throw new Error("Missing sender wallet");
+    // The stablecoin, or the stock token this payment moves. Carried fees are the stablecoin's only.
+    const mover = moverFor(adapter, intent.token);
     const goesTo = intent.kind === "withdraw" || intent.escrowProgram ? "outside" : intent.escrowSecretEnc ? "escrow" : "dial";
-    const fees = adapter.carriedFees?.(goesTo) ?? 0n;
-    const balance = resume ? intent.amount + fees : await adapter.getBalance(wallet.address);
+    const fees = mover === adapter ? (adapter.carriedFees?.(goesTo) ?? 0n) : 0n;
+    const balance = resume ? intent.amount + fees : await mover.getBalance(wallet.address);
     if (balance < intent.amount + fees) {
       const error = balance < intent.amount ? "Insufficient balance at approval" : "Not enough for the network fees at approval";
       await markFailed(deps.db, intent.id, error);
-      const have = money(balance, intent.chain, deps.network);
+      const have = formatAmount({ ...intent, amount: balance }, deps.network);
       await notify(
         deps,
         sender.phone,
@@ -118,12 +134,12 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     }
     const target = intent.kind === "withdraw" ? withdrawTarget(intent) : describe(recipient);
     if (!resume) {
-      await notify(deps, sender.phone, replies.sending(money(intent.amount, intent.chain, deps.network), target, chainLabel(intent.chain)));
+      await notify(deps, sender.phone, replies.sending(formatAmount(intent, deps.network), target, chainLabel(intent.chain)));
     }
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
     result = intent.escrowProgram
       ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
-      : await adapter.settle({
+      : await mover.settle({
           fromSecret,
           to: intent.recipientAddress,
           amount: intent.amount,
@@ -135,23 +151,27 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     if (e instanceof EscrowUnconfirmedError) {
       // It may still land. Leave it settling; reconcileEscrows settles it from the chain.
       await markFundingUnconfirmed(deps.db, intent.id, error);
-      await notify(deps, sender.phone, replies.sendUnconfirmed(formatUsd(intent.amount), describe(recipient)));
+      await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), describe(recipient)));
+      return { ok: false, reason: "unconfirmed", error };
+    }
+    if (e instanceof TransferUnconfirmedError) {
+      // It went out and may still land: never call it failed, and never send it again (that could pay twice).
+      // reconcileTransfers asks the chain about this transaction until it lands or can't any more.
+      await markTransferUnconfirmed(deps.db, intent.id, e.txHash);
+      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), describe(recipient)));
       return { ok: false, reason: "unconfirmed", error };
     }
     if (e instanceof SettlementUnknownError) {
       // The money may have moved: never call it failed. resumeUnknownSettlements asks again with the
       // same arguments, which the adapter's idempotent sends turn into the same transaction.
       await markOutcomeUnknown(deps.db, intent.id, error);
-      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(money(intent.amount, intent.chain, deps.network), describe(recipient)));
+      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), describe(recipient)));
       return { ok: false, reason: "unconfirmed", error };
     }
     await markFailed(deps.db, intent.id, error);
     await notify(deps, sender.phone, replies.failed());
     return { ok: false, reason: "failed", error };
   }
-
-  const amount = money(intent.amount, intent.chain, deps.network);
-  const chain = intent.private ? `${chainLabel(intent.chain)} (shielded)` : chainLabel(intent.chain);
 
   if (intent.escrowSecretEnc || intent.escrowProgram) {
     await markEscrowed(deps.db, intent.id, result, escrowExpiresAt);
@@ -160,9 +180,17 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   }
 
   await markSettled(deps.db, intent.id, result, deps.now());
+  await announceSettled(deps, intent, sender, recipient, result);
+  return { ok: true, status: "settled", ...result };
+}
+
+/** The money arrived: the receipt for the sender and, for a send or a paid request, the other person. */
+async function announceSettled(deps: BotDeps, intent: Intent, sender: User, recipient: User, result: SettleResult): Promise<void> {
+  const amount = formatAmount(intent, deps.network);
+  const chain = intent.private ? `${chainLabel(intent.chain)} (shielded)` : chainLabel(intent.chain);
   if (intent.kind === "withdraw") {
     await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), result.explorerUrl));
-    return { ok: true, status: "settled", ...result };
+    return;
   }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
   if (intent.kind === "send") {
@@ -174,17 +202,57 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   } else {
     await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, result.explorerUrl));
   }
-  return { ok: true, status: "settled", ...result };
+}
+
+/**
+ * Transfers that went out without an answer (see execute): asks the chain about each one's transaction.
+ * Landed: settled (or escrowed, for a server-held escrow) and both people hear, as if it had confirmed at once.
+ * Can't land any more: failed, and the sender hears. Otherwise it waits for the next run. Runs every minute.
+ */
+export async function reconcileTransfers(deps: BotDeps): Promise<{ settled: number; failed: number }> {
+  const done = { settled: 0, failed: 0 };
+  for (const intent of await unconfirmedTransfers(deps.db)) {
+    const txHash = unconfirmedTransferTx(intent);
+    const adapter = deps.adapters[intent.chain];
+    if (!txHash || !adapter?.transferOutcome) continue;
+    const now = deps.now();
+    const outcome = await adapter.transferOutcome(txHash, { sentAt: intent.approvedAt ?? intent.createdAt, now }).catch((e: unknown) => {
+      console.error("transfer lookup failed", intent.id, errorText(e));
+      return null;
+    });
+    if (!outcome || outcome.state === "pending") continue;
+    const [sender, recipient] = await Promise.all([getUserById(deps.db, intent.senderId), getUserById(deps.db, intent.recipientId)]);
+    if (!sender || !recipient) continue;
+    if (outcome.state === "failed") {
+      if (await finishUnconfirmedTransfer(deps.db, intent, { status: "failed", error: `Transaction ${txHash} did not land` })) {
+        await notify(deps, sender.phone, replies.failed());
+        done.failed++;
+      }
+      continue;
+    }
+    const { result } = outcome;
+    if (intent.escrowSecretEnc) {
+      const escrowExpiresAt = new Date(now.getTime() + deps.escrowTtlDays * DAY_MS);
+      if (!(await finishUnconfirmedTransfer(deps.db, intent, { status: "escrowed", ...result, escrowExpiresAt }))) continue;
+      await announceEscrowed(deps, intent, sender, recipient);
+    } else {
+      if (!(await finishUnconfirmedTransfer(deps.db, intent, { status: "settled", ...result, settledAt: now }))) continue;
+      await announceSettled(deps, intent, sender, recipient, result);
+    }
+    done.settled++;
+  }
+  return done;
 }
 
 /** The money is in escrow: the sender hears how long the recipient has, the recipient how to claim it. */
 async function announceEscrowed(deps: BotDeps, intent: Intent, sender: User, recipient: User): Promise<void> {
-  const amount = formatUsd(intent.amount);
+  const amount = formatAmount(intent, deps.network);
   await notify(deps, sender.phone, replies.sentToEscrow(amount, displayName(recipient), deps.escrowTtlDays));
   if (await isOptedOut(deps.db, recipient.phone)) {
     await notify(deps, sender.phone, replies.recipientOptedOut(displayName(recipient), deps.escrowTtlDays));
   } else {
-    await notify(deps, recipient.phone, replies.receivedUnclaimed(amount, displayName(sender), intent.note, `${deps.appUrl}/a/${intent.id}`));
+    const unclaimed = stockForToken(intent.chain, intent.token) ? stockReplies.receivedUnclaimed : replies.receivedUnclaimed;
+    await notify(deps, recipient.phone, unclaimed(amount, displayName(sender), intent.note, `${deps.appUrl}/a/${intent.id}`));
   }
 }
 
@@ -216,7 +284,7 @@ async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "send
   }
   if (!intent.escrowSecretEnc) throw new Error("Intent has no escrow");
   const wallet = await ensureWallet(deps, toUserId, intent.chain, adapter);
-  return adapter.settle({
+  return moverFor(adapter, intent.token).settle({
     fromSecret: await open(intent.escrowSecretEnc, deps.walletKey),
     to: wallet.address,
     amount: intent.amount,
@@ -244,7 +312,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
   try {
     const result = await moveEscrow(deps, intent, "recipient");
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
-    const amount = money(intent.amount, intent.chain, deps.network);
+    const amount = formatAmount(intent, deps.network);
     await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
@@ -253,7 +321,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     if (e instanceof EscrowClosedError && e.outcome === "refunded") {
       // Someone already sent the refund (anyone can, after expiry): record it and tell the sender.
       await markReleased(deps.db, intent.id, "refunded", e.result, deps.now());
-      await notify(deps, sender.phone, replies.refunded(formatUsd(intent.amount), 1));
+      await notify(deps, sender.phone, replies.refunded(formatAmount(intent, deps.network), 1));
       return { ok: false, reason: "expired", error };
     }
     await revertToEscrowed(deps.db, intent.id, error);
@@ -265,16 +333,14 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
 export async function reclaimExpired(deps: BotDeps, senderId: string): Promise<string> {
   const cutoff = new Date(deps.now().getTime() - RECLAIM_MARGIN_MS);
   const expired = await expiredEscrowsFrom(deps.db, senderId, cutoff);
-  let total = 0n;
-  let count = 0;
+  const refunded: Intent[] = [];
   for (const candidate of expired) {
     const intent = await claimEscrowForRefund(deps.db, candidate.id, cutoff);
     if (!intent) continue;
     try {
       const result = await moveEscrow(deps, intent, "sender");
       await markReleased(deps.db, intent.id, "refunded", result, deps.now());
-      total += intent.amount;
-      count++;
+      refunded.push(intent);
     } catch (e) {
       if (e instanceof EscrowClosedError && e.outcome === "claimed") {
         // A claim we lost track of (it landed after we stopped waiting): it was paid, so say so.
@@ -284,7 +350,9 @@ export async function reclaimExpired(deps: BotDeps, senderId: string): Promise<s
       await revertToEscrowed(deps.db, intent.id, errorText(e));
     }
   }
-  return count > 0 ? replies.refunded(formatUsd(total), count) : replies.nothingToReclaim(deps.escrowTtlDays);
+  return refunded.length > 0
+    ? replies.refunded(formatTotals(refunded, deps.network), refunded.length)
+    : replies.nothingToReclaim(deps.escrowTtlDays);
 }
 
 /** An escrow turned out to be claimed after all: mark it paid and tell both people. */
@@ -292,7 +360,7 @@ async function recordLateClaim(deps: BotDeps, intent: Intent, result: SettleResu
   await markReleased(deps.db, intent.id, "settled", result, deps.now());
   const [sender, recipient] = await Promise.all([getUserById(deps.db, intent.senderId), getUserById(deps.db, intent.recipientId)]);
   if (!sender || !recipient) return;
-  const amount = formatUsd(intent.amount);
+  const amount = formatAmount(intent, deps.network);
   await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
   await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
 }
@@ -353,7 +421,7 @@ export async function declineLatest(deps: BotDeps, payerId: string): Promise<str
     getUserById(deps.db, intent.recipientId),
   ]);
   if (payer && requester) {
-    await notify(deps, requester.phone, replies.requestDeclined(displayName(payer), money(intent.amount, intent.chain, deps.network)));
+    await notify(deps, requester.phone, replies.requestDeclined(displayName(payer), formatAmount(intent, deps.network)));
   }
   return replies.declined();
 }

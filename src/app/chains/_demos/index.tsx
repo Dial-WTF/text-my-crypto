@@ -1,5 +1,6 @@
 import type { FeatureId } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
+import { stocksOn } from "@/lib/stocks";
 import { errorText } from "@/lib/settlement/types";
 import { Fine } from "@/ui/primitives/Fine/Fine";
 import { Mono } from "@/ui/primitives/Mono/Mono";
@@ -52,11 +53,15 @@ const VenueDemo: Demo = async ({ network, adapter }) => {
   );
 };
 
-/** assets: what the module lists, each linked to its contract. */
+/**
+ * assets: what the module lists, each linked to its contract. Without a running adapter (no secrets), the
+ * registry's stock list, which is what the module is built from.
+ */
 const AssetsDemo: Demo = ({ chain, network, adapter }) => {
-  const assets = adapter?.assets?.list() ?? [];
+  const assets = adapter?.assets?.list() ?? stocksOn(chain, network);
   const entry = REGISTRY[chain][network];
   if (!entry || assets.length === 0) return null;
+  const [first] = assets;
   return (
     <Receipt title="Assets you can send">
       {assets.map((a) => (
@@ -64,6 +69,11 @@ const AssetsDemo: Demo = ({ chain, network, adapter }) => {
           <Mono value={a.address} href={liveExplorer(entry.explorerAddress(a.address))} />
         </ReceiptLine>
       ))}
+      <ReceiptRule />
+      <Fine>
+        Text &ldquo;send @alex 0.1 {first?.symbol}&rdquo; to gift shares, or &ldquo;stocks&rdquo; to see yours. By share count
+        only: there is no price for these on testnet.
+      </Fine>
     </Receipt>
   );
 };

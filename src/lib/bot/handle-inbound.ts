@@ -31,6 +31,7 @@ import {
 } from "@/lib/intents";
 import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName } from "@/lib/names";
+import { formatAmount } from "@/lib/stocks";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
 import { ChainDownError } from "@/lib/settlement/types";
@@ -48,6 +49,7 @@ import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchem
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { prepareSplit } from "./split";
 import { latestRecent, needsMention, statusReply } from "./status";
+import { stockPricedReply, stocksReply } from "./stocks";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -238,8 +240,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     }
     case "whoami":
       return reply(replies.whoami(displayName(user), user.handle ?? ""));
-    case "upgrade":
-      return reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+    case "upgrade": {
+      const { token, code } = await createSignupToken(deps.db, user.phone, deps.now());
+      return reply(replies.upgrade(`${deps.appUrl}/s/${token}`, code));
+    }
     case "connect_agent":
       return reply(await connectAgentReply(deps, user, cmd.label));
     case "revoke_agents":
@@ -254,6 +258,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await prepareWithdraw(deps, user, cmd));
     case "split":
       return reply(await prepareSplit(deps, user, cmd));
+    case "stocks":
+      return reply(await stocksReply(deps, user));
+    case "stock_priced":
+      return reply(stockPricedReply(deps, cmd.symbol));
   }
 }
 
@@ -276,7 +284,8 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
     const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
     const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(money(waiting.amount, waiting.chain, deps.network), displayName(sender), deps.appUrl);
+    // formatAmount reads "$5", "$5 (0.1 TAZ)" or "0.5 TSLA"; the reply adds "USDC" only to plain dollars.
+    if (waiting && sender) return replies.welcomeWithMoney(formatAmount(waiting, deps.network), displayName(sender), deps.appUrl);
   }
   return replies.welcome(deps.appUrl);
 }

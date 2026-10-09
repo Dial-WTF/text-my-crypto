@@ -2,6 +2,7 @@ import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { actionPayments, type Intent, intents, users } from "@/lib/db/schema";
+import { STOCK_TOKEN_ADDRESSES, stockForToken } from "@/lib/stocks";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
 
@@ -9,7 +10,12 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    .select({ payments: count(), moved: sql<number | null>`sum(case when ${intents.private} then 0 else ${intents.amount} end)` })
+    // A private send and a stock token payment count as payments but add no dollars: one is hidden, the other
+    // is shares, and testnet has no price for them.
+    .select({
+      payments: count(),
+      moved: sql<number | null>`sum(case when ${intents.private} or ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
+    })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
   // Payments from any Solana wallet through a pay link's Blink count once recorded.
@@ -51,6 +57,8 @@ export type FeedItem = {
   to: string;
   /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
   amount: bigint | null;
+  /** The stock token's ticker when the payment moved one; null for dollars. */
+  stock?: string | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -119,6 +127,7 @@ export async function recentPayments(db: Db, limit: number, chain?: Chain): Prom
       from: r.private ? "someone" : who(r.senderId),
       to: r.private ? "someone" : who(r.recipientId),
       amount: r.private ? null : r.amount,
+      stock: stockForToken(r.chain, r.token)?.symbol ?? null,
       chain: r.chain,
       status: r.status,
       txHash: r.txHash,
@@ -144,6 +153,7 @@ async function blinkPayments(db: Db, limit: number, chain?: Chain): Promise<Feed
     from: `${p.payerAddress.slice(0, 4)}…${p.payerAddress.slice(-4)}`,
     to: handle ? `@${handle}` : "someone new",
     amount: p.received ?? p.amount,
+    stock: null,
     chain: p.chain,
     status: "settled",
     txHash: p.signature,

@@ -1,10 +1,11 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import { hashCode, MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/hash";
 import { newId, randomToken } from "@/lib/ids";
+import { STOCK_TOKEN_ADDRESSES } from "@/lib/stocks";
 
 const SEND_TTL_MS = 10 * 60_000;
 const REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
@@ -132,24 +133,44 @@ export async function codeCandidates(db: Db, userId: string, now: Date): Promise
     );
 }
 
-/** Finds the candidate whose code matches; on a miss, burns an attempt on every candidate. */
+/**
+ * Finds the candidates whose code matches; a miss costs every candidate an attempt. The attempt is taken
+ * first, in one conditional UPDATE, and the code is compared only against the rows that UPDATE returned,
+ * so guesses sent in parallel can't all read the same count and get past the limit. A hit gives the
+ * attempt back to every candidate: a right code never counts as a wrong try.
+ */
 export async function matchCode(db: Db, candidates: Intent[], code: string): Promise<Intent[]> {
-  const matches: Intent[] = [];
-  for (const c of candidates) {
-    if (c.codeHash && c.codeHash === (await hashCode(c.id, code))) matches.push(c);
+  if (candidates.length === 0) return [];
+  const ids = candidates.map((c) => c.id);
+  const charged = await db
+    .update(intents)
+    .set({ codeAttempts: sql`${intents.codeAttempts} + 1` })
+    .where(and(inArray(intents.id, ids), isNotNull(intents.codeHash), lt(intents.codeAttempts, MAX_CODE_ATTEMPTS)))
+    .returning({ id: intents.id, codeHash: intents.codeHash });
+  const hits = new Set<string>();
+  for (const c of charged) {
+    if (c.codeHash && c.codeHash === (await hashCode(c.id, code))) hits.add(c.id);
   }
-  if (matches.length === 0 && candidates.length > 0) {
-    await db
-      .update(intents)
-      .set({ codeAttempts: sql`${intents.codeAttempts} + 1` })
-      .where(
-        inArray(
-          intents.id,
-          candidates.map((c) => c.id),
-        ),
-      );
-  }
-  return matches;
+  if (hits.size === 0) return [];
+  await db
+    .update(intents)
+    .set({ codeAttempts: sql`${intents.codeAttempts} - 1` })
+    .where(
+      inArray(
+        intents.id,
+        charged.map((c) => c.id),
+      ),
+    );
+  return candidates.filter((c) => hits.has(c.id));
+}
+
+/**
+ * Checks a code typed on a payment's web page. The legs of a split share one code and one count of tries,
+ * as they do by text: a wrong guess on any leg's page costs every leg an attempt.
+ */
+export async function matchPageCode(db: Db, intent: Intent, code: string): Promise<boolean> {
+  const candidates = intent.splitId ? await splitLegs(db, intent.splitId) : [intent];
+  return (await matchCode(db, candidates, code)).length > 0;
 }
 
 export async function claimForSettlement(db: Db, id: string, now: Date): Promise<Intent | null> {
@@ -280,6 +301,53 @@ export async function claimUnknownForRetry(db: Db, id: string, now: Date): Promi
   return row ?? null;
 }
 
+/**
+ * A transfer that went out without an answer (TransferUnconfirmedError) stays "settling" with this and its
+ * transaction id in `error`, until reconcileTransfers learns from the chain whether it landed. Never sent again.
+ */
+const UNCONFIRMED_TRANSFER = "transfer unconfirmed: ";
+
+export async function markTransferUnconfirmed(db: Db, id: string, txHash: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ error: `${UNCONFIRMED_TRANSFER}${txHash}` })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling")));
+}
+
+/** The transaction an unconfirmed transfer is waiting on, or null when the intent isn't one. */
+export function unconfirmedTransferTx(i: Pick<Intent, "status" | "error">): string | null {
+  return i.status === "settling" && i.error?.startsWith(UNCONFIRMED_TRANSFER) ? i.error.slice(UNCONFIRMED_TRANSFER.length) : null;
+}
+
+/** Transfers waiting on the chain's answer, oldest first. */
+export async function unconfirmedTransfers(db: Db, limit = 20): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.status, "settling"), sql`${intents.error} like ${`${UNCONFIRMED_TRANSFER}%`}`))
+    .orderBy(intents.createdAt)
+    .limit(limit);
+}
+
+/** Finishes an unconfirmed transfer, once: only the caller whose update lands acts on it. */
+export async function finishUnconfirmedTransfer(
+  db: Db,
+  i: Pick<Intent, "id" | "error">,
+  set:
+    | { status: "settled"; txHash: string; explorerUrl: string; settledAt: Date }
+    | { status: "escrowed"; txHash: string; explorerUrl: string; escrowExpiresAt: Date }
+    | { status: "failed"; error: string },
+): Promise<boolean> {
+  if (!i.error?.startsWith(UNCONFIRMED_TRANSFER)) return false;
+  const values = set.status === "failed" ? { ...set, codeHash: null } : { ...set, error: null };
+  const rows = await db
+    .update(intents)
+    .set(values)
+    .where(and(eq(intents.id, i.id), eq(intents.status, "settling"), eq(intents.error, i.error)))
+    .returning({ id: intents.id });
+  return rows.length > 0;
+}
+
 export async function markFailed(db: Db, id: string, error: string): Promise<void> {
   await db
     .update(intents)
@@ -320,6 +388,11 @@ export async function latestPendingRequestFor(db: Db, payerId: string, now: Date
   return row ?? null;
 }
 
+/**
+ * What a user has paid out since `since`: payments approved since then that are moving or moved. Counted
+ * by when they were approved, not created, so a request made last week and paid today counts today. Stock
+ * tokens have no price on testnet, so they don't count.
+ */
 export async function sentSince(db: Db, userId: string, since: Date): Promise<bigint> {
   const [row] = await db
     .select({ total: sql<string | null>`sum(${intents.amount})` })
@@ -328,7 +401,8 @@ export async function sentSince(db: Db, userId: string, since: Date): Promise<bi
       and(
         eq(intents.senderId, userId),
         inArray(intents.status, ["settling", "escrowed", "settled"]),
-        gte(intents.createdAt, since),
+        sql`coalesce(${intents.approvedAt}, ${intents.createdAt}) >= ${since.getTime()}`,
+        notInArray(intents.token, [...STOCK_TOKEN_ADDRESSES]),
       ),
     );
   return BigInt(row?.total ?? 0);
@@ -347,7 +421,7 @@ export async function latestSettledTo(db: Db, userId: string): Promise<Intent | 
 /** An unapproved, unexpired intent that matches this one: the person asked twice. */
 export async function findPendingDuplicate(
   db: Db,
-  q: { senderId: string; recipientId: string; kind: IntentKind; amount: bigint; chain: Chain },
+  q: { senderId: string; recipientId: string; kind: IntentKind; amount: bigint; chain: Chain; token: string },
   now: Date,
 ): Promise<Intent | null> {
   const [row] = await db
@@ -360,6 +434,7 @@ export async function findPendingDuplicate(
         eq(intents.kind, q.kind),
         eq(intents.amount, q.amount),
         eq(intents.chain, q.chain),
+        eq(intents.token, q.token),
         eq(intents.status, "pending"),
         gt(intents.expiresAt, now),
         // A share of a split is not the same payment as a send of that amount.
@@ -374,7 +449,7 @@ export async function findPendingDuplicate(
 /** The same payment already went out moments ago. */
 export async function findRecentCompletedDuplicate(
   db: Db,
-  q: { senderId: string; recipientId: string; amount: bigint; chain: Chain },
+  q: { senderId: string; recipientId: string; amount: bigint; chain: Chain; token: string },
   since: Date,
 ): Promise<Intent | null> {
   const [row] = await db
@@ -386,6 +461,7 @@ export async function findRecentCompletedDuplicate(
         eq(intents.recipientId, q.recipientId),
         eq(intents.amount, q.amount),
         eq(intents.chain, q.chain),
+        eq(intents.token, q.token),
         eq(intents.kind, "send"),
         inArray(intents.status, ["settling", "settled", "escrowed"]),
         gte(intents.createdAt, since),

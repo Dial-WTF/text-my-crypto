@@ -45,6 +45,14 @@ describe("buildPaymentView", () => {
     expect(late.status).toEqual({ label: "Expired", tone: "bad" });
   });
 
+  it("drops names and note from the public page once a payment expires without being approved", async () => {
+    const { db, i } = await setup();
+    const monthLater = new Date(now.getTime() + 30 * 86_400_000);
+    const expired = await buildPaymentView(db, (await getIntent(db, i.id))!, monthLater, publicView);
+    expect(expired).toMatchObject({ from: "@alex", to: "someone new", note: null, approve: null });
+    expect(JSON.stringify(expired, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toMatch(/Alex Rivera|0099|pizza/);
+  });
+
   it("shows only @handles and no note on a public receipt once the payment is past pending", async () => {
     const { db, i } = await setup();
     await claimForSettlement(db, i.id, now);

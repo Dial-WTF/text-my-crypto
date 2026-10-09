@@ -12,7 +12,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 | `actions` | Anyone can pay a Dial pay link from their own wallet: the link unfurls as a Blink, and the payment is found on-chain by a reference key | Solana (Actions / Blinks) |
 | `shielded` | Amount, parties and memo encrypted on-chain | Zcash (testnet, Ironwood pool, every send) |
 | `venue` | Move money into the chain's own trading venue | planned: Hyperliquid (HyperCore) |
-| `assets` | Send assets beyond the stablecoin | planned: Robinhood Chain |
+| `assets` | Send assets beyond the stablecoin | Robinhood Chain testnet: Robinhood's stock tokens TSLA, AMZN, PLTR, NFLX, AMD (EIP-2612 permit, so senders need no gas) |
 
 ## How the operator picks a chain
 

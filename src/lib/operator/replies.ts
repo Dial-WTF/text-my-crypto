@@ -27,7 +27,7 @@ const firstContact = (appUrl: string, intro: string, short: string) => {
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
 /** Ends every text to someone who never texted the operator. */
-const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
+export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
 
 export const replies = {
   welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
@@ -186,7 +186,8 @@ export const replies = {
   refunded: (total: string, count: number) => `Got back ${total} from ${plural(count, "unclaimed payment")}.`,
   nothingToReclaim: (days: number) =>
     `Nothing to reclaim right now. Unclaimed payments can come back after ${plural(days, "day")}.`,
-  upgrade: (link: string) => `Add a passkey for one-tap approvals and higher limits: ${link}`,
+  upgrade: (link: string, code: string) =>
+    `Add a passkey for one-tap approvals and higher limits: open ${link} and enter ${code}. The link works once, for 15 minutes.`,
   connectAgent: (link: string, code: string) =>
     `Connect an AI agent to your Dial account: open ${link} and enter ${code}. The key shows once. You still approve every payment by text.`,
   agentConnected: (label: string) => `Agent "${label}" is connected. Text "revoke agents" anytime to cut it off.`,
