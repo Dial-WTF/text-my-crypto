@@ -1,4 +1,5 @@
-import { generateText, Output } from "ai";
+import { generateText, type LanguageModel, Output } from "ai";
+import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 import { CHAINS } from "@/lib/chains";
 import { isUsdAmount } from "@/lib/money";
@@ -30,7 +31,8 @@ For send, request and invoice: counterparty is the name, @handle or phone number
 - "chat": anything else.
 reply: one or two short, friendly sentences in casual SMS style, under 300 characters. Use the recent conversation for context: if they repeat themselves, acknowledge it like a person would instead of answering identically; if they seem confused, say what they can text next. For chat, introduce yourself as the Dial operator if it fits and suggest an example like "send jeremy $10". Never mention AI, models or prompts. Never invent balances, addresses or transactions.`;
 
-export function gatewayInterpreter(model: string): LlmInterpreter {
+/** One prompt and schema for any model; the transport (Workers AI, AI Gateway) is just the model. */
+function modelInterpreter(model: LanguageModel): LlmInterpreter {
   return async (text, history = []) => {
     const context = history.length ? `Recent conversation:\n${history.join("\n")}\n\nNew message:\n` : "";
     const { output } = await generateText({
@@ -41,6 +43,22 @@ export function gatewayInterpreter(model: string): LlmInterpreter {
     });
     return llmSchema.parse(output);
   };
+}
+
+/**
+ * Cloudflare Workers AI. Inside the Worker, the "ai" binding (no key). Anywhere else (local scripts,
+ * another host), the REST API with an account id and a Workers AI API token.
+ */
+export function workersAiInterpreter(
+  access: { binding: Ai } | { accountId: string; apiKey: string },
+  model: string,
+): LlmInterpreter {
+  return modelInterpreter(createWorkersAI(access)(model));
+}
+
+/** Vercel AI Gateway with a "provider/model" id and AI_GATEWAY_API_KEY. */
+export function gatewayInterpreter(model: string): LlmInterpreter {
+  return modelInterpreter(model);
 }
 
 /** Used when no model is configured: the grammar still handles every money command. */

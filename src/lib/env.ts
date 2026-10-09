@@ -34,6 +34,17 @@ const schema = z.object({
   ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
+  /** Workers AI model, used whenever the "ai" binding exists. Needs JSON mode (structured output). */
+  WORKERS_AI_MODEL: z.string().default("@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+  /** Only needed where there is no "ai" binding: Workers AI over REST. */
+  CLOUDFLARE_ACCOUNT_ID: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  WORKERS_AI_API_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   SMS_MODE: z.enum(["log", "payphone"]).default("log"),
   /**
    * The owner's phone. The watchdog texts alerts here and nowhere else. Unset or unreadable: alerts are

@@ -22,6 +22,7 @@ const SECRETS = new Set([
   "TEMPO_TREASURY_KEY",
   "ALCHEMY_API_KEY",
   "AI_GATEWAY_API_KEY",
+  "WORKERS_AI_API_TOKEN",
   // The owner's phone for watchdog alerts.
   "ALERT_PHONE",
 ]);
