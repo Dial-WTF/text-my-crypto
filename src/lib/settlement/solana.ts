@@ -26,7 +26,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { withRateLimitRetry as rl } from "./retry";
-import { fundingVerdict } from "./unconfirmed";
+import { fundingVerdict, TransferUnconfirmedError } from "./unconfirmed";
 import {
   decodeEscrowAccount,
   type EscrowAccount,
@@ -65,6 +65,9 @@ const didNotLand = (e: unknown) => escrowErrorCode(e) !== null || e instanceof N
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** A transaction's blockhash lasts about a minute: one the chain still hasn't seen this long after it went out never will. */
+const NEVER_LANDS_AFTER_MS = 15 * 60_000;
+
 export function createSolanaAdapter(cfg: {
   rpcUrl: string;
   mint: string;
@@ -96,24 +99,42 @@ export function createSolanaAdapter(cfg: {
     const tx = await signTransactionMessageWithSigners(message);
     const sig = getSignatureFromTransaction(tx);
     const wire = getBase64EncodedWireTransaction(tx);
-    await rl(() => rpc.sendTransaction(wire, { encoding: "base64", preflightCommitment: "confirmed" }).send());
+    try {
+      await rl(() => rpc.sendTransaction(wire, { encoding: "base64", preflightCommitment: "confirmed" }).send());
+    } catch (e) {
+      // Refused by the simulation: it never went out. Anything else (a timeout, a 5xx) may have reached the network.
+      if (isPreflightFailure(e)) throw e;
+      throw new TransferUnconfirmedError("solana", sig, e);
+    }
     // Wait until it lands or its blockhash expires (about a minute): after that it can't land, so a
-    // timeout means nothing moved, not "maybe".
+    // timeout means nothing moved, not "maybe". An RPC that stops answering on the way is only waited out:
+    // the transaction is out there, so without an answer it ends as TransferUnconfirmedError, never a failure.
+    let lastError: unknown = null;
     for (let i = 0; i < 120; i++) {
       await sleep(1000);
-      const { value } = await rl(() => rpc.getSignatureStatuses([sig]).send());
-      const status = value[0];
+      let status;
+      try {
+        ({ value: [status] } = await rl(() => rpc.getSignatureStatuses([sig]).send()));
+      } catch (e) {
+        lastError = e;
+        continue;
+      }
       if (status?.err) throw new Error(`Solana tx ${sig} failed: ${JSON.stringify(status.err)}`);
       if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return sig;
       if (i % 5 === 4) {
-        const height = await rl(() => rpc.getBlockHeight({ commitment: "confirmed" }).send());
-        if (height > latest.lastValidBlockHeight) {
-          const { value: last } = await rl(() => rpc.getSignatureStatuses([sig], { searchTransactionHistory: true }).send());
-          if (!last[0]) throw new NotLandedError(sig);
+        try {
+          const height = await rl(() => rpc.getBlockHeight({ commitment: "confirmed" }).send());
+          if (height > latest.lastValidBlockHeight) {
+            const { value: last } = await rl(() => rpc.getSignatureStatuses([sig], { searchTransactionHistory: true }).send());
+            if (!last[0]) throw new NotLandedError(sig);
+          }
+        } catch (e) {
+          if (e instanceof NotLandedError) throw e;
+          lastError = e;
         }
       }
     }
-    throw new Error(`Solana tx ${sig} not confirmed in time`);
+    throw new TransferUnconfirmedError("solana", sig, lastError ?? new Error("not confirmed in time"));
   }
 
   async function transfer(
@@ -306,6 +327,17 @@ export function createSolanaAdapter(cfg: {
     },
     async fund(to, amount) {
       return transfer(await treasury, address(to), amount, "dial signup drip");
+    },
+    async transferOutcome(txHash, { sentAt, now }) {
+      const sig = txHash as Signature;
+      const { value } = await rl(() => rpc.getSignatureStatuses([sig], { searchTransactionHistory: true }).send());
+      const status = value[0];
+      if (status?.err) return { state: "failed" };
+      if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+        return { state: "landed", result: { txHash, explorerUrl: cfg.explorerTx(txHash) } };
+      }
+      if (!status && now.getTime() - sentAt.getTime() > NEVER_LANDS_AFTER_MS) return { state: "failed" };
+      return { state: "pending" };
     },
     ...(cfg.escrow ? { escrow: escrowProgram(cfg.escrow) } : {}),
   };

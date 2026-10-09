@@ -9,6 +9,7 @@ import {
   encodeAbiParameters,
   type Hex,
   http,
+  isAddressEqual,
   keccak256,
   parseAbi,
   parseSignature,
@@ -198,9 +199,19 @@ export function createEvmEscrow(cfg: {
     return result(hash);
   }
 
+  /**
+   * The escrow at `id`. The contract keeps escrows in any token, and anyone can open one in a sender's name
+   * with a token that skips the sender's signature, so only one holding our token can be this payment's.
+   */
+  async function read(id: Hex, intentId: string): Promise<OnChainEscrow> {
+    const e = await rl(() => rpc.escrow(id));
+    if (e.status !== "none" && !isAddressEqual(e.token, cfg.token)) throw new Error(`Escrow for ${intentId} holds another token (${e.token})`);
+    return e;
+  }
+
   async function lookup(intentId: string): Promise<EscrowLookup> {
     const id = escrowId(intentId);
-    const e = await rl(() => rpc.escrow(id));
+    const e = await read(id, intentId);
     if (e.status === "none") return { state: "none" };
     if (e.status === "open") {
       const funded = await rl(() => rpc.eventTx("Funded", id, e.fundedBlock));
@@ -247,7 +258,7 @@ export function createEvmEscrow(cfg: {
     },
     async claim({ intentId, to }) {
       const id = escrowId(intentId);
-      if ((await rl(() => rpc.escrow(id))).status !== "open") return alreadyClosed(intentId, "claimed");
+      if ((await read(id, intentId)).status !== "open") return alreadyClosed(intentId, "claimed");
       if ((await rl(() => rpc.attestorBalance())) < ATTESTOR_MIN_WEI) {
         await confirmed(await rl(() => rpc.topUpAttestor(ATTESTOR_TOPUP_WEI)));
       }
@@ -263,7 +274,7 @@ export function createEvmEscrow(cfg: {
     },
     async refund({ intentId, senderSecret }) {
       const id = escrowId(intentId);
-      const e = await rl(() => rpc.escrow(id));
+      const e = await read(id, intentId);
       if (e.status !== "open") return alreadyClosed(intentId, "refunded");
       if (!senderSecret) throw new Error(`Escrow ${intentId} refunds only on its sender's signature`);
       const sig = await signRefund({ secret: senderSecret, chainId: cfg.chainId, contract, id });

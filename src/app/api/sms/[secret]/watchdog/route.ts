@@ -1,5 +1,5 @@
 import { recordActionPayments } from "@/lib/actions/record";
-import { reconcileEscrows, resumeUnknownSettlements } from "@/lib/bot/settle";
+import { reconcileEscrows, reconcileTransfers, resumeUnknownSettlements } from "@/lib/bot/settle";
 import { getDb } from "@/lib/db/client";
 import { botDeps } from "@/lib/deps";
 import { env } from "@/lib/env";
@@ -40,6 +40,11 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     console.error(JSON.stringify({ evt: "reconcile_escrows", error: errorText(err) }));
     return null;
   });
+  // Transfers that went out without an answer: settled or failed from what the chain says about them.
+  const transfers = await reconcileTransfers(botDeps()).catch((err: unknown) => {
+    console.error(JSON.stringify({ evt: "reconcile_transfers", error: errorText(err) }));
+    return null;
+  });
   const actionPayments = await recordActionPayments(botDeps()).catch((err: unknown) => {
     console.error(JSON.stringify({ evt: "record_action_payments", error: errorText(err) }));
     return null;
@@ -50,5 +55,5 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     console.error(JSON.stringify({ evt: "resume_settlements", error: errorText(err) }));
     return [];
   });
-  return Response.json({ ...report, escrows, actionPayments, ...(resumed.length ? { resumed: resumed.length } : {}) });
+  return Response.json({ ...report, escrows, transfers, actionPayments, ...(resumed.length ? { resumed: resumed.length } : {}) });
 }
