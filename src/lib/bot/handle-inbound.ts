@@ -39,6 +39,7 @@ import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains, offerWaiting } from "./accounts";
 import { connectAgentReply, revokeAgentsReply } from "./agents";
+import { endSessionsForUser } from "@/lib/web/sessions";
 import { walletLinkReply } from "./web";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
@@ -118,10 +119,15 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       return;
     case "optOut":
       await optOut(deps.db, phone, deps.now());
+      // Opting out also signs them out of the wallet on the web: STOP means stop everything.
+      if (ctx.user) await endSessionsForUser(deps.db, ctx.user.id, deps.now());
       return reply(replies.optedOut(), true);
     case "optIn":
       await optIn(deps.db, phone);
-      return reply(replies.optedIn());
+      await reply(replies.optedIn());
+      // Anything sent or asked of them while they were away was held back; offer it now, as at signup.
+      if (ctx.user && isClaimed(ctx.user)) await offerWaiting(deps, ctx.user);
+      return;
     case "help":
       return reply(replies.help());
     case "welcome":
