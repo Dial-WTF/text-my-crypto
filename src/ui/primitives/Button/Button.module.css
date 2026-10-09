@@ -18,7 +18,8 @@
 }
 
 .onCard {
-  --button-ink: var(--color-on-card);
+  /* The card's ink in the house look; on a brand, its accent tuned for cards (AA against the card both ways). */
+  --button-ink: var(--color-accent-on-card);
   --button-fill-ink: var(--color-card);
 }
 

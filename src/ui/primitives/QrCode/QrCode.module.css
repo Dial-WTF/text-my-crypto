@@ -9,6 +9,11 @@
   color: var(--color-on-card);
   width: min(11rem, 60%);
   aspect-ratio: 1;
+  /* A quiet zone in the card's colour, then a frame (transparent unless a brand page colours it).
+   * Shadows, so the frame never changes the layout. */
+  box-shadow:
+    0 0 0 var(--space-2xs) var(--color-card),
+    0 0 0 calc(var(--space-2xs) + 3px) var(--color-frame-on-card);
 }
 
 .code svg {

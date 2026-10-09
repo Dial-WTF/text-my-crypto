@@ -1,11 +1,20 @@
-/* Brand · Zcash: Zcash gold.
- * Accents and fills only; canvas and text stay with the reader's mode. The first block is the dark
- * variant (dark and matrix), the second the light one. tests/theme-brands.test.ts checks the contrast. */
+/* Brand · Zcash: Zcash gold, with black on the hero.
+ * The accent family only (see ../README.md): canvas and text stay with the reader's mode. Three blocks:
+ * the first is dark mode and the default, then matrix and light override what differs.
+ * tests/theme-brands.test.ts checks every pair for AA contrast. */
 [data-brand="zcash"] {
   --color-accent: oklch(82% 0.15 80);
   --color-accent-ink: oklch(20% 0.03 80);
   --color-focus: oklch(82% 0.15 80);
+  --color-accent-on-card: oklch(50% 0.11 70);
   --fill-brand: linear-gradient(oklch(82% 0.15 80), oklch(82% 0.15 80));
+  --fill-hero: linear-gradient(120deg, oklch(84% 0.15 82), oklch(76% 0.15 72));
+  --color-on-hero: oklch(16% 0.02 80);
+}
+
+[data-theme="matrix"] [data-brand="zcash"],
+[data-theme="matrix"][data-brand="zcash"] {
+  --color-accent-on-card: oklch(82% 0.15 80);
 }
 
 [data-theme="light"] [data-brand="zcash"],
@@ -13,5 +22,6 @@
   --color-accent: oklch(50% 0.11 70);
   --color-accent-ink: oklch(98% 0.01 70);
   --color-focus: oklch(50% 0.11 70);
+  --color-accent-on-card: oklch(50% 0.11 70);
   --fill-brand: linear-gradient(oklch(80% 0.16 80), oklch(80% 0.16 80));
 }

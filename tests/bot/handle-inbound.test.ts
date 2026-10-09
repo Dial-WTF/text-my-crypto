@@ -633,7 +633,9 @@ describe("balance, receive, upgrade, chat", () => {
   });
 
   it("offers a passkey upgrade link", async () => {
-    expect(await say(ALEX, "upgrade")).toMatch(/^Add a passkey for one-tap approvals and higher limits: https:\/\/tmc\.test\/s\//);
+    expect(await say(ALEX, "upgrade")).toMatch(
+      /^Add a passkey for one-tap approvals and higher limits: open https:\/\/tmc\.test\/s\/[\w-]+ and enter \d{6}\. The link works once, for 15 minutes\.$/,
+    );
   });
 
   it("chats", async () => {

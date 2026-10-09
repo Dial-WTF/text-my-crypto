@@ -66,6 +66,9 @@ export const signupTokens = sqliteTable("signup_tokens", {
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
   challenge: text("challenge"),
+  /** The code texted with the link. A link alone can't add a passkey: it has to be opened with the code. */
+  codeHash: text("code_hash"),
+  codeAttempts: integer("code_attempts").notNull().default(0),
 });
 
 export const passkeys = sqliteTable("passkeys", {

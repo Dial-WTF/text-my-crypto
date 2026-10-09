@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseInbound } from "@/lib/sms/inbound";
 import { logInbound } from "@/lib/sms/log";
-import { payphoneSender } from "@/lib/sms/payphone";
+import { logSender, payphoneSender } from "@/lib/sms/payphone";
 import { createTestDb } from "./helpers/db";
 
 const cfg = { baseUrl: "https://pp.test", apiKey: "k", from: "+18066071387" };
@@ -16,9 +16,29 @@ describe("payphoneSender", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ to: "+15550000001", message: "hi", from: "+18066071387" });
   });
 
+  it("masks numbers Payphone echoes back in an error, since the error gets logged", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{"error":"undeliverable to +1 (415) 555-2671"}', { status: 400 }));
+    const err = await payphoneSender(cfg, fetchImpl)("+14155552671", "x").catch((e: unknown) => e);
+    expect(String(err)).toContain("Payphone send failed 400");
+    expect(String(err)).not.toMatch(/2671/);
+  });
+
   it("throws on non-2xx", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("nope", { status: 402 }));
     await expect(payphoneSender(cfg, fetchImpl)("+1555", "x")).rejects.toThrow(/402/);
+  });
+});
+
+describe("logSender", () => {
+  it("prints texts to test numbers whole, and only the last four digits of any other number, with no body", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await logSender("+15550000001", "Reply 123456 to confirm");
+    await logSender("+14155552671", "Your wallet: https://tmc.test/wallet/in/abc Enter 654321 there");
+    expect(info.mock.calls.map((c) => String(c[0]))).toEqual([
+      "[sms:log] → +15550000001: Reply 123456 to confirm",
+      "[sms:log] → •••2671: (62 chars)",
+    ]);
+    info.mockRestore();
   });
 });
 

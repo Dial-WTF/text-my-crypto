@@ -77,10 +77,13 @@
   color: var(--color-on-canvas-muted);
 }
 
+
 .status {
   justify-self: start;
   padding: var(--space-3xs) var(--space-2xs);
   border: var(--rule-thin) solid currentColor;
+  /* Its own canvas, so the hover tint never sits under its text. */
+  background: var(--color-canvas);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   letter-spacing: 0.14em;
@@ -99,7 +102,14 @@
 
 /* A linked tile: the name is the link, stretched over the whole tile so all of it is a target. */
 .linked {
+  --tile-ease: var(--ease-out);
   position: relative;
+  isolation: isolate;
+  overflow: clip;
+  transition:
+    box-shadow 200ms var(--tile-ease),
+    opacity 200ms var(--tile-ease),
+    transform 150ms var(--tile-ease);
 }
 
 .link {
@@ -107,6 +117,7 @@
   color: inherit;
   text-decoration: none;
   white-space: nowrap;
+  transition: color 180ms var(--tile-ease);
 }
 
 .large.strip .long .name {
@@ -119,20 +130,6 @@
   inset: 0;
 }
 
-.linked:hover,
-.linked:has(.link:focus-visible) {
-  background-color: var(--color-canvas-2);
-}
-
-.linked:hover .name,
-.linked:hover .wordmark,
-.linked:has(.link:focus-visible) .name,
-.linked:has(.link:focus-visible) .wordmark {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
-}
-
 .link:focus-visible {
   outline: none;
 }
@@ -142,7 +139,132 @@
   outline-offset: -2px;
 }
 
-/* A branded tile (a ThemeScope brand): the logo in the brand's accent over a band of its fill. */
+.mark > svg {
+  transition:
+    color 180ms var(--tile-ease),
+    transform 200ms var(--tile-ease);
+}
+
+/* The brand's tint, parked off the tile's left edge; hover sweeps it across. Transform only, so no layout
+ * moves. tests/theme-brands.test.ts checks the accent and muted text on its strongest part. */
+.linked::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    105deg,
+    color-mix(in oklab, var(--color-accent) 14%, transparent),
+    color-mix(in oklab, var(--color-accent) 4%, transparent)
+  );
+  transform: translateX(-101%);
+  transition: transform 220ms var(--tile-ease);
+}
+
+/* "How Dial uses Solana →": reserved space at rest, so showing it moves nothing. */
+.cue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+  opacity: 0;
+  transform: translateY(0.375rem);
+  transition:
+    opacity 180ms var(--tile-ease),
+    transform 200ms var(--tile-ease);
+}
+
+.arrow {
+  display: inline-block;
+  transition: transform 200ms var(--tile-ease);
+}
+
+/* Hover and keyboard focus: the tile takes its brand. */
+.linked:hover,
+.linked:has(.link:focus-visible) {
+  z-index: 1;
+  /* A solid canvas under the tint, so the matrix rain never runs behind the text the test checked. */
+  background-color: var(--color-canvas);
+  box-shadow:
+    0 0 0 var(--rule-thin) var(--color-accent),
+    0 0 1.5rem -0.25rem color-mix(in oklab, var(--color-accent) 70%, transparent);
+}
+
+.linked:hover::before,
+.linked:has(.link:focus-visible)::before {
+  transform: translateX(0);
+}
+
+.linked:hover .mark > svg,
+.linked:has(.link:focus-visible) .mark > svg {
+  color: var(--color-accent);
+  transform: scale(1.08);
+}
+
+.linked:hover .link,
+.linked:has(.link:focus-visible) .link {
+  color: var(--color-accent);
+}
+
+.linked:hover .cue,
+.linked:has(.link:focus-visible) .cue {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.linked:hover .arrow,
+.linked:has(.link:focus-visible) .arrow {
+  transform: translateX(0.25rem);
+}
+
+.linked:active {
+  transform: translateY(1px);
+}
+
+/* The others step back while one is hovered or focused. Browsers without :has() skip this. */
+.grid:has(.linked:hover) .linked:not(:hover),
+.grid:has(.link:focus-visible) .linked:not(:focus-within) {
+  opacity: 0.72;
+}
+
+/* Touch: nothing to hover, so the cue shows at rest. */
+@media (hover: none) {
+  .cue {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Reduced motion: colour, border and the cue only. The tint fades in place instead of sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .linked::before {
+    opacity: 0;
+    transform: none;
+    transition: opacity 150ms linear;
+  }
+
+  .linked:hover::before,
+  .linked:has(.link:focus-visible)::before {
+    opacity: 1;
+  }
+
+  .cue,
+  .linked:hover .cue,
+  .linked:has(.link:focus-visible) .cue,
+  .linked:hover .arrow,
+  .linked:has(.link:focus-visible) .arrow,
+  .linked:hover .mark > svg,
+  .linked:has(.link:focus-visible) .mark > svg,
+  .linked:active {
+    transform: none;
+  }
+}
+
+/* A branded tile (brandAtRest): the logo in the brand's accent over a band of its fill. */
 .branded {
   background-image: var(--fill-brand);
   background-size: 100% var(--rule-thick);
@@ -151,4 +273,18 @@
 
 .branded .mark > svg {
   color: var(--color-accent);
+}
+
+/* A tile that wears its brand only on hover: at rest its badge keeps the page's own accent. */
+.restHouse .live {
+  background: var(--color-house-accent);
+  border-color: var(--color-house-accent);
+  color: var(--color-house-accent-ink);
+}
+
+.restHouse:hover .live,
+.restHouse:has(.link:focus-visible) .live {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
 }

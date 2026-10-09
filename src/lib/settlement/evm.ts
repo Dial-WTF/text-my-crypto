@@ -11,6 +11,7 @@ import {
   parseAbi,
   parseSignature,
   stringToHex,
+  TransactionReceiptNotFoundError,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
@@ -21,6 +22,10 @@ import { withRateLimitRetry as rl } from "./retry";
 import type { Asset, AssetTransfers } from "./capabilities";
 import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
+
+/** How long a signed transfer authorization stays valid. After it (plus a margin), a transfer not mined never will be. */
+const AUTHORIZATION_TTL_S = 3600;
+const NEVER_LANDS_AFTER_MS = AUTHORIZATION_TTL_S * 1000 + 10 * 60_000;
 
 const ERC20_3009 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -267,7 +272,7 @@ export function createEvmAdapter(
     },
     async settle({ fromSecret, to, amount, memo }) {
       const { name, version } = await tokenDomain();
-      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+      const validBefore = BigInt(Math.floor(Date.now() / 1000) + AUTHORIZATION_TTL_S);
       const { from, nonce, signature } = await signTransferAuthorization({
         secret: fromSecret,
         token,
@@ -288,7 +293,17 @@ export function createEvmAdapter(
           args: [from, to as Address, amount, 0n, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
         }),
       );
-      return confirm(hash);
+      // Sent: from here a missing receipt doesn't mean nothing moved.
+      return confirm(hash, { unconfirmedIsTyped: true });
+    },
+    async transferOutcome(txHash, { sentAt, now }) {
+      const receipt = await rl(() => publicClient.getTransactionReceipt({ hash: txHash as Hex })).catch((e: unknown) => {
+        if (e instanceof TransactionReceiptNotFoundError) return null;
+        throw e;
+      });
+      if (receipt) return receipt.status === "success" ? { state: "landed", result: { txHash, explorerUrl: cfg.explorerTx(txHash) } } : { state: "failed" };
+      // Its authorization has expired: if it's ever mined it reverts, so nothing can move any more.
+      return now.getTime() - sentAt.getTime() > NEVER_LANDS_AFTER_MS ? { state: "failed" } : { state: "pending" };
     },
     async treasuryAddress() {
       return treasury.address;
