@@ -20,6 +20,10 @@ function stop(message) {
 if (!entry || entry.kind !== "evm") stop(`${chain} has no EVM testnet entry in the registry.`);
 if (entry.token) stop(`${entry.network} already settles in ${entry.token}; nothing to deploy.`);
 if (!process.env.EVM_TREASURY_KEY) stop("EVM_TREASURY_KEY is not set.");
+// Checked before anything is deployed: a bad amount must not strand a fresh contract with nothing minted.
+if (!/^\d+(\.\d{1,6})?$/.test(mintUsd) || Number(mintUsd) <= 0) stop(`mintUsd must be a positive dollar amount like 1000 or 12.50, not "${mintUsd}".`);
+const [whole, frac = ""] = mintUsd.split(".");
+const amount = BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0"));
 
 const treasury = privateKeyToAccount(process.env.EVM_TREASURY_KEY);
 const rpc = resolveRpc(entry, {
@@ -41,8 +45,9 @@ try {
   const deployed = await pub.waitForTransactionReceipt({ hash: deployHash });
   if (deployed.status !== "success" || !deployed.contractAddress) stop(`Deploy reverted: ${entry.explorerTx(deployHash)}`);
   const token = deployed.contractAddress;
+  // Printed now so a failed mint below doesn't lose the address.
+  console.log(`Deployed Dial Test USD at ${token} (${entry.explorerAddress(token)}). Minting $${mintUsd}…`);
 
-  const amount = BigInt(Math.round(Number(mintUsd) * 1_000_000));
   const mintHash = await wallet.writeContract({ address: token, abi: artifact.abi, functionName: "mint", args: [treasury.address, amount] });
   const minted = await pub.waitForTransactionReceipt({ hash: mintHash });
   if (minted.status !== "success") stop(`Mint reverted: ${entry.explorerTx(mintHash)}`);

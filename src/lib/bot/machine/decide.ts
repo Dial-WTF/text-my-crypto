@@ -47,8 +47,10 @@ export function decide(s: Session, input: Input): Action {
   // 2. Onboarding: nobody moves money until they have a name.
   if (s.account !== "claimed") {
     if (s.convo?.state !== "awaiting_name") return { do: "welcome" };
-    if (input.kind !== "text") return input.kind === "phone" ? { do: "badName" } : { do: "welcome" };
-    return parseCommand(input.text).kind === "chat" ? { do: "signup", name: input.text } : { do: "nameFirst" };
+    // Words that mean something to a member ("ty", "update") are just a name here: someone may be called Ty.
+    const answer: Input = input.kind === "status" || input.kind === "thanks" ? { kind: "text", text: input.text } : input;
+    if (answer.kind !== "text") return answer.kind === "phone" ? { do: "badName" } : { do: "welcome" };
+    return parseCommand(answer.text).kind === "chat" ? { do: "signup", name: answer.text } : { do: "nameFirst" };
   }
 
   // 3. Answers to whatever the operator just asked.
