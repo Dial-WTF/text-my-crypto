@@ -17,7 +17,8 @@ export const SERVER_INFO = { name: "dial-operator", version: "1.0.0" } as const;
 const INSTRUCTIONS = `You act for one Dial account (see whoami). Dial moves USDC between phone numbers.
 Money tools (send_payment, request_payment, create_invoice, withdraw) only create a pending payment and text a person to approve it.
 You can never approve a payment. Tell the user to check their texts, then poll get_payment until the status changes.
-Recipients can be a phone number, an @handle, or a name from the owner's contacts. Use resolve_recipient when unsure.`;
+Recipients can be a phone number, an @handle, or a name from the owner's contacts. Use resolve_recipient when unsure.
+send_stock gifts Robinhood Chain stock tokens (e.g. 0.1 TSLA) by share count, approved the same way; get_stocks shows holdings.`;
 
 function asCallResult(r: ToolResult): CallToolResult {
   if (r.ok) return { content: [{ type: "text", text: JSON.stringify(r.data, null, 2) }], structuredContent: r.data };

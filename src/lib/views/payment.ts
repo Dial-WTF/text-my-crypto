@@ -7,6 +7,7 @@ import { networkName } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import { withdrawTarget } from "@/lib/payment-labels";
 import type { Network } from "@/lib/settlement/registry";
+import { stockForToken } from "@/lib/stocks";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
@@ -19,6 +20,8 @@ export type PaymentView = {
   amount: bigint | null;
   /** A private, shielded Zcash send. */
   shielded: boolean;
+  /** The stock token's ticker when the payment moves one ("TSLA"); null for dollars. */
+  stock: string | null;
   from: string;
   to: string;
   network: string;
@@ -97,6 +100,7 @@ export async function buildPaymentView(
     kindLabel: i.private ? "Shielded payment" : split ? "Split" : KIND_LABEL[i.kind],
     amount: hidden ? null : split ? split.legs.reduce((a, l) => a + l.amount, 0n) : i.amount,
     shielded: i.private,
+    stock: stockForToken(i.chain, i.token)?.symbol ?? null,
     from: name(sender),
     to,
     network: networkName(i.chain, opts.network),

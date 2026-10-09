@@ -1,5 +1,5 @@
 import type { Chain } from "@/lib/chains";
-import type { Capabilities } from "./capabilities";
+import type { AssetTransfers, Capabilities } from "./capabilities";
 import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
@@ -135,10 +135,27 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
+  const assets: AssetTransfers | undefined = adapter.assets && { ...adapter.assets, balanceOf: guard(adapter.assets.balanceOf) };
   return {
     ...adapter,
     createWallet: guard(adapter.createWallet),
     getBalance: guard(adapter.getBalance),
     fund: guard(adapter.fund),
+    ...(assets ? { assets } : {}),
+  };
+}
+
+/**
+ * What moves a payment's token: the stablecoin adapter itself, or its `assets` module for a token such as a
+ * stock. Amounts are in the payment's units either way.
+ */
+export function moverFor(adapter: SettlementAdapter, token: string): Pick<SettlementAdapter, "getBalance" | "settle"> {
+  if (token === adapter.tokenId) return adapter;
+  const assets = adapter.assets;
+  const asset = assets?.list().find((a) => a.address.toLowerCase() === token.toLowerCase());
+  if (!assets || !asset) throw new Error(`${adapter.chain} cannot move token ${token}`);
+  return {
+    getBalance: (address) => assets.balanceOf(address, asset),
+    settle: ({ fromSecret, to, amount, memo }) => assets.transfer({ fromSecret, to, asset, amount, memo }),
   };
 }

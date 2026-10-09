@@ -1,10 +1,11 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import { hashCode, MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/hash";
 import { newId, randomToken } from "@/lib/ids";
+import { STOCK_TOKEN_ADDRESSES } from "@/lib/stocks";
 
 export const SEND_TTL_MS = 10 * 60_000;
 export const REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
@@ -389,7 +390,8 @@ export async function latestPendingRequestFor(db: Db, payerId: string, now: Date
 
 /**
  * What a user has paid out since `since`: payments approved since then that are moving or moved. Counted
- * by when they were approved, not created, so a request made last week and paid today counts today.
+ * by when they were approved, not created, so a request made last week and paid today counts today. Stock
+ * tokens have no price on testnet, so they don't count.
  */
 export async function sentSince(db: Db, userId: string, since: Date): Promise<bigint> {
   const [row] = await db
@@ -400,6 +402,7 @@ export async function sentSince(db: Db, userId: string, since: Date): Promise<bi
         eq(intents.senderId, userId),
         inArray(intents.status, ["settling", "escrowed", "settled"]),
         sql`coalesce(${intents.approvedAt}, ${intents.createdAt}) >= ${since.getTime()}`,
+        notInArray(intents.token, [...STOCK_TOKEN_ADDRESSES]),
       ),
     );
   return BigInt(row?.total ?? 0);
@@ -418,7 +421,7 @@ export async function latestSettledTo(db: Db, userId: string): Promise<Intent | 
 /** An unapproved, unexpired intent that matches this one: the person asked twice. */
 export async function findPendingDuplicate(
   db: Db,
-  q: { senderId: string; recipientId: string; kind: IntentKind; amount: bigint; chain: Chain },
+  q: { senderId: string; recipientId: string; kind: IntentKind; amount: bigint; chain: Chain; token: string },
   now: Date,
 ): Promise<Intent | null> {
   const [row] = await db
@@ -431,6 +434,7 @@ export async function findPendingDuplicate(
         eq(intents.kind, q.kind),
         eq(intents.amount, q.amount),
         eq(intents.chain, q.chain),
+        eq(intents.token, q.token),
         eq(intents.status, "pending"),
         gt(intents.expiresAt, now),
         // A share of a split is not the same payment as a send of that amount.
@@ -445,7 +449,7 @@ export async function findPendingDuplicate(
 /** The same payment already went out moments ago. */
 export async function findRecentCompletedDuplicate(
   db: Db,
-  q: { senderId: string; recipientId: string; amount: bigint; chain: Chain },
+  q: { senderId: string; recipientId: string; amount: bigint; chain: Chain; token: string },
   since: Date,
 ): Promise<Intent | null> {
   const [row] = await db
@@ -457,6 +461,7 @@ export async function findRecentCompletedDuplicate(
         eq(intents.recipientId, q.recipientId),
         eq(intents.amount, q.amount),
         eq(intents.chain, q.chain),
+        eq(intents.token, q.token),
         eq(intents.kind, "send"),
         inArray(intents.status, ["settling", "settled", "escrowed"]),
         gte(intents.createdAt, since),

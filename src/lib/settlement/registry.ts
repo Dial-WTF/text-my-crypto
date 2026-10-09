@@ -43,10 +43,22 @@ export type TempoNetwork = Common & {
   faucet: boolean;
 };
 /**
+ * A tokenized stock on an EVM chain: an ERC-20 with EIP-2612 permit (and ERC-8056 scaled UI amounts on
+ * Robinhood Chain). Sent beside the stablecoin, never instead of it.
+ */
+export type StockToken = { symbol: string; name: string; address: Address };
+/**
+ * `stocks`: tokenized stocks people can send on this network, besides the stablecoin.
  * `escrowContract`: production's dial_escrow contract on this network (contracts/arbitrum-escrow), null until
  * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
  */
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; escrowContract?: Address | null };
+export type EvmNetwork = Common & {
+  kind: "evm";
+  viem: ViemChain;
+  token: Address | null;
+  escrowContract?: Address | null;
+  stocks?: readonly StockToken[];
+};
 /**
  * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
  * (services/zcash-wallet). `publicRpc` is the lightwalletd that service scans; the Worker never
@@ -221,6 +233,15 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: robinhoodTestnet.rpcUrls.default.http[0],
       alchemy: "robinhood-testnet",
       token: "0x2195e3E09eab088c90B4461B92D06A74d30c1e2e", // Dial Test USD (contracts/src/DialTestUSD.sol): no Circle test USDC here
+      // Robinhood's testnet Stock Tokens, minted by its faucet (faucet.testnet.chain.robinhood.com, 5 of each per claim).
+      // Look-alikes with the same tickers exist on this testnet: these addresses are the faucet's.
+      stocks: [
+        { symbol: "TSLA", name: "Tesla", address: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E" },
+        { symbol: "AMZN", name: "Amazon", address: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02" },
+        { symbol: "PLTR", name: "Palantir", address: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0" },
+        { symbol: "NFLX", name: "Netflix", address: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93" },
+        { symbol: "AMD", name: "AMD", address: "0x71178BAc73cBeb415514eB542a8995b82669778d" },
+      ],
       ...scan("explorer.testnet.chain.robinhood.com"),
     },
     mainnet: {

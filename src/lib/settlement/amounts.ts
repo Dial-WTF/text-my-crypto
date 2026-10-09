@@ -19,7 +19,10 @@ export function money(amount: bigint, chain: Chain, network: Network): string {
   return `${formatUsd(amount)} (${formatZec(usdToZats(amount, entry.usdPerZec))} ${entry.asset})`;
 }
 
-/** True when `money` already named the coin, so a template must not add "USDC". */
+/**
+ * True when the amount already names what it is, so a template must not add "USDC": `money` on Zcash, or a
+ * stock token amount ("0.1 TSLA", "$5 USDC and 0.1 TSLA").
+ */
 export function namesItsCoin(amount: string): boolean {
-  return /\((?:[\d.]+) (?:TAZ|ZEC)\)$/.test(amount);
+  return /\((?:[\d.]+) (?:TAZ|ZEC)\)$/.test(amount) || /\d [A-Z]{2,5}$/.test(amount);
 }

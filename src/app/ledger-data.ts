@@ -7,6 +7,7 @@ import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { activeChains, getAdapters } from "@/lib/settlement";
 import { money } from "@/lib/settlement/amounts";
+import { formatShares } from "@/lib/stocks";
 import { type FeatureId, featuresOf } from "@/lib/settlement/capabilities";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import {
@@ -63,6 +64,7 @@ function feedEntries(rows: FeedItem[], now: Date): FeedEntry[] {
     from: r.from,
     to: r.to,
     amount: r.amount,
+    stock: r.stock,
     network: safeNetworkName(r.chain),
     // The public ledger lists money that moved, so there is no deadline to apply.
     state: stateLabel(r.status, null, now),
@@ -95,7 +97,13 @@ export async function loadLatestPayment(chain: Chain): Promise<LatestPayment | n
     // Plain strings only: this goes out as JSON, so no bigints (a split's legs carry some).
     const { id, from, to, network, state, txHash } = entry;
     const explorerUrl = liveExplorer(entry.explorerUrl);
-    return { id, from, to, network, state, txHash, explorerUrl, amount: entry.amount === null ? "shielded" : money(entry.amount, chain, publicEnv().NETWORK), when: entry.when ?? "" };
+    const amount =
+      entry.amount === null
+        ? "shielded"
+        : entry.stock
+          ? `${formatShares(entry.amount)} ${entry.stock}`
+          : money(entry.amount, chain, publicEnv().NETWORK);
+    return { id, from, to, network, state, txHash, explorerUrl, amount, when: entry.when ?? "" };
   });
 }
 

@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db/client";
 import { chainProofs, runningNetwork, safeNetworkName } from "@/lib/ledger";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { formatShares } from "@/lib/stocks";
 import { quietly } from "../ledger-data";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,11 @@ export async function GET(): Promise<Response> {
         id: r.id,
         from: r.from,
         to: r.to,
-        amountUsd: r.amount === null ? null : usd(r.amount),
+        ...(r.amount === null
+          ? { amountUsd: null }
+          : r.stock
+            ? { amountUsd: null, shares: formatShares(r.amount), asset: r.stock }
+            : { amountUsd: usd(r.amount) }),
         shielded: r.amount === null,
         chain: r.chain,
         network: safeNetworkName(r.chain),

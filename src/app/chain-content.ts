@@ -211,12 +211,28 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
   robinhood: {
     name: "Robinhood Chain",
     logo: "robinhood",
-    summary: "The same EVM flow in Dial Test USD, a test dollar with signed transfers.",
+    summary: "Gift Robinhood's tokenized stocks by text, and the same EVM flow in Dial Test USD.",
     runs: [
       "There is no Circle test USDC on Robinhood Chain testnet, so the operator settles in Dial Test USD (dUSD): an ERC-20 with 6 decimals and EIP-3009 transferWithAuthorization, the same signed transfer USDC offers. It is testnet only, and its deployer can mint.",
       ...evmRuns("Dial Test USD"),
+      "Stock gifts: \"send @alex 0.1 TSLA\" moves Robinhood's own testnet Stock Token, and \"stocks\" lists what you hold.",
     ],
-    features: {},
+    features: {
+      assets: {
+        detail: [
+          "Text \"send @alex 0.1 TSLA\" or \"send 2 shares of AMZN to +1 555 123 4567\". The operator moves Robinhood's testnet Stock Token for TSLA, AMZN, PLTR, NFLX or AMD: ERC-20s with ERC-8056 scaled UI amounts, minted by Robinhood's testnet faucet. Agents use the send_stock and get_stocks MCP tools.",
+          "The sender holds no gas. Their wallet signs an EIP-2612 permit for the operator's treasury, which submits it and then transferFrom with the payment id appended to the calldata, so every transfer maps back to one payment.",
+          "The same 6-digit code approves it. Someone not on Dial yet gets the shares held for them and claims them by text. \"stocks\" lists your holdings and points at the faucet when you have none.",
+          "Gifts are by share count. Testnet has no stock price feed (Chainlink's Robinhood feeds are mainnet only), so \"$5 of TSLA\" gets a reply saying so instead of a made-up price.",
+        ],
+        code: [
+          { path: "src/lib/settlement/evm.ts", label: "Stock token transfers" },
+          { path: "src/lib/bot/stocks.ts", label: "Stock gifts" },
+          { path: "tests/settlement/evm-stocks.test.ts", label: "Permit and transfer tests" },
+          { path: "tests/bot/stocks.test.ts", label: "Stock gift tests" },
+        ],
+      },
+    },
     textWord: "robinhood",
     token: { testnet: "Dial Test USD (dUSD)", mainnet: null },
     code: [{ path: "contracts/src/DialTestUSD.sol", label: "Dial Test USD contract" }, ...EVM_CODE],
@@ -270,7 +286,7 @@ export const ATTACHED_FEATURES: Record<Chain, FeatureId[]> = {
   ethereum: ["names"],
   arbitrum: [],
   hyperevm: [],
-  robinhood: [],
+  robinhood: ["assets"],
   zcash: ["shielded"],
 };
 

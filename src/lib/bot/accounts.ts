@@ -16,6 +16,7 @@ import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
+import { formatTotals } from "@/lib/stocks";
 import type { SettlementAdapter } from "@/lib/settlement/types";
 import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
@@ -123,15 +124,13 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
 
 /** How much these escrows add up to and who sent them, for a claim text. */
 async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
-  const total = escrows.reduce((sum, i) => sum + i.amount, 0n);
-  // One chain: say it the way that chain reads ("$5 (0.1 TAZ)" on Zcash). Mixed: plain dollars.
-  const [only, ...others] = new Set(escrows.map((i) => i.chain));
+  // Per asset, and the way the chain reads when they share one ("$5 (0.1 TAZ)" on Zcash, "0.5 TSLA").
+  const amount = formatTotals(escrows, deps.network);
   const senders = new Set<string>();
   for (const i of escrows) {
     const s = await getUserById(deps.db, i.senderId);
     if (s) senders.add(displayName(s));
   }
-  const amount = only && others.length === 0 ? money(total, only, deps.network) : formatUsd(total);
   return { amount, from: [...senders].join(", ") || "someone" };
 }
 

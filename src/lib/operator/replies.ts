@@ -27,7 +27,7 @@ const firstContact = (appUrl: string, intro: string, short: string) => {
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
 /** Ends every text to someone who never texted the operator. */
-const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
+export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
 
 export const replies = {
   welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
