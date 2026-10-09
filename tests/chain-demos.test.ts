@@ -10,7 +10,7 @@ import { chainStatuses } from "@/lib/chain-status";
 import { createUser } from "@/lib/identity";
 import { claimForSettlement, createIntent, markEscrowed, markReleased, markSettled } from "@/lib/intents";
 import { FEATURES } from "@/lib/settlement/capabilities";
-import { latestSplit, newestHandle, recentEscrows } from "@/lib/stats";
+import { demoHandle, latestSplit, recentEscrows } from "@/lib/stats";
 import { memoizer } from "@/lib/web/memo";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { createTestDb } from "./helpers/db";
@@ -184,12 +184,14 @@ describe("latestSplit", () => {
 });
 
 describe("pay-link Blink", () => {
-  it("picks the newest person who joined, and builds the dial.to link and solana-action URI for their pay action", async () => {
+  it("shows only the configured demo handle, once claimed, and builds the dial.to link and solana-action URI for it", async () => {
     const db = await createTestDb();
-    expect(await newestHandle(db)).toBeNull();
+    expect(await demoHandle(db, "sam")).toBeNull();
     await createUser(db, { phone: "+15550000050", handle: "alex" }, new Date("2026-10-01T00:00:00Z"));
     await createUser(db, { phone: "+15550000051", handle: "sam" }, new Date("2026-10-02T00:00:00Z"));
-    expect(await newestHandle(db)).toBe("sam");
+    expect(await demoHandle(db, undefined)).toBeNull();
+    expect(await demoHandle(db, "sam")).toBe("sam");
+    expect(await demoHandle(db, "nobody")).toBeNull();
 
     expect(blinkFor("https://dial.example", "sam", true)).toEqual({
       actionUrl: "https://dial.example/api/actions/pay/sam",

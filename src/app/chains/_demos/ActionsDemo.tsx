@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db/client";
 import { publicEnv } from "@/lib/env";
 import { usdToBaseUnits } from "@/lib/money";
 import { payActionUrl, solanaActionLinks } from "@/lib/pay-links";
-import { newestHandle } from "@/lib/stats";
+import { demoHandle } from "@/lib/stats";
 import { ButtonLink } from "@/ui/primitives/Button/Button";
 import { CodeBlock } from "@/ui/primitives/CodeBlock/CodeBlock";
 import { Fine } from "@/ui/primitives/Fine/Fine";
@@ -19,12 +19,11 @@ export function blinkFor(appUrl: string, handle: string, testnet: boolean) {
 }
 
 /**
- * actions: the Blink for the newest person on Dial, built by the same code the pay action serves. By
- * handle only: a judge's page shouldn't print the name someone gave to get paid. Nothing until someone
- * has signed up.
+ * actions: the Blink for the demo handle (DEMO_HANDLE), built by the same code the pay action serves. By
+ * handle only, and only for a handle whose owner agreed to be shown. Nothing when it's unset or unclaimed.
  */
 export async function ActionsDemo({ chain, network }: DemoProps) {
-  const handle = await quietly("newest handle unavailable", () => newestHandle(getDb()), null);
+  const handle = await quietly("demo handle unavailable", () => demoHandle(getDb(), publicEnv().DEMO_HANDLE), null);
   if (!handle) return null;
   const { APP_URL, PER_TX_CAP_USD } = publicEnv();
   const meta = payActionMetadata({ appUrl: APP_URL, perTxCap: usdToBaseUnits(PER_TX_CAP_USD), network }, chain, { handle, name: null }, {});

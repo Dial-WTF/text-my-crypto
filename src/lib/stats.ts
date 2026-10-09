@@ -192,13 +192,13 @@ export async function latestSplit(db: Db, chain: Chain): Promise<SplitItem | nul
   };
 }
 
-/** The handle of the person who most recently joined Dial, for the pay-link demo; null before anyone has. */
-export async function newestHandle(db: Db): Promise<string | null> {
+/** The demo handle (DEMO_HANDLE) if someone has claimed it, else null: the pay-link demo never shows anyone else. */
+export async function demoHandle(db: Db, handle: string | undefined): Promise<string | null> {
+  if (!handle) return null;
   const [row] = await db
     .select({ handle: users.handle })
     .from(users)
-    .where(and(isNotNull(users.claimedAt), isNotNull(users.handle)))
-    .orderBy(desc(users.claimedAt))
+    .where(and(eq(users.handle, handle), isNotNull(users.claimedAt)))
     .limit(1);
   return row?.handle ?? null;
 }
