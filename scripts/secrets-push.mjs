@@ -26,6 +26,9 @@ const SECRETS = new Set([
   "ALCHEMY_API_KEY",
   "AI_GATEWAY_API_KEY",
   "WORKERS_AI_API_TOKEN",
+  // The Zcash wallet service (services/zcash-wallet): its URL and the shared bearer token.
+  "ZCASH_SERVICE_URL",
+  "ZCASH_SERVICE_TOKEN",
   // The owner's phone for watchdog alerts.
   "ALERT_PHONE",
 ]);

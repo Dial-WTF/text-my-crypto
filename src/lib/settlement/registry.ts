@@ -30,8 +30,11 @@ type Common = {
   explorerAddress: (address: string) => string;
 };
 
-/** `escrowProgram`: the dial_escrow program deployed on this network (solana/README.md), when there is one. */
-export type SolanaNetwork = Common & { kind: "solana"; mint: string; escrowProgram?: string };
+/**
+ * `escrowProgram`: the dial_escrow program deployed on this network (solana/README.md), when there is one.
+ * `caip2`: the network's CAIP-2 id, which Solana Actions name in their X-Blockchain-Ids header.
+ */
+export type SolanaNetwork = Common & { kind: "solana"; mint: string; caip2: string; escrowProgram?: string };
 /** A null token means the network is wired but has no stablecoin we settle in yet; it stays off. */
 export type TempoNetwork = Common & {
   kind: "tempo";
@@ -44,7 +47,21 @@ export type TempoNetwork = Common & {
  * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
  */
 export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; escrowContract?: Address | null };
-export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
+/**
+ * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
+ * (services/zcash-wallet). `publicRpc` is the lightwalletd that service scans; the Worker never
+ * talks to it. People see dollars converted at `usdPerZec`, a fixed demo rate: testnet ZEC (TAZ)
+ * has no price.
+ */
+export type ZcashNetwork = Common & {
+  kind: "zcash";
+  asset: "TAZ" | "ZEC";
+  usdPerZec: number | null;
+  addressPrefix: string;
+  /** True once a real round-trip has gone through the wallet service here. Until then, switched off reads "Building", not "Wired". */
+  proven: boolean;
+};
+export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork | ZcashNetwork;
 
 /** Explorer links for an Etherscan-style explorer. */
 const scan = (host: string) => ({
@@ -65,6 +82,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://api.devnet.solana.com",
       alchemy: "solana-devnet",
       mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
       escrowProgram: "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`,
       explorerAddress: (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`,
@@ -76,6 +94,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://api.mainnet-beta.solana.com",
       alchemy: "solana-mainnet",
       mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}`,
       explorerAddress: (a) => `https://explorer.solana.com/address/${a}`,
     },
@@ -214,7 +233,23 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       ...scan("robinhoodchain.blockscout.com"),
     },
   },
-  zcash: { testnet: null, mainnet: null },
+  zcash: {
+    testnet: {
+      kind: "zcash",
+      id: "ZCASH_TESTNET",
+      network: "Zcash testnet",
+      publicRpc: "https://testnet.zec.rocks:443",
+      asset: "TAZ",
+      // $50 per TAZ: "$5" is 0.1 TAZ, and the 0.0001 TAZ network fee is half a cent.
+      usdPerZec: 50,
+      addressPrefix: "utest1",
+      proven: false, // flip after ZCASH_INT=1 passes against the deployed service
+      explorerTx: (h) => `https://testnet.zcashexplorer.app/transactions/${h}`,
+      // Shielded addresses have no public history; the explorer page only confirms the address is valid.
+      explorerAddress: (a) => `https://testnet.zcashexplorer.app/address/${a}`,
+    },
+    mainnet: null, // custody and a real ZEC price come first
+  },
 };
 
 /** Every escrow contract override name: ESCROW_CONTRACT_<id> for each network that can carry one. */

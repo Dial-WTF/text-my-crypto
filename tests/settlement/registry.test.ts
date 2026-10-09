@@ -42,7 +42,7 @@ describe("registry", () => {
     for (const byNetwork of Object.values(REGISTRY)) {
       for (const network of NETWORKS) {
         const entry = byNetwork[network];
-        if (!entry || entry.kind === "solana") continue;
+        if (!entry || entry.kind === "solana" || entry.kind === "zcash") continue;
         expect(entry.viem.testnet ?? false).toBe(network === "testnet");
       }
     }
@@ -50,9 +50,14 @@ describe("registry", () => {
 });
 
 describe("activeChains", () => {
-  it("runs only listed chains that have a stablecoin on the selected network", () => {
+  it("runs only listed chains that have something to settle in on the selected network", () => {
     const chains = activeChains(env({ CHAINS: "solana,base,robinhood,zcash" }), {});
-    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood"]);
+    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood", "zcash"]);
+  });
+
+  it("keeps Zcash off mainnet until it has a price and custody story", () => {
+    const chains = activeChains(env({ NETWORK: "mainnet", ALLOW_MAINNET: "yes", CHAINS: "zcash" }), {});
+    expect(chains).toEqual([]);
   });
 
   it("switches every chain to its mainnet entry together", () => {

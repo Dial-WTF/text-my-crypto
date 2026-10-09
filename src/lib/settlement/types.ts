@@ -6,6 +6,9 @@ export { errorText, redactUrls } from "./redact";
 
 export type SettleResult = { txHash: string; explorerUrl: string };
 
+/** Where a payment goes: another Dial wallet, a per-payment escrow wallet, or an address outside Dial. */
+export type RecipientKind = "dial" | "escrow" | "outside";
+
 /** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
 export interface SettlementAdapter extends Capabilities {
   chain: Chain;
@@ -13,15 +16,26 @@ export interface SettlementAdapter extends Capabilities {
   isValidAddress(address: string): boolean;
   createWallet(): Promise<{ address: string; secret: Uint8Array<ArrayBuffer> }>;
   getBalance(address: string): Promise<bigint>;
-  /** Moves `amount` from the wallet behind `fromSecret` to `to`. `closeSource` empties and closes the source token account (escrow release/refund). */
+  /**
+   * Moves `amount` from the wallet behind `fromSecret` to `to`. `closeSource` empties and closes the source
+   * token account (escrow release/refund). `escrow` says `to` is a per-payment escrow wallet, for chains
+   * where the sender also covers what moving it on will cost.
+   */
   settle(args: {
     fromSecret: Uint8Array<ArrayBuffer>;
     to: string;
     amount: bigint;
     memo: string;
     closeSource?: boolean;
+    escrow?: boolean;
   }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
+  /**
+   * What a payment must carry on top of `amount`, beyond the fee `getBalance` already holds back, by
+   * where it goes: another Dial wallet, a per-payment escrow wallet, or outside Dial. Absent: nothing.
+   * Zcash only, where payments between its wallets carry the fees the recipient will need to move them on.
+   */
+  carriedFees?(to: RecipientKind): bigint;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
 }
@@ -99,7 +113,10 @@ export class EscrowExpiredError extends Error {
   }
 }
 
-/** Wraps an adapter so read and funding failures surface as ChainDownError. `settle` failures stay as-is: they're recorded on the payment. */
+/**
+ * Wraps an adapter so read, wallet-creation and funding failures surface as ChainDownError. `settle`
+ * failures stay as-is: they're recorded on the payment.
+ */
 export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
   const guard =
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
@@ -110,5 +127,10 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
-  return { ...adapter, getBalance: guard(adapter.getBalance), fund: guard(adapter.fund) };
+  return {
+    ...adapter,
+    createWallet: guard(adapter.createWallet),
+    getBalance: guard(adapter.getBalance),
+    fund: guard(adapter.fund),
+  };
 }

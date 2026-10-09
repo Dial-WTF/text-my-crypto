@@ -1,10 +1,14 @@
 import type { BotDeps } from "@/lib/bot/types";
 import { getDb } from "@/lib/db/client";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { type Env, env } from "@/lib/env";
+import { type Env, env, rpcOverrides } from "@/lib/env";
+import type { Chain } from "@/lib/chains";
+import { evmNameService } from "@/lib/evm-names";
+import type { NameService } from "@/lib/settlement/capabilities";
 import { usdToBaseUnits } from "@/lib/money";
 import { gatewayInterpreter, type LlmInterpreter, noLlm, workersAiInterpreter } from "@/lib/operator/brain";
 import { getAdapters } from "@/lib/settlement";
+import { REGISTRY, resolveRpc } from "@/lib/settlement/registry";
 import { logSender, payphoneSender } from "@/lib/sms/payphone";
 
 /** The Worker's "ai" binding, or undefined outside a Worker (scripts, tests). */
@@ -29,6 +33,22 @@ function operatorModel(e: Env): LlmInterpreter {
   return e.AI_GATEWAY_API_KEY ? gatewayInterpreter(e.DIAL_OPERATOR_MODEL) : noLlm;
 }
 
+/**
+ * ENS and Basenames on this network's Ethereum and Base, through the same RPCs the adapters would use.
+ * Built whether or not those chains are switched on, so a name still resolves and gets the usual reply.
+ */
+function nameServices(e: Env): Partial<Record<Chain, NameService>> {
+  const secrets = { alchemyKey: e.ALCHEMY_API_KEY, overrides: rpcOverrides() };
+  const services: Partial<Record<Chain, NameService>> = {};
+  for (const chain of ["ethereum", "base"] as const) {
+    const entry = REGISTRY[chain][e.NETWORK];
+    if (entry?.kind !== "evm") continue;
+    const names = evmNameService(chain, e.NETWORK, { viem: entry.viem, rpcUrl: resolveRpc(entry, secrets).url });
+    if (names) services[chain] = names;
+  }
+  return services;
+}
+
 export function botDeps(): BotDeps {
   const e = env();
   return {
@@ -50,5 +70,6 @@ export function botDeps(): BotDeps {
     // The signup drip is test money. On mainnet it would be real dollars, so there is none.
     dripAmount: e.NETWORK === "testnet" ? usdToBaseUnits(e.SIGNUP_DRIP_USD) : 0n,
     network: e.NETWORK,
+    names: nameServices(e),
   };
 }

@@ -43,10 +43,15 @@ export interface BatchTransfer {
 }
 
 export interface PaymentActions {
+  /** The network's CAIP-2 id, which Actions responses name in their X-Blockchain-Ids header. */
+  blockchainId: string;
   /** An unsigned transaction paying `recipient` from `payer`, tagged with `reference` so it can be found. Base64. */
   buildPayment(args: { payer: string; recipient: string; amount: bigint; reference: string; memo: string }): Promise<string>;
-  /** Confirmed payments carrying `reference`, oldest first. Empty until one lands. */
-  findByReference(reference: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
+  /**
+   * Confirmed payments carrying `reference` that paid `recipient`, oldest first: `amount` is what
+   * `recipient` received, `payer` the wallet it came from. Empty until one lands.
+   */
+  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
 }
 
 export interface ShieldedTransfer {
@@ -112,10 +117,13 @@ export function chainWith<F extends FeatureId>(
 }
 
 /** The name service whose suffix matches `name` (longest suffix wins, so ".base.eth" beats ".eth"). */
-export function nameServiceFor(adapters: Adapters, name: string): { chain: Chain; names: NameService } | null {
+export function nameServiceFor(
+  adapters: Partial<Record<Chain, Pick<SettlementAdapter, "names">>>,
+  name: string,
+): { chain: Chain; names: NameService } | null {
   const lower = name.toLowerCase();
   let best: { chain: Chain; names: NameService; length: number } | null = null;
-  for (const [chain, adapter] of Object.entries(adapters) as Array<[Chain, SettlementAdapter | undefined]>) {
+  for (const [chain, adapter] of Object.entries(adapters) as Array<[Chain, Pick<SettlementAdapter, "names"> | undefined]>) {
     const names = adapter?.names;
     const suffix = names?.suffixes.find((s) => lower.endsWith(s) && lower.length > s.length);
     if (names && suffix && (!best || suffix.length > best.length)) best = { chain, names, length: suffix.length };

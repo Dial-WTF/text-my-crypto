@@ -29,7 +29,7 @@ import {
   matchCode,
   matchesExpiredCode,
 } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
+import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName } from "@/lib/names";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
@@ -46,6 +46,7 @@ import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { prepareSplit } from "./split";
 import { latestRecent, needsMention, statusReply } from "./status";
 import { text } from "./text";
 import type { BotDeps } from "./types";
@@ -248,6 +249,8 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await prepareMoney(deps, user, cmd));
     case "withdraw":
       return reply(await prepareWithdraw(deps, user, cmd));
+    case "split":
+      return reply(await prepareSplit(deps, user, cmd));
   }
 }
 
@@ -270,7 +273,7 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
     const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
     const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender), deps.appUrl);
+    if (waiting && sender) return replies.welcomeWithMoney(money(waiting.amount, waiting.chain, deps.network), displayName(sender), deps.appUrl);
   }
   return replies.welcome(deps.appUrl);
 }
@@ -294,7 +297,13 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
   }
   const notes: string[] = [];
   const retry: Intent[] = [];
+  // Every leg of a split shares its code: approve the split once.
+  const splits = new Set<string>();
   for (const intent of matches) {
+    if (intent.splitId) {
+      if (splits.has(intent.splitId)) continue;
+      splits.add(intent.splitId);
+    }
     if (intent.status === "escrowed") {
       const outcome = await releaseEscrow(deps, intent.id);
       if (outcome.ok) continue;
@@ -315,7 +324,10 @@ async function balanceReply(deps: BotDeps, user: User): Promise<string> {
   const lines: string[] = [];
   for (const [chain, adapter] of enabledChains(deps)) {
     const w = await getWallet(deps.db, user.id, chain);
-    if (w) lines.push(`${formatUsd(await adapter.getBalance(w.address))} USDC on ${chainLabel(chain)}`);
+    if (w) {
+      const amount = money(await adapter.getBalance(w.address), chain, deps.network);
+      lines.push(`${namesItsCoin(amount) ? amount : `${amount} USDC`} on ${chainLabel(chain)}`);
+    }
   }
   return lines.length ? replies.balance(lines) : replies.chainUnavailable(chainLabel(user.defaultChain));
 }

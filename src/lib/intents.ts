@@ -19,12 +19,16 @@ export type NewIntent = {
   chain: Chain;
   token: string;
   recipientAddress: string;
+  /** The name recipientAddress was resolved from, when the person gave a name instead of an address. */
+  recipientName?: string | null;
   amount: bigint;
   note: string | null;
   escrowSecretEnc?: string | null;
   escrowProgram?: string | null;
   /** Preset when something keyed by the id (an escrow vault) has to be known before the row exists. */
   id?: string;
+  /** Groups the legs of one split. */
+  splitId?: string | null;
 };
 
 type Bound = Pick<
@@ -226,6 +230,54 @@ export async function revertToEscrowed(db: Db, id: string, error: string): Promi
     .where(eq(intents.id, id));
 }
 
+/**
+ * A settlement whose outcome isn't known yet (the money may have moved) stays "settling" with one of
+ * these in `error`: waiting for the resume job, or taken by a resume run since the ISO time that
+ * follows. A run that dies mid-retry leaves its marker, and the claim goes stale after RETRY_STALE_MS.
+ */
+const UNKNOWN = "outcome unknown: ";
+const RETRYING = "outcome unknown, retrying since ";
+const RETRY_STALE_MS = 5 * 60_000;
+
+export async function markOutcomeUnknown(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ error: `${UNKNOWN}${error}`.slice(0, 500) })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling")));
+}
+
+/** Waiting for a retry, or taken by a run that started before `staleBefore` (and so likely died). */
+function retryable(staleBefore: Date) {
+  const isoLength = staleBefore.toISOString().length;
+  return or(
+    sql`${intents.error} like ${`${UNKNOWN}%`}`,
+    and(
+      sql`${intents.error} like ${`${RETRYING}%`}`,
+      sql`substr(${intents.error}, 1, ${RETRYING.length + isoLength}) < ${`${RETRYING}${staleBefore.toISOString()}`}`,
+    ),
+  );
+}
+
+/** Settlements left with an unknown outcome, oldest first, for the resume job to drive to an answer. */
+export async function unknownSettlements(db: Db, now: Date, limit = 10): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.status, "settling"), retryable(new Date(now.getTime() - RETRY_STALE_MS))))
+    .orderBy(intents.createdAt)
+    .limit(limit);
+}
+
+/** Takes one unknown settlement for a retry, so two resume runs never drive the same one at once. */
+export async function claimUnknownForRetry(db: Db, id: string, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .update(intents)
+    .set({ error: `${RETRYING}${now.toISOString()}` })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling"), retryable(new Date(now.getTime() - RETRY_STALE_MS))))
+    .returning();
+  return row ?? null;
+}
+
 export async function markFailed(db: Db, id: string, error: string): Promise<void> {
   await db
     .update(intents)
@@ -308,6 +360,8 @@ export async function findPendingDuplicate(
         eq(intents.chain, q.chain),
         eq(intents.status, "pending"),
         gt(intents.expiresAt, now),
+        // A share of a split is not the same payment as a send of that amount.
+        isNull(intents.splitId),
       ),
     )
     .orderBy(desc(intents.createdAt))
@@ -333,6 +387,7 @@ export async function findRecentCompletedDuplicate(
         eq(intents.kind, "send"),
         inArray(intents.status, ["settling", "settled", "escrowed"]),
         gte(intents.createdAt, since),
+        isNull(intents.splitId),
       ),
     )
     .limit(1);
@@ -499,4 +554,31 @@ export async function intentsFor(db: Db, userId: string, limit: number): Promise
     .where(or(eq(intents.senderId, userId), eq(intents.recipientId, userId), eq(intents.createdBy, userId)))
     .orderBy(desc(intents.createdAt))
     .limit(limit);
+}
+
+export function newSplitId(): string {
+  return newId("sp");
+}
+
+/** Every leg of a split, in the order the sender listed the people. */
+export async function splitLegs(db: Db, splitId: string): Promise<Intent[]> {
+  return db.select().from(intents).where(eq(intents.splitId, splitId)).orderBy(sql`rowid`);
+}
+
+/** Hash over every leg of a split, so one passkey approval covers exactly these payments. */
+export async function splitHash(legs: Intent[]): Promise<string> {
+  const each = await Promise.all(legs.map((l) => intentHash(l)));
+  return sha256Hex(JSON.stringify(["dial-split-v1", legs[0]?.splitId ?? null, ...each]));
+}
+
+/**
+ * Moves every pending, unexpired leg of a split to "settling" in one statement, so a split is approved whole.
+ * Returns the legs it moved; fewer than the split has means some leg was already cancelled or used.
+ */
+export async function claimSplitForSettlement(db: Db, splitId: string, now: Date): Promise<Intent[]> {
+  return db
+    .update(intents)
+    .set({ status: "settling", codeHash: null, approvedAt: now })
+    .where(and(eq(intents.splitId, splitId), eq(intents.status, "pending"), gt(intents.expiresAt, now)))
+    .returning();
 }

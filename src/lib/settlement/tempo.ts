@@ -1,7 +1,21 @@
-import { type Address, bytesToHex, type Hex, isAddress, isAddressEqual, keccak256, type Log, pad, parseEventLogs, size, stringToHex } from "viem";
+import {
+  type Address,
+  bytesToHex,
+  encodeFunctionData,
+  type Hex,
+  isAddress,
+  isAddressEqual,
+  keccak256,
+  type Log,
+  pad,
+  parseEventLogs,
+  size,
+  stringToHex,
+} from "viem";
 import { tempo, tempoModerato } from "viem/chains";
 import { Abis, Account, createClient, http } from "viem/tempo";
 import { withRateLimitRetry as rl } from "./retry";
+import type { TransferLeg } from "./capabilities";
 import type { SettlementAdapter, SettleResult } from "./types";
 
 /** AlphaUSD on Moderato: TIP-20, 6 decimals. Also the fee token, since Tempo has no native gas coin. */
@@ -34,6 +48,24 @@ export function deliveredTo(
       l.args.amount === expected.amount,
   );
 }
+
+/**
+ * One TIP-20 `transferWithMemo` call per leg, for a single Tempo transaction. Tempo transactions carry a
+ * list of calls that execute atomically: every leg lands, or the whole transaction reverts and none do.
+ */
+export function batchCalls(token: Address, legs: readonly TransferLeg[]): { to: Address; data: Hex }[] {
+  return legs.map((leg) => ({
+    to: token,
+    data: encodeFunctionData({
+      abi: Abis.tip20,
+      functionName: "transferWithMemo",
+      args: [leg.to as Address, leg.amount, encodeMemo(leg.memo)],
+    }),
+  }));
+}
+
+/** Most legs one batch carries. Splits stop at 10 people; this leaves room without inviting huge transactions. */
+export const MAX_BATCH_LEGS = 16;
 
 export type TempoConfig = {
   treasuryKey: Hex;
@@ -79,6 +111,25 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
     return { txHash: receipt.transactionHash, explorerUrl: explorerTx(receipt.transactionHash) };
   }
 
+  /** Every leg in one sponsored transaction: all of them land, or none do. */
+  async function transferBatch(
+    from: ReturnType<typeof Account.fromSecp256k1>,
+    legs: readonly TransferLeg[],
+  ): Promise<SettleResult> {
+    if (legs.length === 0 || legs.length > MAX_BATCH_LEGS) throw new Error(`a batch carries 1 to ${MAX_BATCH_LEGS} legs`);
+    const feePayer = from === treasury ? undefined : treasury;
+    const receipt = await rl(() => client.sendTransactionSync({ account: from, feePayer, calls: batchCalls(token, legs) }));
+    if (receipt.status !== "success") throw new Error(`tempo tx ${receipt.transactionHash} reverted`);
+    // One leg the receive policy blocked fails the check for the batch. The rest did move, so this is not "nothing moved":
+    // it surfaces as an error the caller records, the same as a blocked single transfer.
+    for (const leg of legs) {
+      if (!deliveredTo(receipt.logs, { token, from: from.address, to: leg.to as Address, amount: leg.amount })) {
+        throw new Error(`tempo tx ${receipt.transactionHash} did not deliver to ${leg.to} (blocked by receive policy?)`);
+      }
+    }
+    return { txHash: receipt.transactionHash, explorerUrl: explorerTx(receipt.transactionHash) };
+  }
+
   /** The treasury pays its own fee in AlphaUSD too, so keep a dollar of headroom. */
   async function ensureTreasury(amount: bigint): Promise<void> {
     if (!cfg.faucet || (await balanceOf(treasury.address)) >= amount + 1_000_000n) return;
@@ -97,6 +148,11 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
     // Nothing to close on Tempo: an escrow drained by a sponsored transfer is left at exactly zero.
     async settle({ fromSecret, to, amount, memo }) {
       return transfer(Account.fromSecp256k1(bytesToHex(fromSecret)), to as Address, amount, memo);
+    },
+    // Tempo transactions carry a list of calls run atomically: a split pays everyone in one transaction, or nobody.
+    batch: {
+      maxLegs: MAX_BATCH_LEGS,
+      settleBatch: ({ fromSecret, legs }) => transferBatch(Account.fromSecp256k1(bytesToHex(fromSecret)), legs),
     },
     async treasuryAddress() {
       return treasury.address;

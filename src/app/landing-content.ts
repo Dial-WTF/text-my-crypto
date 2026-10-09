@@ -29,7 +29,7 @@ const CHAIN_COPY: Record<Chain, { name: string; logo: LogoId; role: string }> = 
   arbitrum: { name: "Arbitrum", logo: "arbitrum", role: "USDC on Arbitrum, same signed-authorization flow" },
   hyperevm: { name: "Hyperliquid", logo: "hyperliquid", role: "USDC on HyperEVM, same signed-authorization flow" },
   robinhood: { name: "Robinhood Chain", logo: "robinhood", role: "Same EVM flow, in a test dollar until there is test USDC on it" },
-  zcash: { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo" },
+  zcash: { name: "Zcash", logo: "zcash", role: "Shielded testnet ZEC through our Rust wallet service, payment id in the encrypted memo" },
 };
 
 const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, building: 3 };

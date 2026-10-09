@@ -45,6 +45,8 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [x] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
 - [x] build · Dial Pay: crypto-Zelle pay pages at `/@handle` (pay by text or any wallet via Solana Pay / EIP-681, JSON at `/@handle.json`), `/wallet` (texted link + code, passkey, or agent key at `/api/wallet`), MCP `get_pay_link` and `get_wallet`
 - [x] build · On-chain ledger: treasury links per chain, `/ledger`, `/ledger.json`
+- [x] build · Pay links are Solana Actions (Blinks): `/actions.json` maps `/@handle` to `/api/actions/pay/[handle]`, which offers $1/$5/$10 or a custom amount and builds a devnet USDC transfer with a reference key; the watchdog cron finds it by reference, records it on the ledger once and texts the recipient (`action_payments`, migration 0014)
+- [ ] you · Register the pay action with Dialect's registry at dial.to/register so pay links unfurl as Blinks on X
 
 ## Reliability
 
@@ -60,7 +62,9 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [x] build · Anchor escrow program on Solana devnet: refund after expiry without Dial, claim with attestor signature. `dial_escrow` at [`4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3`](https://explorer.solana.com/address/4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3?cluster=devnet), upgrade authority `GFFmgkLxChrX3MdFQqbCZPHNcL1J4sda7c383fG5gs88` (keys and runbook in `solana/README.md`); LiteSVM tests for every instruction plus devnet integration tests
 - [x] build · Switch escrow sends to the program (`ESCROW_PROGRAM=on`); server escrow stays the fallback. Round-trip proven through the app on staging (send to a new number → claim by code), now part of every staging smoke run; on in production
 - [ ] build · k-of-n attestors in the escrow program (today: one attestor key per escrow)
-- [ ] build · Zcash shielded sends via a Rust wallet service in a Cloudflare Container (stretch). Needs its own wallet stack (librustzcash or zcash-devtool behind lightwalletd); not an adapter tweak, so it is not in the registry yet
+- [x] build · Zcash wallet service (Rust, librustzcash NU7 pre-releases, testnet.zec.rocks) with a Cloudflare Container wrapper, `zcash` adapter, registry entry for Zcash testnet, TAZ shown next to dollars at a $50 demo rate — see docs/zcash.md. Syncs testnet locally; no real send yet
+- [ ] you · Deploy the Zcash wallet service and fund its treasury with TAZ (faucets were down on 2026-10-08; ask in the Zcash Discord) — docs/zcash.md "Setting it up"
+- [ ] build · One real Zcash testnet round-trip (`ZCASH_INT=1` test), then add `zcash` to `CHAINS` on staging, then production
 - [ ] build · Carrier SIM-swap / number-verification check if an aggregator covers US numbers (stretch)
 
 ## Submission (Colosseum portal)
