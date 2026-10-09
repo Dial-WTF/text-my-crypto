@@ -47,7 +47,7 @@ type Rpc<T> = { result?: T; error?: { message?: string } };
 
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
-  const body = (await res.json()) as Rpc<T>;
+  const body = await res.json<Rpc<T>>();
   if (body.error) throw new Error(body.error.message ?? `${method} failed`);
   if (body.result === undefined) throw new Error(`${method} failed`);
   return body.result;
