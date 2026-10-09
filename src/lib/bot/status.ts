@@ -4,6 +4,7 @@ import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFo
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { codeFor } from "./money";
+import { splitStatusReply } from "./split";
 import type { BotDeps } from "./types";
 
 /** How far back "did it work?" looks. Older payments are history, not something in flight. */
@@ -50,6 +51,8 @@ export async function statusReply(
 ): Promise<string> {
   const i = latest === undefined ? await latestRecent(deps, user) : latest;
   if (!i) return replies.nothingInFlight();
+  const split = await splitStatusReply(deps, user, i, { freshCode });
+  if (split) return split;
   const now = deps.now();
   const amount = formatUsd(i.amount);
   const outgoing = i.senderId === user.id;

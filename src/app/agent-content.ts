@@ -20,6 +20,7 @@ export function agentFacts() {
       ["get_payment", "track status and receipt"],
       ["get_balance", "USDC per chain"],
       ["withdraw", "move USDC to any address"],
+      ["split_payment", "split a bill: one approval, one Tempo transaction"],
       ["resolve_recipient", "contacts → directory lookup"],
       ["list_payments", "recent history"],
       ["get_pay_link", "crypto Zelle: a pay page for you or any @handle"],

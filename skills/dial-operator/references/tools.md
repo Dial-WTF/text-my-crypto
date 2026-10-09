@@ -13,6 +13,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 | `request_payment` | `from`, `amountUsd`, `note?`, `chain?` |
 | `create_invoice` | `to`, `amountUsd`, `note?`, `chain?` |
 | `withdraw` | `amountUsd` (or `"all"`), `address`, `chain?` |
+| `split_payment` | `amountUsd`, `people` (1 to 10, each like `to`), `includeMe?` (the owner takes a share and pays the others'), `note?`, `chain?` (`"tempo"` or omitted) |
 | `get_payment` | `intentId` (`pi_…`) |
 | `list_payments` | `limit?` (1 to 50, default 10) |
 | `get_pay_link` | `handle?` (`@alex`; omit for the owner), `amountUsd?`, `note?` (up to 60 characters on the page) |
@@ -67,6 +68,8 @@ Tool errors come back with `isError: true` and a JSON body `{ "error": "<code>",
 | `insufficient` | Not enough balance; the message says how much there is |
 | `chain_unavailable` | That chain isn't switched on |
 | `bad_address` / `nothing_to_withdraw` | Withdraw problems |
+| `split_tempo_only` | Splits settle in one Tempo transaction. Pass `chain: "tempo"` or leave it out |
+| `split_people` | A split needs 2 to 10 people (owner included with `includeMe`), each listed once |
 | `duplicate` | The same payment is already waiting (the message has its id) or just went out. Poll `get_payment` |
 | `not_found` | No such payment on this account |
 | `rate_limited` | Slow down |

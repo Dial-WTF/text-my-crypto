@@ -10,6 +10,7 @@ import {
   type PreparedIntent,
   resolveCounterparty,
 } from "@/lib/bot/money";
+import { confirmSplitText, createSplit, MAX_SPLIT_PEOPLE, type PreparedSplit, resolvePeople, type SplitErrorCode } from "@/lib/bot/split";
 import { text } from "@/lib/bot/text";
 import type { BotDeps } from "@/lib/bot/types";
 import { CHAINS, chainLabel } from "@/lib/chains";
@@ -94,20 +95,34 @@ export const toolInputs = {
     note,
   }),
   get_wallet: z.object({}),
+  split_payment: z.object({
+    amountUsd,
+    people: z
+      .array(person)
+      .min(1)
+      .max(MAX_SPLIT_PEOPLE)
+      .describe("Who shares the amount: phone numbers, Dial @handles or contact names. Each person once."),
+    includeMe: z
+      .boolean()
+      .optional()
+      .describe("True when the owner takes a share too and pays everyone else's (\"split $30 with @a @b\"). Default false."),
+    note,
+    chain: z.enum(CHAINS).optional().describe("Splits settle on Tempo, in one transaction. Leave out or pass \"tempo\"; other chains are refused."),
+  }),
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
 export type ToolInput<T extends ToolName> = z.infer<(typeof toolInputs)[T]>;
 
 /** Tools that create a PaymentIntent and text someone; they share a tighter rate limit. */
-export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set(["send_payment", "request_payment", "create_invoice", "withdraw"]);
+export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set(["send_payment", "request_payment", "create_invoice", "withdraw", "split_payment"]);
 
 // ---------------------------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------------------------
 
 export type ToolError = {
-  error: MoneyError["code"] | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
+  error: MoneyError["code"] | SplitErrorCode | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
 export type ToolResult = { ok: true; data: Record<string, unknown> } | { ok: false; error: ToolError };
@@ -152,7 +167,8 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     amountUsd: usd(i.amount),
     asset: "USDC",
     from: view.from,
-    to: view.to,
+    // One leg of a split: who this leg pays. The view's "to" names the whole split.
+    to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
     chain: i.chain,
     note: i.note,
     approver: approverOf(i, owner, payer),
@@ -164,6 +180,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     explorerUrl: i.explorerUrl,
     releaseTxHash: i.releaseTxHash,
     releaseExplorerUrl: i.releaseExplorerUrl,
+    splitId: i.splitId,
   };
 }
 
@@ -303,6 +320,41 @@ async function moneyTool(
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }
 
+async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Promise<ToolResult> {
+  const { user } = agent;
+  const ownerTexted = await text(deps, user.phone, replies.fromAgent(agent.key.label, confirmSplitText(s)));
+  const [first] = s.legs;
+  const pays = s.legs.reduce((a, l) => a + l.intent.amount, 0n);
+  return ok({
+    splitId: s.splitId,
+    status: "awaiting_approval",
+    approveUrl: s.approveUrl,
+    approver: "you",
+    approveBy: first?.intent.expiresAt.toISOString() ?? null,
+    amountUsd: usd(s.total),
+    paysUsd: usd(pays),
+    ownShareUsd: s.mine === null ? null : usd(s.mine),
+    asset: "USDC",
+    chain: "tempo",
+    legs: s.legs.map((l) => ({ intentId: l.intent.id, to: describe(l.person), amountUsd: usd(l.intent.amount), onDial: isClaimed(l.person) })),
+    message: ownerTexted
+      ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one Tempo transaction, or none do. Poll get_payment on any leg.`
+      : "The owner has paused texts from Dial (STOP), so no code went out: they can approve at approveUrl with their passkey, or text START first.",
+  });
+}
+
+async function splitPayment(deps: BotDeps, agent: Agent, input: ToolInput<"split_payment">): Promise<ToolResult> {
+  const { user } = agent;
+  // Splits run on Tempo, so that's what an agent gets when it names no chain. Another chain is refused, not faked.
+  const chain = input.chain ?? "tempo";
+  if (chain !== "tempo") return err("split_tempo_only", `Splits settle in one transaction on Tempo, not ${chainLabel(chain)}. Pass chain "tempo" or leave it out.`);
+  const resolved = await resolvePeople(deps, user, input.people);
+  if (!resolved.ok) return err(resolved.error.code, resolved.error.message);
+  const cmd = { kind: "split" as const, amountUsd: input.amountUsd, people: input.people, includeMe: input.includeMe ?? false, note: input.note, chain };
+  const r = await createSplit(deps, user, cmd, resolved.people);
+  return r.ok ? splitCreated(deps, agent, r.split) : err(r.error.code, r.error.message);
+}
+
 async function withdraw(deps: BotDeps, agent: Agent, input: ToolInput<"withdraw">): Promise<ToolResult> {
   const r = await createWithdrawIntent(deps, agent.user, { kind: "withdraw", ...input });
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
@@ -380,6 +432,8 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return withInput(toolInputs.get_pay_link, raw, (i) => getPayLink(deps, agent, i));
     case "get_wallet":
       return walletTool(deps, agent);
+    case "split_payment":
+      return withInput(toolInputs.split_payment, raw, (i) => splitPayment(deps, agent, i));
   }
 }
 
@@ -428,6 +482,11 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Pay link",
     description:
       "A shareable pay page (crypto Zelle) for the owner or any Dial @handle, optionally for a set amount and note. Returns the page URL, the text to send the operator, and a wallet link per chain (Solana Pay, EIP-681). Share the owner's link to get paid; read someone else's to pay them. Read-only.",
+  },
+  split_payment: {
+    title: "Split payment",
+    description:
+      "Split an amount between people, to the cent (any leftover cent goes to the first person). With includeMe the owner takes a share and pays everyone else's. Up to 10 people. Runs on Tempo: the owner approves once with one texted code, then every share settles in one transaction with each payment id as its memo, or none do. People not on Dial yet get their share held for them to claim. Returns splitId and an intentId per person; poll get_payment.",
   },
   get_wallet: {
     title: "Wallet",

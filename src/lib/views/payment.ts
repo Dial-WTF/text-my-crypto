@@ -2,6 +2,7 @@ import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
+import { splitLegs } from "@/lib/intents";
 import { networkName } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import type { Network } from "@/lib/settlement/registry";
@@ -24,6 +25,8 @@ export type PaymentView = {
   release: TxRef | null;
   approve: { passkey: boolean; code: boolean } | null;
   justSettled: boolean;
+  /** Set when this payment is one leg of a split: every leg, in order. `amount` is then the split's total. */
+  split: { legs: Array<{ id: string; to: string; amount: bigint }> } | null;
 };
 
 const KIND_LABEL: Record<Intent["kind"], string> = {
@@ -79,11 +82,16 @@ export async function buildPaymentView(
   const open = i.status === "pending" && i.expiresAt > now;
   const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
   const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
-  const to = i.kind === "withdraw" ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}` : name(recipient);
+  const split = i.splitId ? await splitView(db, i.splitId, name) : null;
+  const to = i.kind === "withdraw"
+    ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
+    : split
+      ? `${split.legs.length} people`
+      : name(recipient);
   return {
     id: i.id,
-    kindLabel: KIND_LABEL[i.kind],
-    amount: i.amount,
+    kindLabel: split ? "Split" : KIND_LABEL[i.kind],
+    amount: split ? split.legs.reduce((a, l) => a + l.amount, 0n) : i.amount,
     from: name(sender),
     to,
     network: networkName(i.chain, opts.network),
@@ -103,5 +111,13 @@ export async function buildPaymentView(
         }
       : null,
     justSettled: i.status === "settled" && i.settledAt !== null && now.getTime() - i.settledAt.getTime() < 60_000,
+    split,
   };
+}
+
+/** Every leg of the split, named for this audience. The legs share one approval and one transaction. */
+async function splitView(db: Db, splitId: string, name: (u: User | null) => string): Promise<NonNullable<PaymentView["split"]>> {
+  const legs = await splitLegs(db, splitId);
+  const people = await Promise.all(legs.map((l) => getUserById(db, l.recipientId)));
+  return { legs: legs.map((l, n) => ({ id: l.id, to: name(people[n] ?? null), amount: l.amount })) };
 }

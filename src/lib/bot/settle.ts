@@ -32,6 +32,7 @@ import {
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
+import { approveSplit } from "./split";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
 
@@ -49,6 +50,9 @@ const STALE_SETTLING_MS = 5 * 60_000;
 
 /** Executes an approved PaymentIntent: pays the recipient directly, or funds the payment's escrow if they aren't on Dial yet. */
 export async function approveIntent(deps: BotDeps, intentId: string): Promise<SettleOutcome> {
+  // A leg of a split is approved with the whole split, which settles in one transaction.
+  const splitId = (await getIntent(deps.db, intentId))?.splitId;
+  if (splitId) return approveSplit(deps, splitId);
   const intent = await claimForSettlement(deps.db, intentId, deps.now());
   if (!intent) return { ok: false, reason: "not_claimable" };
 
