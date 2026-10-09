@@ -7,12 +7,13 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 
 | Tool | Arguments |
 |---|---|
-| `whoami`, `get_balance`, `get_receive_address`, `get_wallet` | none |
+| `whoami`, `get_balance`, `get_receive_address`, `get_wallet`, `list_chain_features`, `get_stocks` | none |
 | `resolve_recipient` | `to` |
 | `send_payment` | `to`, `amountUsd`, `note?`, `chain?` |
 | `request_payment` | `from`, `amountUsd`, `note?`, `chain?` |
 | `create_invoice` | `to`, `amountUsd`, `note?`, `chain?` |
 | `withdraw` | `amountUsd` (or `"all"`), `address`, `chain?` |
+| `send_stock` | `to`, `shares` (decimal string, up to 6 decimals), `symbol` (`TSLA`, `AMZN`, `PLTR`, `NFLX`, `AMD` on testnet), `note?` |
 | `get_payment` | `intentId` (`pi_…`) |
 | `list_payments` | `limit?` (1 to 50, default 10) |
 | `get_pay_link` | `handle?` (`@alex`; omit for the owner), `amountUsd?`, `note?` (up to 60 characters on the page) |

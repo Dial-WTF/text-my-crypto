@@ -12,6 +12,7 @@ import {
 } from "@/lib/bot/money";
 import { stockBalances } from "@/lib/bot/stocks";
 import { text } from "@/lib/bot/text";
+import { FEATURES, featuresOf } from "@/lib/settlement/capabilities";
 import type { BotDeps } from "@/lib/bot/types";
 import { CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
@@ -111,6 +112,7 @@ export const toolInputs = {
   get_wallet: z.object({}),
   send_stock: z.object({ to: person, shares, symbol, note }),
   get_stocks: z.object({}),
+  list_chain_features: z.object({}),
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
@@ -379,6 +381,16 @@ async function walletTool(deps: BotDeps, agent: Agent): Promise<ToolResult> {
   return ok(walletJson(await walletView(deps, agent.user)));
 }
 
+/** Every enabled chain with the chain-native modules it carries, so an agent can see what each chain can do. */
+async function listChainFeatures(deps: BotDeps): Promise<ToolResult> {
+  const chains = enabledChains(deps).map(([chain, adapter]) => ({
+    chain,
+    name: chainLabel(chain),
+    features: featuresOf(adapter).map((id) => ({ id, ...FEATURES[id] })),
+  }));
+  return ok({ chains });
+}
+
 function withInput<S extends z.ZodType>(
   schema: S,
   raw: unknown,
@@ -427,6 +439,8 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       );
     case "get_stocks":
       return getStocks(deps, agent);
+    case "list_chain_features":
+      return listChainFeatures(deps);
   }
 }
 
@@ -490,5 +504,10 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Wallet",
     description:
       "The owner's wallet: balance and deposit address per chain, their pay link, recent activity and connected agents. Read-only.",
+  },
+  list_chain_features: {
+    title: "Chain features",
+    description:
+      "Each enabled chain and the chain-native features it carries (escrow, names, split payments, wallet pay links, private sends, venue transfers, assets), in plain words. Read-only.",
   },
 };

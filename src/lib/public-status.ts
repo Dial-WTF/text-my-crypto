@@ -1,14 +1,29 @@
 import { type Chain, CHAINS } from "@/lib/chains";
 import type { Check } from "@/lib/health";
+import { checkWords, isKnownCheck } from "@/lib/watchdog/problems";
 
 export type ServiceState = "ok" | "slow" | "down";
-export type StatusRow = { kind: "service" | "network"; name: string; state: ServiceState };
+/**
+ * One line on the board. `state` null is a plain fact with no verdict (when the last text was answered).
+ * `value` is shown before the stamp and is only ever a count or a rounded age; `link` is a public
+ * explorer page.
+ */
+export type StatusRow = {
+  kind: "service" | "network" | "texting" | "watchdog";
+  name: string;
+  state: ServiceState | null;
+  value?: string;
+  link?: { address: string; href: string };
+};
 
 /** A check that answers but takes longer than this counts as slow. */
 export const SLOW_MS = 2_000;
 
 /** How long one round of checks is reused, so visitors can't make the page hammer D1 and every RPC. */
 export const STATUS_TTL_MS = 60_000;
+
+/** The language model check costs a model call, so it is reused for longer. */
+export const LLM_TTL_MS = 5 * 60_000;
 
 const SERVICES: Record<string, string> = {
   d1: "Database",
@@ -46,10 +61,33 @@ export function publicRows(checks: Record<string, Check>, networkName: (chain: C
   return [...services, ...networks];
 }
 
-/** The worst state on the board. No rows at all means the checks couldn't run, which is down. */
+/**
+ * The worst state on the board. With no service row at all the dependency checks couldn't run, which
+ * is down whatever else the board says.
+ */
 export function overall(rows: StatusRow[]): ServiceState {
-  if (rows.length === 0 || rows.some((r) => r.state === "down")) return "down";
+  if (!rows.some((r) => r.kind === "service") || rows.some((r) => r.state === "down")) return "down";
   return rows.some((r) => r.state === "slow") ? "slow" : "ok";
+}
+
+/** An age the way a person says it, never finer than a minute: "under a minute ago", "4 min ago", "2 hours ago". */
+export function roughAge(ms: number): string {
+  const min = Math.floor(Math.max(0, ms) / 60_000);
+  if (min < 1) return "under a minute ago";
+  if (min < 60) return `${min} min ago`;
+  const hours = Math.floor(min / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+
+/**
+ * A watchdog problem in its plain words, capitalized: "Payphone got a text but never passed it to the
+ * bot". A key the watchdog doesn't define gets a generic line, never its internal name.
+ */
+export function problemLabel(key: string): string {
+  if (!isKnownCheck(key, CHAINS)) return "Another check is failing";
+  const [problem] = checkWords(key);
+  return `${problem.charAt(0).toUpperCase()}${problem.slice(1)}`;
 }
 
 export const STATE_WORDS: Record<ServiceState, { label: string; summary: string }> = {

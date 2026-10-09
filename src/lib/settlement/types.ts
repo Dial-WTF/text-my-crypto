@@ -1,11 +1,13 @@
 import type { Chain } from "@/lib/chains";
+import type { AssetTransfers, Capabilities } from "./capabilities";
 import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
 
 export type SettleResult = { txHash: string; explorerUrl: string };
 
-export interface SettlementAdapter {
+/** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
+export interface SettlementAdapter extends Capabilities {
   chain: Chain;
   tokenId: string;
   isValidAddress(address: string): boolean;
@@ -22,24 +24,6 @@ export interface SettlementAdapter {
   fund(to: string, amount: bigint): Promise<SettleResult>;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
-  /** On-chain escrow for payments to people not on Dial yet. Absent: escrow is a server-held wallet. */
-  escrow?: EscrowProgram;
-  /** Other tokens this chain can move besides the stablecoin (tokenized stocks), keyed by token address. */
-  assets?: Record<string, AssetAdapter>;
-}
-
-/**
- * A token other than the stablecoin, moved from the same wallets: a tokenized stock. Amounts are in the
- * payment's units (millionths of a token); the adapter scales to the token's decimals.
- */
-export type AssetAdapter = Pick<SettlementAdapter, "tokenId" | "getBalance" | "settle"> & { symbol: string };
-
-/** What moves a payment's token: the stablecoin adapter itself, or one of its assets. */
-export function moverFor(adapter: SettlementAdapter, token: string): Pick<SettlementAdapter, "getBalance" | "settle"> {
-  if (token === adapter.tokenId) return adapter;
-  const asset = adapter.assets?.[token];
-  if (!asset) throw new Error(`${adapter.chain} cannot move token ${token}`);
-  return asset;
 }
 
 /**
@@ -122,8 +106,21 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
-  const assets = adapter.assets
-    ? Object.fromEntries(Object.entries(adapter.assets).map(([k, a]) => [k, { ...a, getBalance: guard(a.getBalance) }]))
-    : undefined;
+  const assets: AssetTransfers | undefined = adapter.assets && { ...adapter.assets, balanceOf: guard(adapter.assets.balanceOf) };
   return { ...adapter, getBalance: guard(adapter.getBalance), fund: guard(adapter.fund), ...(assets ? { assets } : {}) };
+}
+
+/**
+ * What moves a payment's token: the stablecoin adapter itself, or its `assets` module for a token such as a
+ * stock. Amounts are in the payment's units either way.
+ */
+export function moverFor(adapter: SettlementAdapter, token: string): Pick<SettlementAdapter, "getBalance" | "settle"> {
+  if (token === adapter.tokenId) return adapter;
+  const assets = adapter.assets;
+  const asset = assets?.list().find((a) => a.address.toLowerCase() === token.toLowerCase());
+  if (!assets || !asset) throw new Error(`${adapter.chain} cannot move token ${token}`);
+  return {
+    getBalance: (address) => assets.balanceOf(address, asset),
+    settle: ({ fromSecret, to, amount, memo }) => assets.transfer({ fromSecret, to, asset, amount, memo }),
+  };
 }

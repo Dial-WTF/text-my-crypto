@@ -165,7 +165,8 @@ describe("Robinhood Chain stock tokens", () => {
   it("adds one asset per stock token and keeps Dial Test USD as the settlement token", () => {
     const adapter = robinhoodAdapter();
     expect(adapter.tokenId).toBe(USD);
-    expect(Object.values(adapter.assets ?? {}).map((a) => a.symbol)).toEqual(["TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
+    expect(adapter.assets?.list().map((a) => a.symbol)).toEqual(["TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
+    expect(adapter.assets?.list().every((a) => a.decimals === 18)).toBe(true);
     expect(moverFor(adapter, USD)).toBe(adapter);
     expect(() => moverFor(adapter, "0x0000000000000000000000000000000000000001")).toThrow(/cannot move/);
   });

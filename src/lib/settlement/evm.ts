@@ -17,7 +17,8 @@ import type { Chain } from "@/lib/chains";
 import { STOCK_ONCHAIN_SCALE } from "@/lib/stocks";
 import type { EvmNetwork, StockToken } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { AssetAdapter, SettlementAdapter, SettleResult } from "./types";
+import type { Asset, AssetTransfers } from "./capabilities";
+import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
 
 const ERC20_3009 = parseAbi([
@@ -109,6 +110,28 @@ export async function signPermit(args: {
 }
 
 /**
+ * Waits until the RPC's latest block has reached `block`. Base hands back a receipt from a pre-confirmed block
+ * before every node behind the RPC has it, so a balance read straight afterwards still shows the old balance
+ * (a fresh drop reads as $0). Gives up after `timeoutMs`: the transfer is confirmed either way.
+ */
+export async function waitForHead(
+  head: () => Promise<bigint>,
+  block: bigint,
+  { timeoutMs = 10_000, intervalMs = 500, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) } = {},
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if ((await head()) >= block) return true;
+    } catch {
+      // A failed head check only means we wait a little longer.
+    }
+    if (Date.now() >= deadline) return false;
+    await sleep(intervalMs);
+  }
+}
+
+/**
  * USDC on an EVM chain. Users never hold gas: they sign an EIP-3009 authorization and the
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
@@ -138,6 +161,7 @@ export function createEvmAdapter(
       throw unconfirmedIsTyped ? new TransferUnconfirmedError(cfg.chain, hash, e) : e;
     }
     if (receipt.status !== "success") throw new Error(`${cfg.chain} tx ${hash} reverted`);
+    await waitForHead(() => publicClient.getBlockNumber({ cacheTime: 0 }), receipt.blockNumber);
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
 
@@ -145,7 +169,7 @@ export function createEvmAdapter(
    * A stock token, moved like the stablecoin without the sender holding gas: the wallet signs a permit for
    * the treasury, which submits it and then transferFrom. The payment id rides on the transferFrom calldata.
    */
-  function stockAsset(stock: StockToken): AssetAdapter {
+  function stockAsset(stock: StockToken): Pick<SettlementAdapter, "getBalance" | "settle"> {
     const address = stock.address;
     let stockDomain: Promise<{ name: string; version: string }> | undefined;
     const domainOf = () =>
@@ -153,8 +177,6 @@ export function createEvmAdapter(
         ([, name, version]) => ({ name, version }),
       ));
     return {
-      tokenId: address,
-      symbol: stock.symbol,
       async getBalance(owner) {
         const raw = await rl(() =>
           publicClient.readContract({ address, abi: STOCK_ABI, functionName: "balanceOf", args: [owner as Address] }),
@@ -204,7 +226,23 @@ export function createEvmAdapter(
     };
   }
 
-  const assets = cfg.stocks?.length ? Object.fromEntries(cfg.stocks.map((s) => [s.address, stockAsset(s)])) : undefined;
+  /** The `assets` capability: this network's stock tokens, amounts in millionths of a token. */
+  function stockTransfers(stocks: readonly StockToken[]): AssetTransfers {
+    const list: Asset[] = stocks.map((s) => ({ symbol: s.symbol, name: s.name, address: s.address, decimals: 18 }));
+    const movers = new Map(stocks.map((s) => [s.address.toLowerCase(), stockAsset(s)]));
+    const mover = (asset: Asset) => {
+      const m = movers.get(asset.address.toLowerCase());
+      if (!m) throw new Error(`${cfg.chain} has no stock token ${asset.address}`);
+      return m;
+    };
+    return {
+      list: () => list,
+      balanceOf: (address, asset) => mover(asset).getBalance(address),
+      transfer: ({ asset, ...args }) => mover(asset).settle(args),
+    };
+  }
+
+  const assets = cfg.stocks?.length ? stockTransfers(cfg.stocks) : undefined;
 
   return {
     chain: cfg.chain,

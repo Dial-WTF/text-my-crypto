@@ -7,7 +7,7 @@ import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
 import { getIntent, sentSince } from "@/lib/intents";
 import { publicStats, recentPayments } from "@/lib/stats";
-import type { AssetAdapter } from "@/lib/settlement/types";
+import type { AssetTransfers } from "@/lib/settlement/capabilities";
 import { buildPaymentView } from "@/lib/views/payment";
 import { cardAmount } from "@/lib/web/receipt-card";
 import { getWallet } from "@/lib/wallets";
@@ -27,23 +27,22 @@ const STOCKS = [
   ["AMD", "0x71178BAc73cBeb415514eB542a8995b82669778d"],
 ] as const;
 
-type FakeAsset = AssetAdapter & { settled: SettleCall[]; balances: Map<string, bigint> };
+type FakeAsset = { settled: SettleCall[]; balances: Map<string, bigint> };
 
-/** A stock token on the fake Robinhood Chain: balances in millionths of a token, and every move recorded. */
-function fakeAsset(symbol: string, tokenId: string): FakeAsset {
-  const settled: SettleCall[] = [];
-  const balances = new Map<string, bigint>();
-  return {
-    symbol,
-    tokenId,
-    settled,
-    balances,
-    getBalance: async (a) => balances.get(a) ?? 0n,
-    settle: async ({ to, amount, memo, closeSource }) => {
-      settled.push({ to, amount, memo, closeSource: closeSource ?? false });
-      return { txHash: `0x${symbol}_${memo}`, explorerUrl: `https://explorer.testnet.chain.robinhood.com/tx/0x${symbol}_${memo}` };
+/** The `assets` module on a fake Robinhood Chain: balances in millionths of a token, and every move recorded per stock. */
+function fakeStocks(): { transfers: AssetTransfers; bySymbol: Map<string, FakeAsset> } {
+  const bySymbol = new Map<string, FakeAsset>(STOCKS.map(([s]) => [s, { settled: [], balances: new Map() }]));
+  const of = (symbol: string): FakeAsset => bySymbol.get(symbol) ?? { settled: [], balances: new Map() };
+  const transfers: AssetTransfers = {
+    list: () => STOCKS.map(([symbol, address]) => ({ symbol, name: symbol === "TSLA" ? "Tesla" : symbol, address, decimals: 18 })),
+    balanceOf: async (address, asset) => of(asset.symbol).balances.get(address) ?? 0n,
+    transfer: async ({ to, asset, amount, memo }) => {
+      of(asset.symbol).settled.push({ to, amount, memo, closeSource: false });
+      const hash = `0x${asset.symbol}_${memo}`;
+      return { txHash: hash, explorerUrl: `https://explorer.testnet.chain.robinhood.com/tx/${hash}` };
     },
   };
+  return { transfers, bySymbol };
 }
 
 let db: Db;
@@ -82,9 +81,10 @@ async function giveJeremyTsla(units: bigint) {
 beforeEach(async () => {
   db = await createTestDb();
   sms = smsSink();
-  const assets = Object.fromEntries(STOCKS.map(([s, a]) => [a, fakeAsset(s, a)]));
-  tsla = assets[TSLA] as FakeAsset;
-  amzn = assets[AMZN] as FakeAsset;
+  const stocks = fakeStocks();
+  const assets = stocks.transfers;
+  tsla = stocks.bySymbol.get("TSLA") as FakeAsset;
+  amzn = stocks.bySymbol.get("AMZN") as FakeAsset;
   rh = { ...fakeAdapter({ chain: "robinhood", defaultBalance: 100_000_000n }), tokenId: "0x2195e3E09eab088c90B4461B92D06A74d30c1e2e", assets };
   deps = testDeps(db, {
     sendSms: sms.sendSms,
