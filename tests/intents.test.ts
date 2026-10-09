@@ -126,8 +126,9 @@ describe("escrow", () => {
     const expires = new Date(now.getTime() + 7 * 86_400_000);
     await markEscrowed(db, i.id, { txHash: "f", explorerUrl: "https://x/f" }, expires);
     expect(await claimEscrowForRefund(db, i.id, now)).toBeNull();
-    expect(await claimEscrowForRelease(db, i.id)).not.toBeNull();
-    expect(await claimEscrowForRelease(db, i.id)).toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, expires)).toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, now)).not.toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, now)).toBeNull();
 
     const j = await createIntent(db, base, now);
     await claimForSettlement(db, j.id, now);

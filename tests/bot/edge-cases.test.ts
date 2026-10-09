@@ -45,7 +45,9 @@ beforeEach(async () => {
 
 describe("STOP / START / HELP", () => {
   it("opts out with one confirmation, stays silent, and comes back on START", async () => {
-    expect(await say(ALEX, "STOP")).toBe("You're unsubscribed from the Dial operator. No more texts. Reply START to come back.");
+    expect(await say(ALEX, "STOP")).toBe(
+      "You're unsubscribed from the Dial operator. No more texts. Your money stays in your wallet: reply START anytime to get back to it.",
+    );
     const before = sms.to(ALEX).length;
     expect(await send(ALEX, "send @jeremy $5")).toEqual([]);
     expect(await send(ALEX, "help")).toEqual([]);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_OPERATOR_NUMBER } from "@/lib/operator-line";
 import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
 
 /**
@@ -129,7 +130,7 @@ const publicSchema = z.object({
   DIAL_OPERATOR_NUMBER: z
     .string()
     .regex(/^\+[1-9]\d{7,14}$/)
-    .default("+18066071387"),
+    .default(DEFAULT_OPERATOR_NUMBER),
   ...publicSettings,
 });
 

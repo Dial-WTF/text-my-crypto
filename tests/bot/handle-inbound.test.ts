@@ -3,7 +3,9 @@ import { handleInbound } from "@/lib/bot/handle-inbound";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
-import { getIntent } from "@/lib/intents";
+import { claimForSettlement, getIntent } from "@/lib/intents";
+import { reconcileEscrows } from "@/lib/bot/settle";
+import { EscrowExpiredError, type EscrowLookup, EscrowUnconfirmedError } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
 import { passkeys } from "@/lib/db/schema";
@@ -251,12 +253,58 @@ describe("send to someone not on Dial (escrow program)", () => {
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
   });
 
-  it("keeps the escrow waiting when the program refuses the claim", async () => {
+  it("when a claim doesn't go through, says so and texts a fresh code that works", async () => {
     const id = await sendToNewbie();
-    esc.fail.next = new Error("custom program error: 0x1772");
+    esc.fail.next = new Error("Transaction simulation failed");
     await claimAsRiley();
-    expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", error: "custom program error: 0x1772" });
-    expect(sms.to(NEWBIE).some((m) => m.startsWith("Claimed"))).toBe(false);
+    expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", error: "Transaction simulation failed" });
+    const reply = sms.last(NEWBIE);
+    expect(reply).toMatch(
+      /^Couldn't confirm your claim of the \$5 from alex yet\. Reply \d{6} to finish it: if it already went through, you'll just get the receipt\.$/,
+    );
+
+    await say(NEWBIE, codeIn(reply));
+    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: /);
+    expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
+  });
+
+  it("after expiry, tells the recipient it can only go back to the sender and doesn't try the claim", async () => {
+    const id = await sendToNewbie();
+    await say(NEWBIE, "hey");
+    await say(NEWBIE, "riley");
+    const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
+    clock = new Date(clock.getTime() + 7 * 86_400_000 + 60_000);
+
+    expect(await say(NEWBIE, codeIn(offer))).toBe(
+      "The $5 from alex wasn't claimed in time, so it can only go back to them now. Ask them to send it again.",
+    );
+    expect(esc.calls.map((c) => c.op)).toEqual(["create"]);
+    expect((await getIntent(db, id))?.status).toBe("escrowed");
+
+    // Refunds wait a few minutes past expiry: the chain's clock can trail ours.
+    expect(await say(ALEX, "reclaim")).toBe("Nothing to reclaim right now. Unclaimed payments can come back after 7 days.");
+    clock = new Date(clock.getTime() + 5 * 60_000);
+    expect(await say(ALEX, "reclaim")).toBe("Got back $5 from 1 unclaimed payment.");
+  });
+
+  it("doesn't offer an expired escrow to someone who joins after it expired", async () => {
+    const id = await sendToNewbie();
+    clock = new Date(clock.getTime() + 8 * 86_400_000);
+    expect(await say(NEWBIE, "hey")).not.toMatch(/waiting for you/);
+    await say(NEWBIE, "riley");
+    expect(sms.to(NEWBIE).some((m) => /Reply \d{6} to claim it/.test(m))).toBe(false);
+    expect(await say(ALEX, "reclaim")).toBe("Got back $5 from 1 unclaimed payment.");
+    expect(await getIntent(db, id)).toMatchObject({ status: "refunded", releaseTxHash: `sig_refund_${id}` });
+  });
+
+  it("says the same when the program itself refuses because the escrow expired", async () => {
+    const id = await sendToNewbie();
+    esc.fail.next = new EscrowExpiredError(id);
+    await claimAsRiley();
+    expect(sms.last(NEWBIE)).toBe(
+      "The $5 from alex wasn't claimed in time, so it can only go back to them now. Ask them to send it again.",
+    );
+    expect((await getIntent(db, id))?.status).toBe("escrowed");
   });
 
   it("refunds through the program only after expiry", async () => {
@@ -268,6 +316,114 @@ describe("send to someone not on Dial (escrow program)", () => {
     expect(await getIntent(db, id)).toMatchObject({ status: "refunded", releaseTxHash: `sig_refund_${id}` });
   });
 
+  /** What the chain shows for a funded escrow: the sender's wallet, the amount, and the funding transaction. */
+  async function onChain(id: string, amount = 5_000_000n) {
+    const wallet = await getWallet(db, (await findUserByPhone(db, ALEX))!.id, "solana");
+    esc.chain.set(id, {
+      state: "open",
+      sender: wallet!.address,
+      amount,
+      expiresAt: new Date(clock.getTime() + 7 * 86_400_000),
+      funded: { txHash: `sig_create_${id}`, explorerUrl: `https://explorer.test/sig_create_${id}` },
+    });
+  }
+
+  /** A payment approved by a worker that died before it finished: settling, no error, no funding transaction. */
+  async function approvedThenDied() {
+    const confirm = await say(ALEX, "send $5 to (555) 000-0099");
+    const id = intentIdIn(confirm);
+    await claimForSettlement(db, id, clock);
+    return id;
+  }
+
+  it("a funding that landed after we stopped waiting is settled from the chain, and both people hear", async () => {
+    esc.fail.next = new EscrowUnconfirmedError("pi", new Error("Solana tx not confirmed in time"));
+    const id = await sendToNewbie();
+    expect(await getIntent(db, id)).toMatchObject({ status: "settling", txHash: null });
+    expect(sms.last(ALEX)).toBe(
+      "Your $5 to +•••••••0099 is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.",
+    );
+    await onChain(id);
+
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 1, failed: 0 });
+    expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", txHash: `sig_create_${id}`, error: null });
+    expect(sms.last(ALEX)).toMatch(/^Sent \$5 to \+•••••••0099\. They have 7 days to claim it\./);
+    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\. Reply to this text to claim it\./);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+
+    await claimAsRiley();
+    expect((await getIntent(db, id))?.status).toBe("settled");
+  });
+
+  it("a payment whose worker died mid-send is picked up after 5 minutes and settled from the chain", async () => {
+    const id = await approvedThenDied();
+    await onChain(id);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+    clock = new Date(clock.getTime() + 6 * 60_000);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 1, failed: 0 });
+    expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", txHash: `sig_create_${id}` });
+    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\./);
+  });
+
+  it("a payment whose worker died before anything landed fails 15 minutes after approval", async () => {
+    clock = new Date(clock.getTime() - 9 * 60_000);
+    const id = await approvedThenDied();
+    clock = new Date(clock.getTime() + 9 * 60_000);
+    // Created and approved 9 minutes ago: picked up, but nothing to conclude yet.
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+    clock = new Date(clock.getTime() + 7 * 60_000);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 1 });
+    expect((await getIntent(db, id))?.status).toBe("failed");
+    expect(sms.last(ALEX)).toBe("That payment didn't go through. No funds moved.");
+  });
+
+  it("never records an escrow that isn't this payment's (wrong amount or sender)", async () => {
+    esc.fail.next = new EscrowUnconfirmedError("pi", new Error("timeout"));
+    const id = await sendToNewbie();
+    await onChain(id, 4_000_000n);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+    esc.chain.set(id, { ...(esc.chain.get(id) as Extract<EscrowLookup, { state: "open" }>), amount: 5_000_000n, sender: "SomeoneElse111" });
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+    expect((await getIntent(db, id))?.status).toBe("settling");
+  });
+
+  it("a funding the chain never saw fails after 15 minutes, not before", async () => {
+    esc.fail.next = new EscrowUnconfirmedError("pi", new Error("Solana tx not confirmed in time"));
+    const id = await sendToNewbie();
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
+    expect((await getIntent(db, id))?.status).toBe("settling");
+
+    clock = new Date(clock.getTime() + 16 * 60_000);
+    expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 1 });
+    expect((await getIntent(db, id))?.status).toBe("failed");
+    expect(sms.last(ALEX)).toBe("That payment didn't go through. No funds moved.");
+  });
+
+  it("a claim that landed after we stopped waiting is recorded when the sender tries to reclaim", async () => {
+    const id = await sendToNewbie();
+    esc.fail.next = new Error("Solana tx not confirmed in time");
+    esc.fail.landed = true;
+    await claimAsRiley();
+    expect((await getIntent(db, id))?.status).toBe("escrowed");
+
+    clock = new Date(clock.getTime() + 8 * 86_400_000);
+    expect(await say(ALEX, "reclaim")).toBe("Nothing to reclaim right now. Unclaimed payments can come back after 7 days.");
+    expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
+    expect(sms.to(ALEX)).toContain("riley claimed the $5 you sent.");
+    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+  });
+
+  it("a refund someone else sent is recorded when the recipient tries to claim", async () => {
+    const id = await sendToNewbie();
+    esc.chain.set(id, { state: "refunded", result: { txHash: "sig_crank", explorerUrl: "https://explorer.test/sig_crank" } });
+    await claimAsRiley();
+    expect(sms.last(NEWBIE)).toBe(
+      "The $5 from alex wasn't claimed in time, so it can only go back to them now. Ask them to send it again.",
+    );
+    expect(await getIntent(db, id)).toMatchObject({ status: "refunded", releaseTxHash: "sig_crank" });
+    expect(sms.last(ALEX)).toBe("Got back $5 from 1 unclaimed payment.");
+  });
+
   it("won't move a program escrow through a server wallet when the program is switched off", async () => {
     const id = await sendToNewbie();
     deps = { ...deps, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } };
@@ -275,6 +431,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     const intent = await getIntent(db, id);
     expect(intent?.status).toBe("escrowed");
     expect(intent?.error).toMatch(/Escrow program .* is not available on solana/);
+    expect(sms.last(NEWBIE)).toMatch(/^Couldn't confirm your claim of the \$5 from alex yet\./);
   });
 
   it("still pays people already on Dial directly", async () => {

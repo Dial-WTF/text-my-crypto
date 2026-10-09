@@ -28,7 +28,8 @@ export const replies = {
   claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${amount} USDC. Reply ${code} to claim it.`,
   help: () =>
     `Dial operator by Dial.Work. Try "send @jeremy $10", "request $25 from adam", "411 jeremy", "balance" or "call me <name>". Reply STOP to stop texts. Testnet only.`,
-  optedOut: () => `You're unsubscribed from the Dial operator. No more texts. Reply START to come back.`,
+  optedOut: () =>
+    `You're unsubscribed from the Dial operator. No more texts. Your money stays in your wallet: reply START anytime to get back to it.`,
   optedIn: () => `Welcome back. The Dial operator is texting you again. Reply HELP for commands, STOP to stop.`,
   codeHint: () => `To confirm, reply with the 6-digit code from my last text. It keeps anyone else from spending your money.`,
   cancelled: (n: number) => (n > 0 ? `OK, cancelled. Nothing was sent.` : `OK, forgot about it.`),
@@ -126,6 +127,10 @@ export const replies = {
     `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link}`,
   claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
+  claimFailed: (amount: string, from: string, code: string) =>
+    `Couldn't confirm your claim of the ${amount} from ${from} yet. Reply ${code} to finish it: if it already went through, you'll just get the receipt.`,
+  claimExpired: (amount: string, from: string) =>
+    `The ${amount} from ${from} wasn't claimed in time, so it can only go back to them now. Ask them to send it again.`,
   requestPaid: (who: string, amount: string, note: string | null, explorerUrl: string) =>
     `${who} paid you ${amount}${forNote(note)}. Receipt: ${explorerUrl}`,
   requestDeclined: (who: string, amount: string) => `${who} declined your request for ${amount}.`,
@@ -138,10 +143,11 @@ export const replies = {
   connectAgent: (link: string, code: string) =>
     `Connect an AI agent to your Dial account: open ${link} and enter ${code}. The key shows once. You still approve every payment by text.`,
   agentConnected: (label: string) => `Agent "${label}" is connected. Text "revoke agents" anytime to cut it off.`,
-  agentsRevoked: (count: number) =>
-    count > 0
+  agentsRevoked: (count: number, sessions = 0) =>
+    (count > 0
       ? `Revoked ${plural(count, "agent key")}. Text "connect agent" to connect one again.`
-      : `No agents are connected. Text "connect agent" to connect one.`,
+      : `No agents are connected. Text "connect agent" to connect one.`) +
+    (sessions > 0 ? ` I also signed you out of your wallet on the web.` : ""),
   fromAgent: (label: string, body: string) => `From your agent "${label}": ${body}`,
   confirmWithdraw: (amount: string, address: string, chain: string, code: string | null, link: string) =>
     `Withdraw ${amount} USDC to ${address} on ${chain}? ${approveWith(code, link)}`,
@@ -151,4 +157,6 @@ export const replies = {
   nothingToWithdraw: () => `Your balance is $0. Nothing to withdraw.`,
   chainDown: (chain: string) => `The ${chain} network isn't answering right now. Nothing moved. Try again in a minute.`,
   failed: () => `That payment didn't go through. No funds moved.`,
+  sendUnconfirmed: (amount: string, who: string) =>
+    `Your ${amount} to ${who} is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.`,
 } as const;
