@@ -78,7 +78,7 @@ describe("watchdog run", () => {
   it("texts the owner about an unanswered text once, then the all-clear once it is answered", async () => {
     await logInbound(db, { to: LINE, from: ALEX, body: "balance", dedupeKey: "k1" }, at(-2));
     await runWatchdog(deps());
-    expect(alerts).toEqual(["Dial watchdog. PROBLEM: unanswered: 1 text with no reply, oldest 2m (…0010)."]);
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Problem: a text got no reply (1 text with no reply, oldest 2m (…0010))."]);
     expect(alerts[0]).not.toContain(ALEX);
 
     now = at(1);
@@ -90,7 +90,7 @@ describe("watchdog run", () => {
     await runWatchdog(deps());
     now = at(3);
     await runWatchdog(deps());
-    expect(alerts).toEqual([expect.any(String), "Dial watchdog. Cleared: unanswered."]);
+    expect(alerts).toEqual([expect.any(String), "[Dial watchdog, for you only] Fixed: every text has a reply again."]);
   });
 
   it("says a text aged out of the window instead of claiming it was answered", async () => {
@@ -100,8 +100,8 @@ describe("watchdog run", () => {
       now = at(m);
       await runWatchdog(deps());
     }
-    expect(alerts.at(-1)).toBe("Dial watchdog. Aged out unfixed (past the 1h window, no longer watched): unanswered.");
-    expect(alerts.join(" ")).not.toContain("Cleared");
+    expect(alerts.at(-1)).toBe("[Dial watchdog, for you only] Never fixed, now over an hour old, so no longer watched: a text got no reply.");
+    expect(alerts.join(" ")).not.toContain("Fixed");
   });
 
   it("says an undelivered text aged out once it leaves Payphone's window", async () => {
@@ -113,8 +113,8 @@ describe("watchdog run", () => {
       await runWatchdog(deps({ fetchImpl }));
     }
     expect(alerts).toEqual([
-      expect.stringContaining("PROBLEM: undelivered"),
-      "Dial watchdog. Aged out unfixed (past the 1h window, no longer watched): undelivered.",
+      expect.stringContaining("Problem: Payphone got a text but never passed it to the bot"),
+      "[Dial watchdog, for you only] Never fixed, now over an hour old, so no longer watched: Payphone got a text but never passed it to the bot.",
     ]);
   });
 
@@ -139,7 +139,7 @@ describe("watchdog run", () => {
     }
     // T0 is on a slot boundary: minutes 30 and 60 are the only slot starts in 1..61.
     expect(alerts).toHaveLength(2);
-    expect(alerts[0]).toContain("solanaBalance");
+    expect(alerts[0]).toContain("Solana network not answering");
   });
 
   it("flags a text Payphone has that never reached the webhook", async () => {
@@ -148,7 +148,7 @@ describe("watchdog run", () => {
     ];
     const report = await runWatchdog(deps({ fetchImpl: fakePayphone({ inbox }).fetchImpl }));
     expect(report.checks.undelivered).toEqual({ ok: false, detail: "1 text in Payphone never reached Dial, oldest 3m (…0010)" });
-    expect(alerts[0]).toContain("undelivered");
+    expect(alerts[0]).toContain("Payphone got a text but never passed it to the bot");
   });
 
   it("skips reconciliation where the line does not point at this deployment", async () => {
@@ -164,7 +164,7 @@ describe("watchdog run", () => {
     expect(alerts).toEqual([]);
     now = at(1);
     await runWatchdog(deps({ fetchImpl: broken }));
-    expect(alerts).toEqual(["Dial watchdog. PROBLEM: payphoneAuth: HTTP 401."]);
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Problem: Payphone login failing (HTTP 401)."]);
   });
 
   it("checks every chain's RPC", async () => {
@@ -277,7 +277,7 @@ describe("cron trigger", () => {
       now = at(m);
       await runWatchdog(deps({ reconcile: false }));
     }
-    expect(alerts).toEqual(["Dial watchdog. Cleared: app."]);
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Fixed: the bot is answering again."]);
   });
 
   it("without D1, texts only on the 30-minute slot", async () => {
