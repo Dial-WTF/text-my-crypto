@@ -106,20 +106,27 @@ export type Redeemed =
   | { ok: true; key: string; agent: AgentKey }
   | { ok: false; reason: "closed" | "bad_code" };
 
-/** Checks the texted code, burns the link and mints a key. The plain key is returned exactly once. */
+/**
+ * Checks the texted code, burns the link and mints a key. The plain key is returned exactly once.
+ * The try is counted (one conditional UPDATE) before the code is compared, so parallel guesses can't
+ * get past the five-try limit.
+ */
 export async function redeemAgentLink(db: Db, token: string, code: string, now: Date): Promise<Redeemed> {
   const tokenHash = await hashLinkToken(token);
-  const [link] = await db.select().from(agentLinks).where(eq(agentLinks.tokenHash, tokenHash)).limit(1);
-  if (!link || link.usedAt || link.expiresAt <= now || link.codeAttempts >= MAX_CODE_ATTEMPTS) {
-    return { ok: false, reason: "closed" };
-  }
-  if (link.codeHash !== (await hashLinkCode(tokenHash, code.trim()))) {
-    await db
-      .update(agentLinks)
-      .set({ codeAttempts: sql`${agentLinks.codeAttempts} + 1` })
-      .where(eq(agentLinks.tokenHash, tokenHash));
-    return { ok: false, reason: "bad_code" };
-  }
+  const [link] = await db
+    .update(agentLinks)
+    .set({ codeAttempts: sql`${agentLinks.codeAttempts} + 1` })
+    .where(
+      and(
+        eq(agentLinks.tokenHash, tokenHash),
+        isNull(agentLinks.usedAt),
+        gt(agentLinks.expiresAt, now),
+        lt(agentLinks.codeAttempts, MAX_CODE_ATTEMPTS),
+      ),
+    )
+    .returning({ userId: agentLinks.userId, label: agentLinks.label, codeHash: agentLinks.codeHash });
+  if (!link) return { ok: false, reason: "closed" };
+  if (link.codeHash !== (await hashLinkCode(tokenHash, code.trim()))) return { ok: false, reason: "bad_code" };
   const used = await db
     .update(agentLinks)
     .set({ usedAt: now })
