@@ -51,7 +51,7 @@ export interface PaymentActions {
    * Confirmed payments carrying `reference` that paid `recipient`, oldest first: `amount` is what
    * `recipient` received, `payer` the wallet it came from. Empty until one lands.
    */
-  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
+  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { explorerUrl: string; payer: string; amount: bigint }>>;
 }
 
 export interface ShieldedTransfer {
@@ -68,6 +68,19 @@ export interface VenueTransfer {
   deposit(args: { fromSecret: Uint8Array<ArrayBuffer>; to: string; amount: bigint; memo: string }): Promise<SettleResult>;
   /** `address`'s stablecoin balance on the venue. */
   balance(address: string): Promise<bigint>;
+  /**
+   * True when the venue will credit a deposit to `address` now. HyperCore only credits accounts that already
+   * exist there: a deposit to one it hasn't seen is taken and never credited (seen on testnet, Oct 2026).
+   */
+  accepts(address: string): Promise<boolean>;
+}
+
+/** The venue won't credit this address (no account there yet), so nothing was sent. */
+export class VenueAccountMissingError extends Error {
+  constructor(readonly address: string) {
+    super(`No venue account for ${address}; nothing sent`);
+    this.name = "VenueAccountMissingError";
+  }
 }
 
 export type Asset = { symbol: string; name: string; address: string; decimals: number };

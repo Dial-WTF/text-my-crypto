@@ -15,7 +15,7 @@ import { MONEY_TOOLS, runTool, toolDescriptions, toolInputs, type ToolName, type
 export const SERVER_INFO = { name: "dial-operator", version: "1.0.0" } as const;
 
 const INSTRUCTIONS = `You act for one Dial account (see whoami). Dial moves USDC between phone numbers.
-Money tools (send_payment, request_payment, create_invoice, withdraw) only create a pending payment and text a person to approve it.
+Money tools (send_payment, request_payment, create_invoice, withdraw, send_to_hyperliquid) only create a pending payment and text a person to approve it.
 You can never approve a payment. Tell the user to check their texts, then poll get_payment until the status changes.
 Recipients can be a phone number, an @handle, or a name from the owner's contacts. Use resolve_recipient when unsure.
 send_stock gifts Robinhood Chain stock tokens (e.g. 0.1 TSLA) by share count, approved the same way; get_stocks shows holdings.`;

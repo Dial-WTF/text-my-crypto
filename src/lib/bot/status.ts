@@ -1,3 +1,4 @@
+import { liveExplorer } from "@/lib/explorers";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
@@ -62,7 +63,9 @@ export async function statusReply(
   const who =
     i.kind === "withdraw"
       ? withdrawTarget(i)
-      : other
+      : i.kind === "venue" && i.recipientId === i.senderId
+        ? "your Hyperliquid balance"
+        : other
         ? displayName(other)
         : "them";
   const link = `${deps.appUrl}/a/${i.id}`;
@@ -76,14 +79,17 @@ export async function statusReply(
       // A nudge must not replace a code that may still be on its way; only an explicit "status" does.
       if (!freshCode) return replies.statusReminder(amount, who);
       const code = await codeFor(deps, user.id, i.id, usdAmount(i), { keepAttempts: true });
-      return i.kind === "send" || i.kind === "withdraw"
+      return i.kind === "send" || i.kind === "withdraw" || i.kind === "venue"
         ? replies.statusWaitingOnYou(amount, who, code, link)
         : replies.statusAskedToPay(amount, who, code, link);
     }
     case "settling":
       return replies.statusSending(amount, who);
     case "settled":
-      return outgoing ? replies.statusSent(amount, who, i.explorerUrl) : replies.statusReceived(amount, who, i.explorerUrl);
+      // Where the chain has no working explorer, Dial's own receipt page shows the transaction.
+      return outgoing
+        ? replies.statusSent(amount, who, liveExplorer(i.explorerUrl) ?? link)
+        : replies.statusReceived(amount, who, liveExplorer(i.explorerUrl) ?? link);
     case "escrowed": {
       if (outgoing) return replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires");
       // Too late to claim: it can only go back to the sender now.
@@ -101,7 +107,7 @@ export async function statusReply(
     }
     case "refunded":
       return outgoing
-        ? replies.statusRefunded(amount, i.releaseExplorerUrl ?? i.explorerUrl)
+        ? replies.statusRefunded(amount, liveExplorer(i.releaseExplorerUrl ?? i.explorerUrl) ?? link)
         : replies.statusReturnedToSender(amount, who);
     case "failed":
       return replies.statusFailed(amount, who);

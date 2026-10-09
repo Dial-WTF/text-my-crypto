@@ -47,7 +47,7 @@ describe("official MCP client against /api/mcp", () => {
     const client = await connect(era);
     expect(client.getServerVersion()?.name).toBe("dial-operator");
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(16);
+    expect(tools).toHaveLength(19);
 
     const result = await client.callTool({ name: "send_payment", arguments: { to: "@jeremy", amountUsd: "2.50" } });
     expect(result.isError).toBeFalsy();

@@ -1,12 +1,20 @@
 import { type Chain, chainLabel } from "@/lib/chains";
 import { env } from "@/lib/env";
 import { type ActiveChain, activeChains, getAdapters } from "@/lib/settlement";
-import { type Network, REGISTRY } from "@/lib/settlement/registry";
+import { type Network, REGISTRY, venueOf } from "@/lib/settlement/registry";
+import type { Intent } from "@/lib/db/schema";
 import { type Adapters, errorText } from "@/lib/settlement/types";
 
 /** The network a chain settles on, e.g. "Solana devnet" or "Base Sepolia". Defaults to the one running now. */
 export function networkName(chain: Chain, network: Network = env().NETWORK): string {
   return REGISTRY[chain][network]?.network ?? chainLabel(chain);
+}
+
+/** "HyperEVM testnet → HyperCore testnet" for a deposit into the chain's trading venue, else the chain's network. */
+export function paymentNetwork(i: { kind?: Intent["kind"]; chain: Chain }, network: Network = env().NETWORK): string {
+  const from = networkName(i.chain, network);
+  const venue = i.kind === "venue" ? venueOf(i.chain, network) : null;
+  return venue ? `${from} → ${venue.network}` : from;
 }
 
 /** The network running now, or null when the environment can't be read. For public pages that must still render. */
@@ -24,13 +32,19 @@ export function safeNetworkName(chain: Chain): string {
   return network ? networkName(chain, network) : chainLabel(chain);
 }
 
+/** paymentNetwork that never throws, for public pages. */
+export function safePaymentNetwork(i: { kind?: Intent["kind"]; chain: Chain }): string {
+  const network = runningNetwork();
+  return network ? paymentNetwork(i, network) : chainLabel(i.chain);
+}
+
 export type ChainProof = {
   chain: Chain;
   network: string;
   treasury: string;
-  treasuryUrl: string;
+  treasuryUrl: string | null;
   /** The escrow program holding payments to people not on Dial yet, when the chain uses one. */
-  escrowProgram?: { address: string; url: string };
+  escrowProgram?: { address: string; url: string | null };
 };
 
 /**

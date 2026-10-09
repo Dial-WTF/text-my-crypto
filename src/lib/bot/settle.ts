@@ -25,6 +25,7 @@ import {
   unconfirmedTransferTx,
   unknownSettlements,
 } from "@/lib/intents";
+import { liveExplorer } from "@/lib/explorers";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
@@ -38,9 +39,11 @@ import {
   EscrowUnconfirmedError,
   errorText,
   moverFor,
+  type SettlementAdapter,
   type SettleResult,
 } from "@/lib/settlement/types";
 import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import type { VenueTransfer } from "@/lib/settlement/capabilities";
 import { formatAmount, formatTotals, stockForToken } from "@/lib/stocks";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
@@ -51,7 +54,7 @@ import { notify } from "./text";
 import type { BotDeps } from "./types";
 
 export type SettleOutcome =
-  | { ok: true; status: "settled" | "escrowed"; txHash: string; explorerUrl: string }
+  | { ok: true; status: "settled" | "escrowed"; txHash: string; explorerUrl: string | null }
   /** "unconfirmed": the send went out but no answer came back. It stays "settling" and a minute job finishes it. */
   | { ok: false; reason: "not_claimable" | "failed" | "expired" | "unconfirmed"; error?: string };
 
@@ -107,7 +110,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     return { ok: false, reason: "failed", error };
   }
 
-  let result: { txHash: string; explorerUrl: string };
+  let result: SettleResult;
   const escrowExpiresAt = new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS);
   try {
     const adapter = deps.adapters[intent.chain];
@@ -132,20 +135,23 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
       );
       return { ok: false, reason: "failed", error };
     }
-    const target = intent.kind === "withdraw" ? withdrawTarget(intent) : describe(recipient);
+    const target = intent.kind === "withdraw" ? withdrawTarget(intent) : isOwnVenueMove(intent) ? "your spot balance" : describe(recipient);
     if (!resume) {
-      await notify(deps, sender.phone, replies.sending(formatAmount(intent, deps.network), target, chainLabel(intent.chain)));
+      await notify(deps, sender.phone, replies.sending(formatAmount(intent, deps.network), target, paymentChain(intent)));
     }
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
-    result = intent.escrowProgram
-      ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
-      : await mover.settle({
-          fromSecret,
-          to: intent.recipientAddress,
-          amount: intent.amount,
-          memo: intent.id,
-          escrow: Boolean(intent.escrowSecretEnc),
-        });
+    result =
+      intent.kind === "venue"
+        ? await venueOf(adapter).deposit({ fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id })
+        : intent.escrowProgram
+          ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
+          : await mover.settle({
+              fromSecret,
+              to: intent.recipientAddress,
+              amount: intent.amount,
+              memo: intent.id,
+              escrow: Boolean(intent.escrowSecretEnc),
+            });
   } catch (e) {
     const error = errorText(e);
     if (e instanceof EscrowUnconfirmedError) {
@@ -158,7 +164,8 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
       // It went out and may still land: never call it failed, and never send it again (that could pay twice).
       // reconcileTransfers asks the chain about this transaction until it lands or can't any more.
       await markTransferUnconfirmed(deps.db, intent.id, e.txHash);
-      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), describe(recipient)));
+      const who = isOwnVenueMove(intent) ? "your Hyperliquid balance" : describe(recipient);
+      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), who));
       return { ok: false, reason: "unconfirmed", error };
     }
     if (e instanceof SettlementUnknownError) {
@@ -187,20 +194,25 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
 /** The money arrived: the receipt for the sender and, for a send or a paid request, the other person. */
 async function announceSettled(deps: BotDeps, intent: Intent, sender: User, recipient: User, result: SettleResult): Promise<void> {
   const amount = formatAmount(intent, deps.network);
-  const chain = intent.private ? `${chainLabel(intent.chain)} (shielded)` : chainLabel(intent.chain);
+  const label = paymentChain(intent);
+  const chain = intent.private ? `${label} (shielded)` : label;
+  // Where the chain has no working explorer, Dial's own receipt page shows the transaction.
+  const receipt = receiptUrl(deps, intent, result);
   if (intent.kind === "withdraw") {
-    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), result.explorerUrl));
+    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), receipt));
     return;
   }
-  await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
-  if (intent.kind === "send") {
-    await notify(
-      deps,
-      recipient.phone,
-      replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note, result.explorerUrl),
-    );
+  if (isOwnVenueMove(intent)) {
+    await notify(deps, sender.phone, replies.movedToHyperCore(amount, receipt));
+    return;
+  }
+  await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, receipt));
+  if (intent.kind === "venue") {
+    await notify(deps, recipient.phone, replies.receivedOnHyperCore(displayName(recipient), amount, displayName(sender), intent.note, receipt));
+  } else if (intent.kind === "send") {
+    await notify(deps, recipient.phone, replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note, receipt));
   } else {
-    await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, result.explorerUrl));
+    await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, receipt));
   }
 }
 
@@ -244,6 +256,26 @@ export async function reconcileTransfers(deps: BotDeps): Promise<{ settled: numb
   return done;
 }
 
+/** The explorer page for a payment's transaction, or Dial's own receipt where the chain has no working explorer. */
+export function receiptUrl(deps: Pick<BotDeps, "appUrl">, intent: Pick<Intent, "id">, result: Pick<SettleResult, "explorerUrl">): string {
+  return liveExplorer(result.explorerUrl) ?? `${deps.appUrl}/a/${intent.id}`;
+}
+
+/** A venue deposit into the sender's own account there. */
+function isOwnVenueMove(intent: Intent): boolean {
+  return intent.kind === "venue" && intent.recipientId === intent.senderId;
+}
+
+/** The chain people hear about: "Hyperliquid" for venue deposits (HyperCore is the only venue), else the intent's chain. */
+function paymentChain(intent: Intent): string {
+  return intent.kind === "venue" ? "Hyperliquid" : chainLabel(intent.chain);
+}
+
+function venueOf(adapter: SettlementAdapter): VenueTransfer {
+  if (!adapter.venue) throw new Error(`No trading venue on ${adapter.chain}`);
+  return adapter.venue;
+}
+
 /** The money is in escrow: the sender hears how long the recipient has, the recipient how to claim it. */
 async function announceEscrowed(deps: BotDeps, intent: Intent, sender: User, recipient: User): Promise<void> {
   const amount = formatAmount(intent, deps.network);
@@ -266,7 +298,7 @@ function escrowProgramFor(deps: BotDeps, intent: Intent): EscrowProgram {
 }
 
 /** Pays an escrow to its recipient (claim) or back to its sender (refund). */
-async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "sender"): Promise<{ txHash: string; explorerUrl: string }> {
+async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "sender"): Promise<SettleResult> {
   const adapter = deps.adapters[intent.chain];
   if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
   const toUserId = to === "recipient" ? intent.recipientId : intent.senderId;
@@ -313,7 +345,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     const result = await moveEscrow(deps, intent, "recipient");
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
     const amount = formatAmount(intent, deps.network);
-    await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
+    await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
   } catch (e) {
@@ -361,7 +393,7 @@ async function recordLateClaim(deps: BotDeps, intent: Intent, result: SettleResu
   const [sender, recipient] = await Promise.all([getUserById(deps.db, intent.senderId), getUserById(deps.db, intent.recipientId)]);
   if (!sender || !recipient) return;
   const amount = formatAmount(intent, deps.network);
-  await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
+  await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
   await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
 }
 

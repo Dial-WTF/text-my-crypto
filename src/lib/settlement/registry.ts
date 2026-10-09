@@ -52,12 +52,32 @@ export type StockToken = { symbol: string; name: string; address: Address };
  * `escrowContract`: production's dial_escrow contract on this network (contracts/arbitrum-escrow), null until
  * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
  */
-export type EvmNetwork = Common & {
+export type EvmNetwork = Omit<Common, "explorerTx" | "explorerAddress"> & {
   kind: "evm";
   viem: ViemChain;
   token: Address | null;
   escrowContract?: Address | null;
+  venue?: VenueNetwork;
   stocks?: readonly StockToken[];
+  /** Explorer links. Null where no public explorer shows this network today: no link beats a dead one. */
+  explorerTx: (hash: string) => string | null;
+  explorerAddress: (address: string) => string | null;
+};
+/**
+ * A trading venue reached from this chain: HyperCore, Hyperliquid's own chain, from HyperEVM. USDC goes in
+ * through Circle's CoreDepositWallet (the contract HyperCore's spot metadata links to USDC); `depositContract`
+ * is DialCoreDeposit (contracts/src/DialCoreDeposit.sol), which lets the treasury submit a user's signed
+ * deposit. Null until it is deployed: the adapter carries no `venue` module until then.
+ */
+export type VenueNetwork = {
+  /** "HyperCore". */
+  name: string;
+  /** "HyperCore testnet". */
+  network: string;
+  infoUrl: string;
+  coreDepositWallet: Address;
+  depositContract: Address | null;
+  explorerAddress: (address: string) => string;
 };
 /**
  * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
@@ -211,7 +231,19 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://rpc.hyperliquid-testnet.xyz/evm",
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
-      ...scan("testnet.purrsec.com"),
+      // No public explorer shows HyperEVM testnet today (Oct 2026): testnet.purrsec.com is gone, hypurrscan's
+      // testnet EVM pages read mainnet, the Hyperliquid app's explorer is blank for EVM hashes, and
+      // explore-testnet.hyperpc.app stopped indexing in August. Receipts link Dial's own receipt page instead.
+      explorerTx: () => null,
+      explorerAddress: () => null,
+      venue: {
+        name: "HyperCore",
+        network: "HyperCore testnet",
+        infoUrl: "https://api.hyperliquid-testnet.xyz/info",
+        coreDepositWallet: "0x0B80659a4076E9E93C7DbE0f10675A16a3e5C206",
+        depositContract: null, // pnpm hypercore deploy, then put the address here
+        explorerAddress: (a) => `https://app.hyperliquid-testnet.xyz/explorer/address/${a}`,
+      },
     },
     mainnet: {
       kind: "evm",
@@ -222,6 +254,14 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-mainnet",
       token: null, // confirm the USDC address before enabling
       ...scan("hyperevmscan.io"),
+      venue: {
+        name: "HyperCore",
+        network: "HyperCore",
+        infoUrl: "https://api.hyperliquid.xyz/info",
+        coreDepositWallet: "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24",
+        depositContract: null,
+        explorerAddress: (a) => `https://app.hyperliquid.xyz/explorer/address/${a}`,
+      },
     },
   },
   robinhood: {
@@ -277,6 +317,12 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
 export const ESCROW_CONTRACT_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>
   Object.values(byNetwork).flatMap((entry) => (entry?.kind === "evm" && entry.escrowContract !== undefined ? [`ESCROW_CONTRACT_${entry.id}`] : [])),
 );
+
+/** The trading venue this chain reaches on this network, from the registry alone (no adapter needed). */
+export function venueOf(chain: Chain, network: Network): VenueNetwork | null {
+  const entry = REGISTRY[chain][network];
+  return entry?.kind === "evm" ? (entry.venue ?? null) : null;
+}
 
 /** Every RPC override secret name, for the env schema and the secrets push script. */
 export const RPC_OVERRIDE_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>

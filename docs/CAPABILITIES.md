@@ -11,7 +11,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 | `batch` | Several transfers in one transaction, all or none: "split $30 between @a @b" | Tempo (atomic `calls`, one `transferWithMemo` per person) |
 | `actions` | Anyone can pay a Dial pay link from their own wallet: the link unfurls as a Blink, and the payment is found on-chain by a reference key | Solana (Actions / Blinks) |
 | `shielded` | Amount, parties and memo encrypted on-chain | Zcash (testnet, Ironwood pool, every send) |
-| `venue` | Move money into the chain's own trading venue | planned: Hyperliquid (HyperCore) |
+| `venue` | Move money into the chain's own trading venue | HyperEVM to HyperCore through `DialCoreDeposit` and Circle's CoreDepositWallet; attached once the contract's address is in the registry. Only accounts already open on HyperCore are credited, so deposits are offered only to those (`accepts`) |
 | `assets` | Send assets beyond the stablecoin | Robinhood Chain testnet: Robinhood's stock tokens TSLA, AMZN, PLTR, NFLX, AMD (EIP-2612 permit, so senders need no gas) |
 
 ## How the operator picks a chain

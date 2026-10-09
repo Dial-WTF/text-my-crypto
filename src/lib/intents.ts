@@ -73,7 +73,7 @@ export function newIntentId(): string {
 }
 
 export async function createIntent(db: Db, n: NewIntent, now: Date): Promise<Intent> {
-  const ttl = n.kind === "send" ? SEND_TTL_MS : REQUEST_TTL_MS;
+  const ttl = n.kind === "send" || n.kind === "venue" ? SEND_TTL_MS : REQUEST_TTL_MS;
   const [row] = await db
     .insert(intents)
     .values({ ...n, id: n.id ?? newIntentId(), nonce: randomToken(16), createdAt: now, expiresAt: new Date(now.getTime() + ttl) })
@@ -212,7 +212,7 @@ export async function declineIntent(db: Db, id: string): Promise<boolean> {
 export async function markSettled(
   db: Db,
   id: string,
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   now = new Date(),
 ): Promise<void> {
   await db
@@ -224,7 +224,7 @@ export async function markSettled(
 export async function markEscrowed(
   db: Db,
   id: string,
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   escrowExpiresAt: Date,
 ): Promise<void> {
   await db
@@ -237,7 +237,7 @@ export async function markReleased(
   db: Db,
   id: string,
   status: "settled" | "refunded",
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   now: Date,
 ): Promise<void> {
   await db
@@ -334,8 +334,8 @@ export async function finishUnconfirmedTransfer(
   db: Db,
   i: Pick<Intent, "id" | "error">,
   set:
-    | { status: "settled"; txHash: string; explorerUrl: string; settledAt: Date }
-    | { status: "escrowed"; txHash: string; explorerUrl: string; escrowExpiresAt: Date }
+    | { status: "settled"; txHash: string; explorerUrl: string | null; settledAt: Date }
+    | { status: "escrowed"; txHash: string; explorerUrl: string | null; escrowExpiresAt: Date }
     | { status: "failed"; error: string },
 ): Promise<boolean> {
   if (!i.error?.startsWith(UNCONFIRMED_TRANSFER)) return false;
@@ -503,7 +503,7 @@ export async function settleUnconfirmed(
   db: Db,
   id: string,
   set:
-    | { status: "escrowed"; txHash: string; explorerUrl: string; escrowExpiresAt: Date }
+    | { status: "escrowed"; txHash: string; explorerUrl: string | null; escrowExpiresAt: Date }
     | { status: "failed"; error: string },
 ): Promise<boolean> {
   const values = set.status === "escrowed" ? { ...set, error: null } : { ...set, codeHash: null };
