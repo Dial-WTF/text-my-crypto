@@ -9,6 +9,9 @@
     "lint": "eslint",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
+    "smoke": "node scripts/smoke.mjs",
+    "ship": "node scripts/ship.mjs",
     "secrets:push": "node scripts/secrets-push.mjs",
     "contracts:build": "node scripts/build-contracts.mjs",
     "contracts:deploy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deploy-test-usd.mjs",
@@ -18,7 +21,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply text-my-crypto --local",
-    "db:migrate:remote": "wrangler d1 migrations apply text-my-crypto --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply text-my-crypto --remote",
+    "db:migrate:staging": "wrangler d1 migrations apply text-my-crypto-staging --env staging --remote"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "~2.3.1",

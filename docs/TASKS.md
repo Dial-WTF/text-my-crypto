@@ -49,9 +49,10 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 ## Reliability
 
 - [ ] Payphone dev · Raise the inbound webhook cap (3 texts per sender per 5 min held back a code on 2026-10-09) and retry held texts in seconds; a proposed PR is in the Payphone repo
-- [ ] build · Staging Worker + scripted smoke conversation gating every prod deploy (in progress)
-- [ ] build · Prod watchdog every minute: health, unanswered texts, Payphone inbox vs our log; alerts by text (in progress)
+- [x] build · Staging Worker + scripted smoke conversation gating every prod deploy (`pnpm ship`, `pnpm smoke --env staging`)
+- [x] build · Prod watchdog every minute: health, unanswered texts, Payphone inbox vs our log; alerts by text
 - [ ] you · Add `ALERT_PHONE` to `.env.production.local`, then `pnpm secrets:push`
+- [ ] you · GitHub Actions starts no jobs on this repo (every CI and Deploy run sits pending, then is cancelled); likely Actions billing on the private repo. Until fixed, deploy with `pnpm ship`
 - [ ] build · Solana smart wallet with passkey authority (stretch)
 
 ## Tranche 3 · On-chain escrow

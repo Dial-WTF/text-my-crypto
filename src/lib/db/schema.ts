@@ -196,6 +196,19 @@ export const agentRate = sqliteTable(
   (t) => [primaryKey({ columns: [t.keyId, t.bucket] })],
 );
 
+/**
+ * The production watchdog's open problems, one row per check that is failing. Lets it alert once,
+ * repeat at most every 30 minutes, and send one all-clear when the row goes away.
+ */
+export const watchdogProblems = sqliteTable("watchdog_problems", {
+  key: text("key").primaryKey(),
+  detail: text("detail").notNull(),
+  /** Consecutive failing runs; some checks wait for a second failure before alerting. */
+  failures: integer("failures").notNull(),
+  firstSeenAt: ts("first_seen_at").notNull(),
+  lastAlertedAt: ts("last_alerted_at"),
+});
+
 export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;

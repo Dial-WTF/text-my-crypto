@@ -35,6 +35,14 @@ const schema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   SMS_MODE: z.enum(["log", "payphone"]).default("log"),
+  /**
+   * The owner's phone. The watchdog texts alerts here and nowhere else. Unset or unreadable: alerts are
+   * only logged. Checked where it is used, so a typo here never takes the app down.
+   */
+  ALERT_PHONE: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
 }).refine((e) => e.NETWORK === "testnet" || e.ALLOW_MAINNET === "yes", {
   message: "NETWORK=mainnet moves real money; set ALLOW_MAINNET=yes to confirm",
   path: ["ALLOW_MAINNET"],

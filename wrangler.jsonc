@@ -37,5 +37,48 @@
         "dead_letter_queue": "sms-inbound-dlq"
       }
     ]
+  },
+  // The watchdog (worker.ts scheduled → /api/sms/<secret>/watchdog): health, unanswered texts and
+  // Payphone reconciliation every minute; texts ALERT_PHONE on problems.
+  "triggers": { "crons": ["* * * * *"] },
+  "env": {
+    // Staging: its own Worker, D1 and queues. SMS_MODE=log, so it never sends a real text; the smoke
+    // test (pnpm smoke --env staging) reads replies from the log. Same testnet chains as production.
+    // Bindings and vars are not inherited, so everything the app reads is repeated here.
+    "staging": {
+      "name": "text-my-crypto-staging",
+      "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "text-my-crypto-staging" }],
+      "triggers": { "crons": [] },
+      "vars": {
+        "APP_URL": "https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev",
+        "DIAL_OPERATOR_NUMBER": "+18066071387",
+        "PAYPHONE_BASE_URL": "https://payphone.wtf",
+        "SMS_MODE": "log",
+        "ESCROW_TTL_DAYS": "7",
+        // Each smoke run signs up one new user; a $1 drop is all its $1 payment needs.
+        "SIGNUP_DRIP_USD": "1"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "text-my-crypto-staging",
+          "database_id": "84b429d4-d684-4c66-ba15-2a4b1089b39b",
+          "migrations_dir": "drizzle"
+        }
+      ],
+      "queues": {
+        "producers": [{ "binding": "SMS_INBOUND", "queue": "sms-inbound-staging" }],
+        "consumers": [
+          {
+            "queue": "sms-inbound-staging",
+            "max_batch_size": 10,
+            "max_batch_timeout": 0,
+            "max_retries": 8,
+            "retry_delay": 30,
+            "dead_letter_queue": "sms-inbound-staging-dlq"
+          }
+        ]
+      }
+    }
   }
 }
