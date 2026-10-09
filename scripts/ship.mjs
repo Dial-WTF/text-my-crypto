@@ -6,6 +6,7 @@
 //   pnpm ship                 # everything
 //   pnpm ship --staging-only  # stop after the staging smoke test
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 
 const stagingOnly = process.argv.includes("--staging-only");
 
@@ -28,6 +29,10 @@ const steps = [
         ["production: deploy", "pnpm", ["exec", "opennextjs-cloudflare", "deploy"]],
       ]),
 ];
+
+// The last build's output goes first. worker.ts imports .open-next/worker.js, so a leftover bundle joins the
+// type program and lint reads everything through it as `any`. The build below makes a fresh one anyway.
+rmSync(".open-next", { recursive: true, force: true });
 
 for (const [name, cmd, args] of steps) {
   console.log(`\n▶ ${name}`);
