@@ -14,6 +14,7 @@ const terminal = Share_Tech_Mono({ variable: "--font-share-tech-mono", subsets: 
 
 const s = site();
 
+/** Site-wide defaults. Each page states its own canonical and og:url (see pageMeta), so none is set here. */
 export const metadata: Metadata = {
   metadataBase: new URL(s.url),
   title: { default: `${s.name} by ${s.company} · ${s.title}`, template: `%s · ${s.name}` },
@@ -23,11 +24,9 @@ export const metadata: Metadata = {
   creator: s.company,
   publisher: s.company,
   keywords: ["SMS payments", "text to pay", "USDC", "stablecoin", "Solana", "crypto by text", "Dial.Work", "agentic payments"],
-  alternates: { canonical: "/" },
   formatDetection: { telephone: true },
   openGraph: {
     type: "website",
-    url: "/",
     siteName: `${s.name} by ${s.company}`,
     title: s.title,
     description: s.description,
@@ -40,7 +39,6 @@ export const metadata: Metadata = {
     images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: s.shareAlt }],
   },
   appleWebApp: { capable: true, title: s.name, statusBarStyle: "black-translucent" },
-  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {

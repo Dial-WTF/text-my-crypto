@@ -1,6 +1,6 @@
 import { agentFacts } from "../agent-content";
-import { settlesOn } from "../landing-content";
-import { site } from "../site";
+import { limitItems, settlesOn } from "../landing-content";
+import { running, site } from "../site";
 
 export const dynamic = "force-dynamic";
 
@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 export function GET(): Response {
   const s = site();
   const a = agentFacts();
+  const now = running();
   const body = `# ${s.name} by ${s.company}
 
-> Agentic peer-to-peer crypto payments over SMS. Humans text ${s.phone}; agents use the MCP server. Send, request and invoice USDC to anyone with a phone number. Testnet.
+> Agentic peer-to-peer crypto payments over SMS. Humans text ${s.phone}; agents use the MCP server. Send, request and invoice USDC to anyone with a phone number.${now.network === "testnet" ? " Testnet." : ""}
 
 ## For people
 - Text "hi" to ${s.phone}, reply with a name, then text things like "send @jeremy $5", "request $25 from adam", "411 jeremy", "balance".
@@ -29,13 +30,25 @@ export function GET(): Response {
 ${a.tools.map(([name, what]) => `- ${name}: ${what}`).join("\n")}
 
 ## Chains
-${settlesOn.map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`).join("\n")}
+${settlesOn(now.chains)
+  .map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`)
+  .join("\n")}
+
+## Limits
+${limitItems(now.limits, now.network)
+  .map((l) => `- ${l.value}: ${l.label}`)
+  .join("\n")}
 
 ## Links
 - Site: ${s.url}
 - Ledger: ${s.url}/ledger (every settled payment, linked to its transaction)
 - Ledger JSON: ${s.url}/ledger.json (payments, stats and treasury addresses)
-- Source: https://github.com/Dial-WTF/text-my-crypto
+- How it works: ${s.url}/how-it-works
+- Agents: ${s.url}/agents
+- Status: ${s.url}/status
+- Terms: ${s.url}/terms
+- Privacy: ${s.url}/privacy
+- Source: ${s.source}
 - Company: ${s.companyUrl}
 `;
   return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8" } });

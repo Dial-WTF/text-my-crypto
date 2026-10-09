@@ -78,7 +78,7 @@ export function ShareFrame({
 
 /** A solid green tag, e.g. "LIVE · USDC ON SOLANA". */
 export function Tag({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "flex", padding: "6px 14px", background: GREEN, color: INK }}>{children}</div>;
+  return <div style={{ display: "flex", flexShrink: 0, padding: "6px 14px", background: GREEN, color: INK }}>{children}</div>;
 }
 
 export function fontsFor(font: ArrayBuffer | null) {

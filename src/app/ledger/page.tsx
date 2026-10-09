@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
 import { OnchainProof } from "@/ui/patterns/OnchainProof/OnchainProof";
@@ -9,14 +8,17 @@ import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { Colophon } from "../colophon";
 import { loadLedger } from "../ledger-data";
+import { pageMeta } from "../seo";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+export const metadata = pageMeta({
+  path: "/ledger",
   title: "Ledger",
-  description: "Every payment the Dial operator has settled by text, each linked to its on-chain transaction.",
-  alternates: { canonical: "/ledger" },
-};
+  shareTitle: "The Dial ledger: every payment settled by text",
+  description:
+    "Every payment the Dial operator has settled by text, newest first, each linked to its on-chain transaction, with the treasury and escrow addresses to check them against.",
+});
 
 export default async function LedgerPage() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();

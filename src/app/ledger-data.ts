@@ -48,5 +48,5 @@ const PROOF_NOTE =
 function proofNote(proofs: ChainProof[]): string {
   if (!proofs.some((p) => p.escrowProgram)) return PROOF_NOTE;
   const days = env().ESCROW_TTL_DAYS;
-  return `${PROOF_NOTE} Money for someone not on Dial yet waits in the escrow program: it pays them only once they prove their phone, and after ${days} days anyone can send it back to the sender.`;
+  return `${PROOF_NOTE} Money for someone not on Dial yet waits in the escrow program: it pays them only once they prove their phone, and after ${days} days anyone can send it back to the sender. On devnet Dial still holds the key that can upgrade the program; on mainnet that key goes to a multisig or the program is frozen.`;
 }

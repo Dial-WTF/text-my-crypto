@@ -1,14 +1,16 @@
 import { ImageResponse } from "next/og";
 import QRCode from "qrcode";
+import { liveChainNames } from "@/lib/chain-status";
 import { publicEnv } from "@/lib/env";
 import { formatPhone } from "@/lib/phone";
 import { askQuery, loadPayHeader } from "@/lib/web/pay-page";
 import { CARD_SIZE, fontsFor, GREEN, INK, markDataUrl, ShareFrame, SOFT, terminalFont } from "../../../press/art";
+import { running } from "../../../site";
 
 export const dynamic = "force-dynamic";
 
-/** Big enough to read in a chat preview, small enough that a 32-character handle still fits. */
-const handleSize = (h: string) => (h.length <= 10 ? 124 : h.length <= 16 ? 96 : 68);
+/** Big enough to read in a chat preview, small enough that "@" and a 32-character handle still fit beside the QR. */
+const handleSize = (h: string) => (h.length <= 10 ? 124 : h.length <= 16 ? 96 : h.length <= 22 ? 68 : 46);
 
 /** The share card for /@handle: who to pay, what they asked for, and how. Unknown handles get a plain Dial card. */
 export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">): Promise<Response> {
@@ -41,7 +43,7 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
         mark={mark}
         family={font ? "Terminal" : "sans-serif"}
         tag={`TEXT ${phone}`}
-        aside="or scan with any wallet · Solana · Tempo"
+        aside={["or any wallet", ...liveChainNames(running().chains).map((n) => n.replace(/ Chain$/, ""))].join(" · ")}
       >
         {head ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 32 }}>
@@ -53,7 +55,7 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
             ) : null}
             {head.amountUsd ? (
               <div style={{ display: "flex", alignItems: "baseline", gap: 18, marginTop: 10 }}>
-                <div style={{ display: "flex", fontSize: 72, ...glow }}>${head.amountUsd} USDC</div>
+                <div style={{ display: "flex", flexShrink: 0, fontSize: 72, ...glow }}>${head.amountUsd} USDC</div>
                 {head.note ? <div style={{ display: "flex", fontSize: 38, color: SOFT }}>for {head.note.slice(0, 32)}</div> : null}
               </div>
             ) : (

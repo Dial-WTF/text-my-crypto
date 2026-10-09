@@ -8,11 +8,21 @@ import { Desk } from "@/ui/patterns/Desk/Desk";
 import { Notice } from "@/ui/patterns/Notice/Notice";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { Receipt, ReceiptLine } from "@/ui/primitives/Receipt/Receipt";
+import { Colophon } from "../../colophon";
+import { pageMeta } from "../../seo";
 import { redeemAgentKey } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Connect an agent", robots: { index: false } };
+export async function generateMetadata({ params }: PageProps<"/k/[token]">): Promise<Metadata> {
+  const { token } = await params;
+  return pageMeta({
+    path: `/k/${encodeURIComponent(token)}`,
+    title: "Connect an agent",
+    description: "A one-time link to give an AI agent a key to your Dial account. It can ask for payments; you approve every one.",
+    index: false,
+  });
+}
 
 export default async function AgentKeyPage({ params }: PageProps<"/k/[token]">) {
   const { token } = await params;
@@ -21,7 +31,7 @@ export default async function AgentKeyPage({ params }: PageProps<"/k/[token]">) 
   const user = link ? await getUserById(db, link.userId) : null;
 
   return (
-    <SiteShell operatorNumber={publicEnv().DIAL_OPERATOR_NUMBER}>
+    <SiteShell operatorNumber={publicEnv().DIAL_OPERATOR_NUMBER} colophon={<Colophon />}>
       <Desk
         heading="Connect an agent"
         lede="Your agent can check your balance and ask for payments. Every payment still waits for you to approve it by text or passkey."

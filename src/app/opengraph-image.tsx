@@ -1,8 +1,10 @@
 import { ImageResponse } from "next/og";
 import { CARD_SIZE, fontsFor, markDataUrl, ShareFrame, SOFT, terminalFont } from "./press/art";
-import { site } from "./site";
+import { liveChainNames } from "@/lib/chain-status";
+import { running, site } from "./site";
 
-export const dynamic = "force-static";
+// Rendered on request, so the chains it names are the ones running, not the ones at build time.
+export const dynamic = "force-dynamic";
 export const size = CARD_SIZE;
 export const contentType = "image/png";
 export const alt = site().shareAlt;
@@ -10,13 +12,16 @@ export const alt = site().shareAlt;
 export default async function OpenGraphImage() {
   const s = site();
   const [font, mark] = await Promise.all([terminalFont(), markDataUrl()]);
+  const { chains } = running();
+  const live = liveChainNames(chains);
+  const more = chains.length - live.length;
   return new ImageResponse(
     (
       <ShareFrame
         mark={mark}
         family={font ? "Terminal" : "sans-serif"}
-        tag="LIVE · SOLANA + TEMPO"
-        aside="Base · Ethereum · Arbitrum · Hyperliquid · Robinhood next"
+        tag={live.length ? `LIVE · ${live.join(" + ").toUpperCase()}` : "TESTNET DEMO"}
+        aside={more ? `${more} more chain${more === 1 ? "" : "s"} on the way` : "crypto by text"}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", fontSize: 34, color: SOFT }}>Text the operator</div>
@@ -26,6 +31,6 @@ export default async function OpenGraphImage() {
         </div>
       </ShareFrame>
     ),
-    { ...CARD_SIZE, fonts: fontsFor(font) },
+    { ...CARD_SIZE, fonts: fontsFor(font), headers: { "cache-control": "public, max-age=3600, s-maxage=3600" } },
   );
 }

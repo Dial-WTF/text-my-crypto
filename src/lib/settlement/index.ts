@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
-import { type Chain, CHAINS } from "@/lib/chains";
+import { enabledChains } from "@/lib/chain-status";
+import type { Chain } from "@/lib/chains";
 import { type Env, env, rpcOverrides } from "@/lib/env";
 import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
@@ -13,10 +14,9 @@ export type ActiveChain = { chain: Chain; entry: NetworkEntry; rpc: { url: strin
 
 /** The chains listed in CHAINS that have a registry entry and a stablecoin on the selected network. */
 export function activeChains(e: Env = env(), overrides: Record<string, string> = rpcOverrides()): ActiveChain[] {
-  const wanted = new Set(e.CHAINS.split(",").map((s) => s.trim()));
-  return CHAINS.flatMap((chain) => {
+  return enabledChains(e.CHAINS, e.NETWORK).flatMap((chain) => {
     const entry = REGISTRY[chain][e.NETWORK];
-    if (!wanted.has(chain) || !entry || (entry.kind !== "solana" && !entry.token)) return [];
+    if (!entry) return [];
     return [{ chain, entry, rpc: resolveRpc(entry, { alchemyKey: e.ALCHEMY_API_KEY, overrides }) }];
   });
 }
