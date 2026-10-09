@@ -345,7 +345,7 @@ async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Prom
     paysUsd: usd(pays),
     ownShareUsd: s.mine === null ? null : usd(s.mine),
     asset: "USDC",
-    chain: first?.intent.chain ?? null,
+    chain: s.chain,
     legs: s.legs.map((l) => ({ intentId: l.intent.id, to: describe(l.person), amountUsd: usd(l.intent.amount), onDial: isClaimed(l.person) })),
     message: ownerTexted
       ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one transaction, or none do. Poll get_payment on any leg.`

@@ -41,6 +41,8 @@ export type SplitError = { code: SplitErrorCode; message: string };
 /** A split waiting for its one approval: a leg (an ordinary send intent) per person, sharing a split id and a code. */
 export type PreparedSplit = {
   splitId: string;
+  /** The chain carrying the batch. */
+  chain: Chain;
   legs: Array<{ intent: Intent; person: User }>;
   /** What the sender keeps as their own share, when they're in the split. */
   mine: bigint | null;
@@ -189,6 +191,7 @@ export async function createSplit(deps: BotDeps, user: User, cmd: SplitCommand, 
     ok: true,
     split: {
       splitId,
+      chain,
       legs,
       mine: cmd.includeMe ? (shares.at(-1) ?? null) : null,
       total,
@@ -214,7 +217,7 @@ export function confirmSplitText(p: PreparedSplit): string {
   const ways = p.legs.length + (p.mine === null ? 0 : 1);
   const shares = sharesText(p.legs.map((l) => ({ amount: l.intent.amount, person: l.person })));
   const note = p.legs[0]?.intent.note ?? null;
-  const chain = chainLabel(p.legs[0]?.intent.chain ?? "tempo");
+  const chain = chainLabel(p.chain);
   return splitReplies.confirm(formatUsd(p.total), ways, shares, p.mine === null ? null : formatUsd(p.mine), chain, note, p.code, p.approveUrl);
 }
 
@@ -231,7 +234,7 @@ export async function prepareSplit(deps: BotDeps, user: User, cmd: SplitCommand)
 }
 
 /**
- * Settles an approved split: claims every leg at once, then pays them all in one Tempo transaction.
+ * Settles an approved split: claims every leg at once, then pays them all in one transaction on the chain's batch module.
  * All or nothing: if the transaction doesn't land, every leg is marked failed and nothing moved.
  */
 export async function approveSplit(deps: BotDeps, splitId: string): Promise<SettleOutcome> {
