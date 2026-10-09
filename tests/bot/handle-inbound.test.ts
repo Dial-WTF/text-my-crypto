@@ -537,13 +537,13 @@ describe("withdraw", () => {
 
     it("uses the only EVM-style chain that's on", async () => {
       deps = { ...deps, adapters: { solana: solanaOnly(sol), ethereum: evm("ethereum") } };
-      expect(await say(ALEX, `withdraw $5 to ${EVM_OUT}`)).toMatch(/^Withdraw \$5 USDC to 0x74…bEbb on Ethereum\? Reply \d{6} to confirm/);
+      expect(await say(ALEX, `withdraw $5 to ${EVM_OUT}`)).toMatch(/^Withdraw \$5 USDC to 0x742d…bEbb on Ethereum\? Reply \d{6} to confirm/);
     });
 
     it("asks which chain when several fit, and takes the answer", async () => {
       deps = { ...deps, adapters: { solana: solanaOnly(sol), tempo: evm("tempo"), ethereum: evm("ethereum"), robinhood: evm("robinhood") } };
       expect(await say(ALEX, `withdraw $5 to ${EVM_OUT}`)).toBe("Which chain: ethereum, robinhood, tempo?");
-      expect(await say(ALEX, "robinhood")).toMatch(/^Withdraw \$5 USDC to 0x74…bEbb on Robinhood Chain\? Reply \d{6} to confirm/);
+      expect(await say(ALEX, "robinhood")).toMatch(/^Withdraw \$5 USDC to 0x742d…bEbb on Robinhood Chain\? Reply \d{6} to confirm/);
       // The question is used up: the chain name alone is now just chat.
       expect(await say(ALEX, "robinhood")).not.toMatch(/^Withdraw/);
     });

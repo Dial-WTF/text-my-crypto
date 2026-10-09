@@ -45,7 +45,7 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 - [x] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
 - [x] build · Dial Pay: crypto-Zelle pay pages at `/@handle` (pay by text or any wallet via Solana Pay / EIP-681, JSON at `/@handle.json`), `/wallet` (texted link + code, passkey, or agent key at `/api/wallet`), MCP `get_pay_link` and `get_wallet`
 - [x] build · On-chain ledger: treasury links per chain, `/ledger`, `/ledger.json`
-- [x] build · Pay links are Solana Actions (Blinks): `/actions.json` maps `/@handle` to `/api/actions/pay/[handle]`, which offers $1/$5/$10 or a custom amount and builds a devnet USDC transfer with a reference key; the watchdog cron finds it by reference, records it on the ledger once and texts the recipient (`action_payments`, migration 0013)
+- [x] build · Pay links are Solana Actions (Blinks): `/actions.json` maps `/@handle` to `/api/actions/pay/[handle]`, which offers $1/$5/$10 or a custom amount and builds a devnet USDC transfer with a reference key; the watchdog cron finds it by reference, records it on the ledger once and texts the recipient (`action_payments`, migration 0014)
 - [ ] you · Register the pay action with Dialect's registry at dial.to/register so pay links unfurl as Blinks on X
 
 ## Reliability

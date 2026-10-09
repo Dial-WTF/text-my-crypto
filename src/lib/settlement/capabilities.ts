@@ -117,10 +117,13 @@ export function chainWith<F extends FeatureId>(
 }
 
 /** The name service whose suffix matches `name` (longest suffix wins, so ".base.eth" beats ".eth"). */
-export function nameServiceFor(adapters: Adapters, name: string): { chain: Chain; names: NameService } | null {
+export function nameServiceFor(
+  adapters: Partial<Record<Chain, Pick<SettlementAdapter, "names">>>,
+  name: string,
+): { chain: Chain; names: NameService } | null {
   const lower = name.toLowerCase();
   let best: { chain: Chain; names: NameService; length: number } | null = null;
-  for (const [chain, adapter] of Object.entries(adapters) as Array<[Chain, SettlementAdapter | undefined]>) {
+  for (const [chain, adapter] of Object.entries(adapters) as Array<[Chain, Pick<SettlementAdapter, "names"> | undefined]>) {
     const names = adapter?.names;
     const suffix = names?.suffixes.find((s) => lower.endsWith(s) && lower.length > s.length);
     if (names && suffix && (!best || suffix.length > best.length)) best = { chain, names, length: suffix.length };
