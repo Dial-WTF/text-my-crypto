@@ -48,7 +48,7 @@ describe("registry", () => {
 describe("activeChains", () => {
   it("runs only listed chains that have a stablecoin on the selected network", () => {
     const chains = activeChains(env({ CHAINS: "solana,base,robinhood,zcash" }), {});
-    expect(chains.map((c) => c.chain)).toEqual(["solana", "base"]);
+    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood"]);
   });
 
   it("switches every chain to its mainnet entry together", () => {

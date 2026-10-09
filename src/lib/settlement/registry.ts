@@ -194,7 +194,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       viem: robinhoodTestnet,
       publicRpc: robinhoodTestnet.rpcUrls.default.http[0],
       alchemy: "robinhood-testnet",
-      token: null, // no test stablecoin yet
+      token: "0x2195e3E09eab088c90B4461B92D06A74d30c1e2e", // Dial Test USD (contracts/src/DialTestUSD.sol): no Circle test USDC here
       ...scan("explorer.testnet.chain.robinhood.com"),
     },
     mainnet: {
