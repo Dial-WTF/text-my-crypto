@@ -2,7 +2,7 @@
 // .env.production.local (or ENV_FILE), never prints it, and works on NETWORK (default testnet).
 //
 //   pnpm hypercore status          treasury gas, USDC, HyperCore spot balance, deposit contract
-//   pnpm hypercore deploy          deploys DialCoreDeposit; put the address in the registry's hyperCore.depositContract
+//   pnpm hypercore deploy          deploys DialCoreDeposit; put the address in the registry's venue.depositContract
 //   pnpm hypercore deposit [usd]   one real deposit: the treasury's own USDC into its own HyperCore spot balance
 //                                  (default $1), through the deployed contract, then reads HyperCore until it lands
 //
@@ -23,9 +23,9 @@ function stop(message) {
   process.exit(1);
 }
 
-if (!entry?.token || !entry.hyperCore) stop(`HyperEVM ${network} has no USDC or HyperCore entry in the registry.`);
+if (!entry?.token || !entry.venue) stop(`HyperEVM ${network} has no USDC or HyperCore entry in the registry.`);
 if (!process.env.EVM_TREASURY_KEY) stop("EVM_TREASURY_KEY is not set.");
-const core = entry.hyperCore;
+const core = entry.venue;
 const usdc = entry.token;
 const treasury = privateKeyToAccount(process.env.EVM_TREASURY_KEY);
 const rpc = resolveRpc(entry, {
@@ -75,7 +75,7 @@ async function deploy() {
   if (receipt.status !== "success" || !receipt.contractAddress) stop(`Deploy reverted: ${entry.explorerTx(hash)}`);
   console.log(`DialCoreDeposit on ${entry.network}: ${receipt.contractAddress}`);
   console.log(`  deploy: ${entry.explorerTx(hash)}`);
-  console.log(`\nNext: set hyperCore.depositContract: "${receipt.contractAddress}" on REGISTRY.hyperevm.${network} in src/lib/settlement/registry.ts.`);
+  console.log(`\nNext: set venue.depositContract: "${receipt.contractAddress}" on REGISTRY.hyperevm.${network} in src/lib/settlement/registry.ts.`);
 }
 
 async function deposit() {

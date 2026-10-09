@@ -25,6 +25,9 @@ export function agentFacts() {
       ["get_pay_link", "crypto Zelle: a pay page for you or any @handle"],
       ["get_wallet", "balances, deposit addresses, activity"],
       ["list_chain_features", "what each chain can do beyond sending"],
+      ["send_to_hyperliquid", "move USDC from HyperEVM into a Hyperliquid spot balance"],
+      ["get_hyperliquid_balance", "USDC in the owner's Hyperliquid spot balance"],
+      ["get_price", "Hyperliquid mid price for a coin, quote only"],
     ] as const,
     rule: "Agents start payments. A human approves every one, by a code texted to their phone or a passkey.",
   };

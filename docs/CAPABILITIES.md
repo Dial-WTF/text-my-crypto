@@ -11,7 +11,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 | `batch` | Several transfers in one transaction, all or none | planned: Tempo |
 | `actions` | Anyone can pay a Dial pay link from their own wallet | planned: Solana (Actions / Blinks) |
 | `shielded` | Amount, parties and memo encrypted on-chain | planned: Zcash |
-| `venue` | Move money into the chain's own trading venue | planned: Hyperliquid (HyperCore) |
+| `venue` | Move money into the chain's own trading venue | HyperEVM to HyperCore through `DialCoreDeposit` and Circle's CoreDepositWallet; attached once the contract's address is in the registry (`pnpm hypercore deploy`) |
 | `assets` | Send assets beyond the stablecoin | planned: Robinhood Chain |
 
 ## How the operator picks a chain

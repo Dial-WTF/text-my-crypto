@@ -5,7 +5,7 @@ import { type Intent, intents, users } from "@/lib/db/schema";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
 /** What the public ledger counts as a payment: withdrawals are people moving their own money out. */
-const PAYMENT_KINDS: Intent["kind"][] = ["send", "request", "invoice", "hypercore"];
+const PAYMENT_KINDS: Intent["kind"][] = ["send", "request", "invoice", "venue"];
 
 export type PublicStats = { payments: number; movedUsd: bigint; people: number };
 
@@ -62,7 +62,7 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
     id: r.id,
     kind: r.kind,
     from: who(r.senderId),
-    to: r.kind === "hypercore" ? `${who(r.recipientId)} on Hyperliquid` : who(r.recipientId),
+    to: who(r.recipientId),
     amount: r.amount,
     chain: r.chain,
     status: r.status,

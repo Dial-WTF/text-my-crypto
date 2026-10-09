@@ -1,16 +1,9 @@
-import { REGISTRY, type HyperCoreNetwork, type Network } from "./registry";
 import { ChainDownError } from "./types";
 
 export type Fetch = typeof fetch;
 
 /** Prices come from mainnet: testnet mids are test markets, not what anything trades at. */
 export const PRICE_INFO_URL = "https://api.hyperliquid.xyz/info";
-
-/** HyperCore on this network, or null where the registry has none. */
-export function hyperCoreFor(network: Network): HyperCoreNetwork | null {
-  const entry = REGISTRY.hyperevm[network];
-  return entry?.kind === "evm" ? (entry.hyperCore ?? null) : null;
-}
 
 /** One POST to Hyperliquid's public info API. Anything but a JSON answer means it isn't answering. */
 async function info(url: string, body: Record<string, unknown>, fetchFn: Fetch): Promise<unknown> {

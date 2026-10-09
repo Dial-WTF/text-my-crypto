@@ -47,6 +47,9 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `list_payments` | `{ limit? }` Recent payments, newest first |
 | `get_pay_link` | `{ handle?, amountUsd?, note? }` A pay page (crypto Zelle) for the owner or any @handle: URL, text to send the operator, and a wallet link per chain. Share the owner's to get paid; read someone else's to pay them. Read-only |
 | `get_wallet` | Balances and deposit address per chain, pay link, recent activity, connected agents. Read-only |
+| `send_to_hyperliquid` | `{ amountUsd, to? }` Move USDC from the owner's HyperEVM wallet into a Hyperliquid (HyperCore) spot balance: the owner's own, or a Dial user's. The owner approves by text |
+| `get_hyperliquid_balance` | USDC in the owner's HyperCore spot balance. Read-only |
+| `get_price` | `{ coin }` The Hyperliquid mainnet mid for a coin like BTC or HYPE. A quote, not advice. Read-only |
 
 Full arguments, statuses and error codes: [references/tools.md](references/tools.md).
 

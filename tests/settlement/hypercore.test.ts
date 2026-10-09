@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   coreUsdToBaseUnits,
   formatPrice,
-  hyperCoreFor,
   midPrice,
   PRICE_INFO_URL,
   spotUsdc,
 } from "@/lib/settlement/hypercore";
+import { venueOf } from "@/lib/settlement/registry";
 import { ChainDownError } from "@/lib/settlement/types";
 
 const USER = "0x00000000000000000000000000000000000a11ce";
@@ -22,14 +22,15 @@ function infoApi(answers: Record<string, unknown>, status = 200) {
   return { fetchFn: fetchFn as unknown as typeof fetch, calls };
 }
 
-describe("hyperCoreFor", () => {
+describe("venueOf", () => {
   it("knows HyperCore on both networks, with Circle's CoreDepositWallet", () => {
-    expect(hyperCoreFor("testnet")).toMatchObject({
+    expect(venueOf("hyperevm", "testnet")).toMatchObject({
       network: "HyperCore testnet",
       infoUrl: "https://api.hyperliquid-testnet.xyz/info",
       coreDepositWallet: "0x0B80659a4076E9E93C7DbE0f10675A16a3e5C206",
     });
-    expect(hyperCoreFor("mainnet")).toMatchObject({ network: "HyperCore", infoUrl: "https://api.hyperliquid.xyz/info" });
+    expect(venueOf("hyperevm", "mainnet")).toMatchObject({ network: "HyperCore", infoUrl: "https://api.hyperliquid.xyz/info" });
+    expect(venueOf("base", "testnet")).toBeNull();
   });
 });
 

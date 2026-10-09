@@ -1,9 +1,8 @@
 import { type Chain, chainLabel } from "@/lib/chains";
 import { env } from "@/lib/env";
 import { type ActiveChain, activeChains, getAdapters } from "@/lib/settlement";
-import { type Network, REGISTRY } from "@/lib/settlement/registry";
+import { type Network, REGISTRY, venueOf } from "@/lib/settlement/registry";
 import type { Intent } from "@/lib/db/schema";
-import { hyperCoreFor } from "@/lib/settlement/hypercore";
 import { type Adapters, errorText } from "@/lib/settlement/types";
 
 /** The network a chain settles on, e.g. "Solana devnet" or "Base Sepolia". Defaults to the one running now. */
@@ -11,11 +10,11 @@ export function networkName(chain: Chain, network: Network = env().NETWORK): str
   return REGISTRY[chain][network]?.network ?? chainLabel(chain);
 }
 
-/** "HyperEVM testnet → HyperCore testnet" for a Hyperliquid deposit, else the chain's network. */
+/** "HyperEVM testnet → HyperCore testnet" for a deposit into the chain's trading venue, else the chain's network. */
 export function paymentNetwork(i: Pick<Intent, "kind" | "chain">, network: Network = env().NETWORK): string {
   const from = networkName(i.chain, network);
-  const core = i.kind === "hypercore" ? hyperCoreFor(network) : null;
-  return core ? `${from} → ${core.network}` : from;
+  const venue = i.kind === "venue" ? venueOf(i.chain, network) : null;
+  return venue ? `${from} → ${venue.network}` : from;
 }
 
 /** The network running now, or null when the environment can't be read. For public pages that must still render. */

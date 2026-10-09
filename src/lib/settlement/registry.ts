@@ -40,19 +40,22 @@ export type TempoNetwork = Common & {
   faucet: boolean;
 };
 /**
- * HyperCore, Hyperliquid's own chain, reached from HyperEVM. USDC goes in through Circle's CoreDepositWallet
- * (the contract HyperCore's spot metadata links to USDC); `depositContract` is DialCoreDeposit
- * (contracts/src/DialCoreDeposit.sol), which lets the treasury submit a user's signed deposit. Null until it is
- * deployed: deposits stay off, balances and prices still read.
+ * A trading venue reached from this chain: HyperCore, Hyperliquid's own chain, from HyperEVM. USDC goes in
+ * through Circle's CoreDepositWallet (the contract HyperCore's spot metadata links to USDC); `depositContract`
+ * is DialCoreDeposit (contracts/src/DialCoreDeposit.sol), which lets the treasury submit a user's signed
+ * deposit. Null until it is deployed: the adapter carries no `venue` module until then.
  */
-export type HyperCoreNetwork = {
+export type VenueNetwork = {
+  /** "HyperCore". */
+  name: string;
+  /** "HyperCore testnet". */
   network: string;
   infoUrl: string;
   coreDepositWallet: Address;
   depositContract: Address | null;
   explorerAddress: (address: string) => string;
 };
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; hyperCore?: HyperCoreNetwork };
+export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; venue?: VenueNetwork };
 export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
 
 /** Explorer links for an Etherscan-style explorer. */
@@ -189,7 +192,8 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
       ...scan("testnet.purrsec.com"),
-      hyperCore: {
+      venue: {
+        name: "HyperCore",
         network: "HyperCore testnet",
         infoUrl: "https://api.hyperliquid-testnet.xyz/info",
         coreDepositWallet: "0x0B80659a4076E9E93C7DbE0f10675A16a3e5C206",
@@ -206,7 +210,8 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-mainnet",
       token: null, // confirm the USDC address before enabling
       ...scan("hyperevmscan.io"),
-      hyperCore: {
+      venue: {
+        name: "HyperCore",
         network: "HyperCore",
         infoUrl: "https://api.hyperliquid.xyz/info",
         coreDepositWallet: "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24",
@@ -238,6 +243,12 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
   },
   zcash: { testnet: null, mainnet: null },
 };
+
+/** The trading venue this chain reaches on this network, from the registry alone (no adapter needed). */
+export function venueOf(chain: Chain, network: Network): VenueNetwork | null {
+  const entry = REGISTRY[chain][network];
+  return entry?.kind === "evm" ? (entry.venue ?? null) : null;
+}
 
 /** Every RPC override secret name, for the env schema and the secrets push script. */
 export const RPC_OVERRIDE_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>

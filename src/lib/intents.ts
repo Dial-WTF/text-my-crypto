@@ -66,7 +66,7 @@ export function newIntentId(): string {
 }
 
 export async function createIntent(db: Db, n: NewIntent, now: Date): Promise<Intent> {
-  const ttl = n.kind === "send" || n.kind === "hypercore" ? SEND_TTL_MS : REQUEST_TTL_MS;
+  const ttl = n.kind === "send" || n.kind === "venue" ? SEND_TTL_MS : REQUEST_TTL_MS;
   const [row] = await db
     .insert(intents)
     .values({ ...n, id: n.id ?? newIntentId(), nonce: randomToken(16), createdAt: now, expiresAt: new Date(now.getTime() + ttl) })

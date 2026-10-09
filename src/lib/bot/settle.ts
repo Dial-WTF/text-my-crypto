@@ -27,10 +27,10 @@ import {
   type EscrowProgram,
   EscrowUnconfirmedError,
   errorText,
-  type HyperCoreBridge,
   type SettlementAdapter,
   type SettleResult,
 } from "@/lib/settlement/types";
+import type { VenueTransfer } from "@/lib/settlement/capabilities";
 import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
@@ -80,21 +80,21 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     const target =
       intent.kind === "withdraw"
         ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}`
-        : isHyperCoreMove(intent)
+        : isOwnVenueMove(intent)
           ? "your spot balance"
           : describe(recipient);
     await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, paymentChain(intent)));
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
     const move = { fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id };
     result =
-      intent.kind === "hypercore"
-        ? await hyperCoreBridge(adapter).deposit(move)
+      intent.kind === "venue"
+        ? await venueOf(adapter).deposit(move)
         : intent.escrowProgram
           ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
           : await adapter.settle(move);
   } catch (e) {
     const error = errorText(e);
-    if (intent.kind === "hypercore" && e instanceof TransferUnconfirmedError) {
+    if (intent.kind === "venue" && e instanceof TransferUnconfirmedError) {
       // Sent, but the receipt didn't come back: it may still land, so it is not called failed.
       await markFundingUnconfirmed(deps.db, intent.id, error);
       await notify(deps, sender.phone, replies.hyperCoreUnconfirmed(formatUsd(intent.amount)));
@@ -126,12 +126,12 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     await notify(deps, sender.phone, replies.withdrew(amount, short, result.explorerUrl));
     return { ok: true, status: "settled", ...result };
   }
-  if (isHyperCoreMove(intent)) {
+  if (isOwnVenueMove(intent)) {
     await notify(deps, sender.phone, replies.movedToHyperCore(amount, result.explorerUrl));
     return { ok: true, status: "settled", ...result };
   }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
-  if (intent.kind === "hypercore") {
+  if (intent.kind === "venue") {
     await notify(
       deps,
       recipient.phone,
@@ -149,19 +149,19 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   return { ok: true, status: "settled", ...result };
 }
 
-/** A HyperCore deposit into the sender's own spot balance. */
-function isHyperCoreMove(intent: Intent): boolean {
-  return intent.kind === "hypercore" && intent.recipientId === intent.senderId;
+/** A venue deposit into the sender's own account there. */
+function isOwnVenueMove(intent: Intent): boolean {
+  return intent.kind === "venue" && intent.recipientId === intent.senderId;
 }
 
-/** The chain people hear about: "Hyperliquid" for HyperCore deposits, else the intent's chain. */
+/** The chain people hear about: "Hyperliquid" for venue deposits (HyperCore is the only venue), else the intent's chain. */
 function paymentChain(intent: Intent): string {
-  return intent.kind === "hypercore" ? "Hyperliquid" : chainLabel(intent.chain);
+  return intent.kind === "venue" ? "Hyperliquid" : chainLabel(intent.chain);
 }
 
-function hyperCoreBridge(adapter: SettlementAdapter): HyperCoreBridge {
-  if (!adapter.hyperCore) throw new Error(`HyperCore deposits are not available on ${adapter.chain}`);
-  return adapter.hyperCore;
+function venueOf(adapter: SettlementAdapter): VenueTransfer {
+  if (!adapter.venue) throw new Error(`No trading venue on ${adapter.chain}`);
+  return adapter.venue;
 }
 
 /** The money is in escrow: the sender hears how long the recipient has, the recipient how to claim it. */

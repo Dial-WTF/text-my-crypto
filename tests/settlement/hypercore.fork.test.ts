@@ -33,9 +33,9 @@ const RPC = `http://127.0.0.1:${PORT}`;
 // anvil's first well-known dev account, funded on the fork. Local chain only.
 const TREASURY_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const entry = REGISTRY.hyperevm.testnet;
-if (entry?.kind !== "evm" || !entry.token || !entry.hyperCore) throw new Error("registry has no HyperEVM testnet USDC");
+if (entry?.kind !== "evm" || !entry.token || !entry.venue) throw new Error("registry has no HyperEVM testnet USDC");
 const USDC = entry.token;
-const CDW = entry.hyperCore.coreDepositWallet;
+const CDW = entry.venue.coreDepositWallet;
 // FiatToken v2.2 keeps balances in `balanceAndBlacklistStates`, storage slot 9: the fork's test user gets USDC there.
 const BALANCE_SLOT = 9n;
 const artifact = JSON.parse(readFileSync("contracts/artifacts/DialCoreDeposit.json", "utf8")) as { abi: Abi; bytecode: Hex };
@@ -88,9 +88,9 @@ describe.runIf(run)("DialCoreDeposit on a HyperEVM testnet fork (anvil)", () => 
       explorerTx: (h) => `local/${h}`,
       treasuryKey: TREASURY_KEY,
       rpcUrl: RPC,
-      hyperCore: { ...entry.hyperCore!, depositContract: contract },
+      venue: { ...entry.venue!, depositContract: contract },
     });
-    expect(adapter.hyperCore?.network).toBe("HyperCore testnet");
+    expect(adapter.venue?.name).toBe("HyperCore");
     const user = await adapter.createWallet();
     const recipient = await adapter.createWallet();
 
@@ -103,7 +103,7 @@ describe.runIf(run)("DialCoreDeposit on a HyperEVM testnet fork (anvil)", () => 
     expect(await adapter.getBalance(user.address)).toBe(3_000_000n);
 
     // The user holds no gas: the treasury submits their signed authorization.
-    const res = await adapter.hyperCore!.deposit({ fromSecret: user.secret, to: recipient.address, amount: 2_000_000n, memo: "pi_forktest00001" });
+    const res = await adapter.venue!.deposit({ fromSecret: user.secret, to: recipient.address, amount: 2_000_000n, memo: "pi_forktest00001" });
     expect(res.explorerUrl).toBe(`local/${res.txHash}`);
     expect(await adapter.getBalance(user.address)).toBe(1_000_000n);
     expect(await adapter.getBalance(contract)).toBe(0n);
@@ -136,7 +136,7 @@ describe.runIf(run)("DialCoreDeposit on a HyperEVM testnet fork (anvil)", () => 
 
     // The nonce is the payment id: the same payment can never move twice.
     await expect(
-      adapter.hyperCore!.deposit({ fromSecret: user.secret, to: recipient.address, amount: 1_000_000n, memo: "pi_forktest00001" }),
+      adapter.venue!.deposit({ fromSecret: user.secret, to: recipient.address, amount: 1_000_000n, memo: "pi_forktest00001" }),
     ).rejects.toThrow();
     expect(await adapter.getBalance(user.address)).toBe(1_000_000n);
   });

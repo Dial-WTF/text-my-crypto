@@ -58,7 +58,7 @@ export async function statusReply(
   const who =
     i.kind === "withdraw"
       ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
-      : i.kind === "hypercore" && i.recipientId === i.senderId
+      : i.kind === "venue" && i.recipientId === i.senderId
         ? "your Hyperliquid balance"
         : other
         ? displayName(other)
@@ -74,7 +74,7 @@ export async function statusReply(
       // A nudge must not replace a code that may still be on its way; only an explicit "status" does.
       if (!freshCode) return replies.statusReminder(amount, who);
       const code = await codeFor(deps, user.id, i.id, i.amount, { keepAttempts: true });
-      return i.kind === "send" || i.kind === "withdraw" || i.kind === "hypercore"
+      return i.kind === "send" || i.kind === "withdraw" || i.kind === "venue"
         ? replies.statusWaitingOnYou(amount, who, code, link)
         : replies.statusAskedToPay(amount, who, code, link);
     }

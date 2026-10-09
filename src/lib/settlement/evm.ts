@@ -16,7 +16,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
 import type { EvmNetwork } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { HyperCoreBridge, SettlementAdapter, SettleResult } from "./types";
+import type { VenueTransfer } from "./capabilities";
+import { spotUsdc } from "./hypercore";
+import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
 
 const ERC20_3009 = parseAbi([
@@ -101,7 +103,7 @@ export async function waitForHead(
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "hyperCore"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "venue"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
 ): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
@@ -131,9 +133,10 @@ export function createEvmAdapter(
   }
 
   /** The user signs, the treasury submits, DialCoreDeposit pulls the USDC and deposits it on HyperCore: one transaction. */
-  const hyperCoreBridge = (network: string, contract: Address): HyperCoreBridge => {
+  const hyperCoreVenue = (name: string, infoUrl: string, contract: Address): VenueTransfer => {
     return {
-      network,
+      name,
+      balance: (address) => spotUsdc(infoUrl, address),
       async deposit({ fromSecret, to, amount, memo }) {
         const { name, version } = await tokenDomain();
         const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
@@ -163,10 +166,10 @@ export function createEvmAdapter(
       },
     };
   };
-  const core = cfg.hyperCore;
+  const venue = cfg.venue;
 
   return {
-    ...(core?.depositContract ? { hyperCore: hyperCoreBridge(core.network, core.depositContract) } : {}),
+    ...(venue?.depositContract ? { venue: hyperCoreVenue(venue.name, venue.infoUrl, venue.depositContract) } : {}),
     chain: cfg.chain,
     tokenId: token,
     isValidAddress: (a) => isAddress(a, { strict: false }),

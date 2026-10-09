@@ -35,6 +35,9 @@ const ARGS: Record<string, string> = {
   get_pay_link: "handle?, amountUsd?, note?",
   get_wallet: "none",
   list_chain_features: "none",
+  send_to_hyperliquid: "amountUsd, to?",
+  get_hyperliquid_balance: "none",
+  get_price: "coin",
 };
 
 export default function AgentsPage() {

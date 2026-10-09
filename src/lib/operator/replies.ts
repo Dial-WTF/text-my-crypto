@@ -196,7 +196,7 @@ export const replies = {
   hyperCoreUnconfirmed: (amount: string) =>
     `Your ${amount} to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
   hyperCoreWho: (raw: string) => `Which "${raw}"? Use their Dial @handle, like "send @alex $5 to hyperliquid".`,
-  hyperCoreOff: () => `Hyperliquid transfers aren't switched on yet. Nothing moved.`,
+  hyperCoreOff: () => `Hyperliquid transfers aren't switched on yet.`,
   hyperCoreNotOnDial: (who: string) =>
     `${who} isn't on Dial yet, so there's no Hyperliquid balance to send to. Send it to them normally instead.`,
   hlBalance: (amount: string, network: string) => `You have ${amount} USDC in your Hyperliquid spot balance (${network}).`,

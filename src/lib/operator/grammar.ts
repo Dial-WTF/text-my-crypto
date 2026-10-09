@@ -14,13 +14,13 @@ export type MoneyCommand = {
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
 
 /** USDC from HyperEVM into a HyperCore spot balance: someone's, or with no counterparty, the sender's own. */
-export type HyperCoreCommand = { kind: "hypercore"; amountUsd: string; counterparty?: string };
+export type VenueCommand = { kind: "venue"; amountUsd: string; counterparty?: string };
 
 export type Command =
   | MoneyCommand
   | WithdrawCommand
-  | HyperCoreCommand
-  | { kind: "hl_balance" }
+  | VenueCommand
+  | { kind: "venue_balance" }
   | { kind: "price"; coin: string }
   | { kind: "balance" }
   | { kind: "receive" }
@@ -122,15 +122,15 @@ function build(pat: Pattern, m: RegExpExecArray): Command | null {
 }
 
 /** "move $5 to hyperliquid", "send @alex $5 to hyperliquid". Checked before plain sends, which would read "hyperliquid" as a name. */
-function parseHyperCore(t: string): Command | null {
+function parseVenue(t: string): Command | null {
   const self = HL_SELF.exec(t);
-  if (self?.[1]) return isUsdAmount(self[1]) ? { kind: "hypercore", amountUsd: self[1] } : { kind: "chat" };
+  if (self?.[1]) return isUsdAmount(self[1]) ? { kind: "venue", amountUsd: self[1] } : { kind: "chat" };
   for (const [i, re] of HL_SEND.entries()) {
     const m = re.exec(t);
     const [who, amount] = i === 0 ? [m?.[1], m?.[2]] : [m?.[2], m?.[1]];
     if (!who || !amount) continue;
     if (!isUsdAmount(amount)) return { kind: "chat" };
-    return { kind: "hypercore", amountUsd: amount, counterparty: normalizeCounterparty(who) };
+    return { kind: "venue", amountUsd: amount, counterparty: normalizeCounterparty(who) };
   }
   return null;
 }
@@ -138,10 +138,10 @@ function parseHyperCore(t: string): Command | null {
 export function parseCommand(text: string): Command {
   const t = text.trim().replace(/\s+/g, " ");
   if (BALANCE.test(t)) return { kind: "balance" };
-  if (HL_BALANCE.test(t)) return { kind: "hl_balance" };
+  if (HL_BALANCE.test(t)) return { kind: "venue_balance" };
   const price = PRICE.exec(t);
   if (price) return { kind: "price", coin: (price[1] ?? price[2] ?? "").toUpperCase() };
-  const hl = parseHyperCore(t);
+  const hl = parseVenue(t);
   if (hl) return hl;
   if (RECEIVE.test(t)) return { kind: "receive" };
   if (WALLET.test(t)) return { kind: "wallet" };

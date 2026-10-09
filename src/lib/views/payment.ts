@@ -4,7 +4,7 @@ import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { paymentNetwork } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
-import type { Network } from "@/lib/settlement/registry";
+import { type Network, venueOf } from "@/lib/settlement/registry";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
@@ -31,7 +31,7 @@ const KIND_LABEL: Record<Intent["kind"], string> = {
   request: "Request",
   invoice: "Invoice",
   withdraw: "Withdrawal",
-  hypercore: "Hyperliquid deposit",
+  venue: "Venue deposit",
 };
 
 function statusOf(i: Intent, now: Date): PaymentView["status"] {
@@ -64,6 +64,12 @@ function statusOf(i: Intent, now: Date): PaymentView["status"] {
  */
 export type PaymentAudience = "public" | "party" | "card";
 
+/** "HyperCore deposit" for a venue deposit, named after the venue; else the kind's label. */
+function kindLabel(i: Intent, network: Network): string {
+  const venue = i.kind === "venue" ? venueOf(i.chain, network) : null;
+  return venue ? `${venue.name} deposit` : KIND_LABEL[i.kind];
+}
+
 /** "@handle" for people with one, "someone new" for a number that hasn't signed up. */
 function publicName(u: User | null): string {
   if (!u) return "someone";
@@ -83,7 +89,7 @@ export async function buildPaymentView(
   const to = i.kind === "withdraw" ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}` : name(recipient);
   return {
     id: i.id,
-    kindLabel: KIND_LABEL[i.kind],
+    kindLabel: kindLabel(i, opts.network),
     amount: i.amount,
     from: name(sender),
     to,

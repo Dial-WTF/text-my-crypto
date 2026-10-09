@@ -394,7 +394,7 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
       return replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
-    case "hypercore":
+    case "venue":
       return replies.confirmHyperCore(amount, intent.recipientId === intent.senderId ? null : other, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":

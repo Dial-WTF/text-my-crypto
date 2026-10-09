@@ -68,7 +68,7 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
   const activity: WalletActivity[] = [];
   for (const i of await intentsFor(deps.db, user.id, 10)) {
     // Moving your own money into HyperCore: it leaves the wallet, and the other side is your Hyperliquid balance.
-    const ownHyperCore = i.kind === "hypercore" && i.recipientId === i.senderId;
+    const ownHyperCore = i.kind === "venue" && i.recipientId === i.senderId;
     const direction = ownHyperCore ? "out" : directionFor(i, user.id);
     const otherId = i.kind === "withdraw" ? null : i.senderId === user.id ? i.recipientId : i.senderId;
     activity.push({
@@ -80,7 +80,7 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
       amount: i.amount,
       status: i.status,
       network:
-        i.kind === "hypercore" ? paymentNetwork(i, deps.network) : (profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain),
+        i.kind === "venue" ? paymentNetwork(i, deps.network) : (profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain),
       note: i.note,
       txHash: i.txHash,
       explorerUrl: i.explorerUrl,

@@ -7,7 +7,7 @@ import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
 import { getIntent } from "@/lib/intents";
 import { publicStats, recentPayments } from "@/lib/stats";
-import type { HyperCoreBridge } from "@/lib/settlement/types";
+import type { VenueTransfer } from "@/lib/settlement/capabilities";
 import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { buildPaymentView } from "@/lib/views/payment";
@@ -20,15 +20,18 @@ const JEREMY = "+15550000011";
 const NEWBIE = "+15550000099";
 
 type Deposit = { to: string; amount: bigint; memo: string };
-type FakeHyperCore = HyperCoreBridge & { deposits: Deposit[]; fail: { next: Error | null } };
+type FakeHyperCore = VenueTransfer & { deposits: Deposit[]; fail: { next: Error | null }; spot: Map<string, bigint> };
 
 function fakeHyperCore(): FakeHyperCore {
   const deposits: Deposit[] = [];
   const fail: FakeHyperCore["fail"] = { next: null };
+  const spot = new Map<string, bigint>();
   return {
-    network: "HyperCore testnet",
+    name: "HyperCore",
     deposits,
     fail,
+    spot,
+    balance: async (address) => spot.get(address) ?? 0n,
     deposit: async ({ to, amount, memo }) => {
       if (fail.next) {
         const e = fail.next;
@@ -41,17 +44,14 @@ function fakeHyperCore(): FakeHyperCore {
   };
 }
 
-/** Hyperliquid's info API: spot balances per address, and mainnet mids. */
-function stubInfoApi(spot: Record<string, string>, mids: Record<string, string> = {}) {
+/** Hyperliquid's info API: mainnet mids. */
+function stubInfoApi(mids: Record<string, string>) {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      calls.push({ url, body });
-      if (body.type === "allMids") return Response.json(mids);
-      const total = spot[String(body.user)];
-      return Response.json({ balances: total ? [{ coin: "USDC", token: 0, total, hold: "0.0", entryNtl: "0.0" }] : [] });
+      calls.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return Response.json(mids);
     }),
   );
   return calls;
@@ -88,7 +88,7 @@ beforeEach(async () => {
   sms = smsSink();
   sol = fakeAdapter({ defaultBalance: 100_000_000n });
   core = fakeHyperCore();
-  hl = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 100_000_000n }), { hyperCore: core });
+  hl = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 100_000_000n }), { venue: core });
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: sol, hyperevm: hl } });
   await signUp(ALEX, "alex");
   await signUp(JEREMY, "jeremy");
@@ -113,7 +113,7 @@ describe("move $5 to hyperliquid", () => {
       "Sending $5 to your spot balance on Hyperliquid…",
       `Moved $5 to your Hyperliquid spot balance. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`,
     ]);
-    expect(await getIntent(db, id)).toMatchObject({ kind: "hypercore", status: "settled", chain: "hyperevm", recipientAddress: mine });
+    expect(await getIntent(db, id)).toMatchObject({ kind: "venue", status: "settled", chain: "hyperevm", recipientAddress: mine });
   });
 
   it("asking twice re-sends the same confirmation instead of a second deposit", async () => {
@@ -125,7 +125,7 @@ describe("move $5 to hyperliquid", () => {
   });
 
   it("checks the HyperEVM balance first", async () => {
-    const short = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 2_000_000n }), { hyperCore: core });
+    const short = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 2_000_000n }), { venue: core });
     deps = { ...deps, adapters: { solana: sol, hyperevm: short } };
     expect(await say(ALEX, "move $5 to hyperliquid")).toBe(
       "You have $2 in test USDC, not enough for that one. Add more: https://tmc.test/@alex Free test USDC: faucet.circle.com",
@@ -134,7 +134,7 @@ describe("move $5 to hyperliquid", () => {
 
   it("says so when deposits are off, and moves nothing", async () => {
     deps = { ...deps, adapters: { solana: sol, hyperevm: fakeAdapter({ chain: "hyperevm" }) } };
-    expect(await say(ALEX, "move $5 to hyperliquid")).toBe("Hyperliquid transfers aren't switched on yet. Nothing moved.");
+    expect(await say(ALEX, "move $5 to hyperliquid")).toBe("Hyperliquid transfers aren't switched on yet.");
   });
 
   it("doesn't call an unconfirmed deposit failed", async () => {
@@ -190,36 +190,36 @@ describe("send @jeremy $5 to hyperliquid", () => {
     const [row] = await recentPayments(db, 10);
     expect(row).toMatchObject({
       id,
-      kind: "hypercore",
+      kind: "venue",
       from: "@alex",
-      to: "@jeremy on Hyperliquid",
+      to: "@jeremy",
       explorerUrl: `https://testnet.purrsec.com/tx/0xdep_${id}`,
     });
     expect((await publicStats(db)).payments).toBe(1);
     const view = await buildPaymentView(db, (await getIntent(db, id))!, deps.now(), { network: "testnet", audience: "public" });
-    expect(view).toMatchObject({ kindLabel: "Hyperliquid deposit", network: "HyperEVM testnet → HyperCore testnet" });
+    expect(view).toMatchObject({ kindLabel: "HyperCore deposit", network: "HyperEVM testnet → HyperCore testnet" });
   });
 });
 
 describe("hl balance and price", () => {
-  it("reads the HyperCore spot balance of the user's HyperEVM address", async () => {
+  it("reads the venue balance of the user's HyperEVM address", async () => {
     await say(ALEX, "move $5 to hyperliquid");
-    const calls = stubInfoApi({ [await hyperevmAddress(ALEX)]: "5.00000000" });
+    core.spot.set(await hyperevmAddress(ALEX), 5_000_000n);
     expect(await say(ALEX, "hl balance")).toBe("You have $5 USDC in your Hyperliquid spot balance (HyperCore testnet).");
-    expect(calls[0]).toEqual({
-      url: "https://api.hyperliquid-testnet.xyz/info",
-      body: { type: "spotClearinghouseState", user: await hyperevmAddress(ALEX) },
-    });
+  });
+
+  it("says so when no chain carries a venue", async () => {
+    deps = { ...deps, adapters: { solana: sol } };
+    expect(await say(ALEX, "hl balance")).toBe("Hyperliquid transfers aren't switched on yet.");
   });
 
   it("says how to start when there's no HyperEVM wallet yet", async () => {
-    stubInfoApi({});
     expect(await say(JEREMY, "hl balance")).toBe(`You don't have a Hyperliquid balance yet. Text "move $5 to hyperliquid" to start one.`);
   });
 
   it("quotes the Hyperliquid mainnet mid, labelled, and works with HyperEVM off", async () => {
     deps = { ...deps, adapters: { solana: sol } };
-    const calls = stubInfoApi({}, { BTC: "82355.5", HYPE: "85.2835" });
+    const calls = stubInfoApi({ BTC: "82355.5", HYPE: "85.2835" });
     expect(await say(ALEX, "price BTC")).toBe("BTC is $82,355.50, the Hyperliquid mainnet mid. A quote, not advice.");
     expect(await say(ALEX, "price hype")).toBe("HYPE is $85.28, the Hyperliquid mainnet mid. A quote, not advice.");
     expect(await say(ALEX, "price nope")).toBe(`Hyperliquid has no NOPE market. Try "price BTC" or "price HYPE".`);
@@ -246,7 +246,7 @@ describe("MCP tools", () => {
     const r = await runTool(deps, agent, "send_to_hyperliquid", { amountUsd: "5", to: "@jeremy" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.data).toMatchObject({ status: "awaiting_approval", kind: "hypercore", amountUsd: "5", chain: "hyperevm", approver: "you" });
+    expect(r.data).toMatchObject({ status: "awaiting_approval", kind: "venue", amountUsd: "5", chain: "hyperevm", approver: "you" });
     expect(JSON.stringify(r.data)).not.toMatch(/\b\d{6}\b/);
     expect(sms.last(ALEX)).toMatch(/^From your agent "claude": Send \$5 USDC to @jeremy's Hyperliquid spot balance\? Reply \d{6}/);
 
@@ -256,12 +256,12 @@ describe("MCP tools", () => {
     await say(ALEX, codeIn(sms.to(ALEX).find((b) => b.startsWith("From your agent"))!));
     expect(core.deposits).toHaveLength(1);
     const got = await runTool(deps, agent, "get_payment", { intentId: String(r.data.intentId) });
-    expect(got).toMatchObject({ ok: true, data: { status: "settled", kind: "hypercore", network: "HyperEVM testnet → HyperCore testnet" } });
+    expect(got).toMatchObject({ ok: true, data: { status: "settled", kind: "venue", network: "HyperEVM testnet → HyperCore testnet" } });
   });
 
   it("send_to_hyperliquid with no recipient is the owner's own balance", async () => {
     const r = await runTool(deps, await agentFor(ALEX), "send_to_hyperliquid", { amountUsd: "2" });
-    expect(r).toMatchObject({ ok: true, data: { kind: "hypercore", approver: "you" } });
+    expect(r).toMatchObject({ ok: true, data: { kind: "venue", approver: "you" } });
     expect(sms.last(ALEX)).toMatch(/Move \$2 USDC from HyperEVM to your Hyperliquid spot balance\?/);
   });
 
@@ -273,7 +273,8 @@ describe("MCP tools", () => {
   it("get_hyperliquid_balance and get_price read Hyperliquid's info API", async () => {
     await say(ALEX, "move $1 to hyperliquid");
     const agent = await agentFor(ALEX);
-    stubInfoApi({ [await hyperevmAddress(ALEX)]: "1.5" }, { HYPE: "85.2835" });
+    core.spot.set(await hyperevmAddress(ALEX), 1_500_000n);
+    stubInfoApi({ HYPE: "85.2835" });
     expect(await runTool(deps, agent, "get_hyperliquid_balance", {})).toEqual({
       ok: true,
       data: { account: await hyperevmAddress(ALEX), network: "HyperCore testnet", amountUsd: "1.50", asset: "USDC", balance: "HyperCore spot" },
