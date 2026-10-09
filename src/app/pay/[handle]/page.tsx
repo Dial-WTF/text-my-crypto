@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { publicEnv } from "@/lib/env";
-import { loadPayProfile } from "@/lib/web/pay-page";
+import { askQuery, loadPayHeader, loadPayProfile, payWords } from "@/lib/web/pay-page";
 import { Desk } from "@/ui/patterns/Desk/Desk";
 import { PayCard } from "@/ui/patterns/PayCard/PayCard";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
@@ -11,13 +11,20 @@ export const dynamic = "force-dynamic";
 
 type Query = { amount?: string; note?: string };
 
-export async function generateMetadata({ params }: PageProps<"/pay/[handle]">): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: PageProps<"/pay/[handle]">): Promise<Metadata> {
   const { handle } = await params;
-  const h = decodeURIComponent(handle).replace(/^@/, "").toLowerCase();
+  const q = (await searchParams) as Query;
+  const head = await loadPayHeader(handle, q);
+  if (!head) return { title: "Pay on Dial", robots: { index: false } };
+  const { title, description } = payWords(head);
+  const qs = askQuery(head);
+  const image = { url: `/pay/${head.handle}/card${qs}`, width: 1200, height: 630, alt: title };
   return {
-    title: `Pay @${h}`,
-    description: `Pay @${h} by text from any phone, or from any crypto wallet. Powered by the Dial operator.`,
-    alternates: { canonical: `/@${h}`, types: { "application/json": `/@${h}.json` } },
+    title: { absolute: title },
+    description,
+    alternates: { canonical: `/@${head.handle}`, types: { "application/json": `/@${head.handle}.json` } },
+    openGraph: { type: "website", siteName: "Dial operator", title, description, url: `/@${head.handle}${qs}`, images: [image] },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }
 
