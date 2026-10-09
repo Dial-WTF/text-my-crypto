@@ -47,3 +47,8 @@ There is no fully trustless proof of a phone number today: SMS is unsigned, and 
 ## Agents
 
 - MCP server at `/api/mcp` and an installable skill, so any AI agent can send, request or invoice anyone with a phone number. The person still approves every payment from a text.
+
+## Revenue and the network view
+
+- **A small payment fee.** 25 basis points on sends, paid by the sender on top of the amount and shown in the confirm text ("$10 + $0.03 fee"). It settles in the same transaction where the chain allows it (a second instruction on Solana, a second call in Tempo's batch) and goes to the chain's treasury, which pays for signup drops and gas. It runs on testnet first, with play money, before any real fee.
+- **/network.** A live view of the operator: chains as hubs, payments moving between handles as they settle, and fees collected per chain. People are shown by handle or not at all, never by number or location.
