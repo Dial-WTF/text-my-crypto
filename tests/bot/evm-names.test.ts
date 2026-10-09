@@ -103,6 +103,11 @@ describe("withdrawing to an ENS name or Basename over SMS", () => {
     );
   });
 
+  it("says a name isn't found when no chain has a name service", async () => {
+    deps = { ...deps, adapters: { solana: sol }, names: {} };
+    expect(await say(ALEX, "withdraw $5 to vitalik.eth")).toBe("vitalik.eth doesn't point to an address. Check the name and try again.");
+  });
+
   it("resolves even when Base is off, then says Base isn't switched on", async () => {
     deps = { ...deps, adapters: { solana: sol, ethereum: eth } };
     expect(await say(ALEX, "withdraw $5 to alice.basetest.eth")).toBe("Base isn't switched on yet. Try Solana.");
