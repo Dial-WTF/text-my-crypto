@@ -154,7 +154,8 @@ at it over HTTPS.
    `.env.production.local`, `pnpm secrets:push` (both envs). In `wrangler.jsonc`, append `zcash` to
    production's `CHAINS` (top-level `vars`, today `solana,tempo,ethereum,robinhood`), and add a
    `CHAINS` line to `env.staging`'s `vars` (staging has none, so it runs the default `solana,tempo`):
-   staging first, then production. Then `pnpm ship`. Then flip the landing tile to
+   staging first, then production. Set `proven: true` on the Zcash testnet registry entry once the live
+   test has passed, so the site says "Wired" rather than "Building" while it's off. Then `pnpm ship`. Then flip the landing tile to
    "Live · testnet" once a text has settled there.
 
 ## Running it locally
