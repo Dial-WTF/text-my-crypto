@@ -57,8 +57,9 @@ Judging (rules §8): functionality and code quality, impact, novelty, UX, **open
 
 ## Tranche 3 · On-chain escrow
 
-- [ ] build · Anchor escrow program on Solana devnet: refund after expiry without Dial, claim with attestor signature
-- [ ] build · Switch escrow sends to the program; keep server escrow as fallback
+- [x] build · Anchor escrow program on Solana devnet: refund after expiry without Dial, claim with attestor signature. `dial_escrow` at [`4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3`](https://explorer.solana.com/address/4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3?cluster=devnet), upgrade authority `GFFmgkLxChrX3MdFQqbCZPHNcL1J4sda7c383fG5gs88` (keys and runbook in `solana/README.md`); LiteSVM tests for every instruction plus devnet integration tests
+- [x] build · Switch escrow sends to the program (`ESCROW_PROGRAM=on`); server escrow stays the fallback. Round-trip proven through the app on staging (send to a new number → claim by code), now part of every staging smoke run; on in production
+- [ ] build · k-of-n attestors in the escrow program (today: one attestor key per escrow)
 - [ ] build · Zcash shielded sends via a Rust wallet service in a Cloudflare Container (stretch). Needs its own wallet stack (librustzcash or zcash-devtool behind lightwalletd); not an adapter tweak, so it is not in the registry yet
 - [ ] build · Carrier SIM-swap / number-verification check if an aggregator covers US numbers (stretch)
 

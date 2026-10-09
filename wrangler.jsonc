@@ -16,7 +16,7 @@
     "SMS_MODE": "payphone",
     "ESCROW_TTL_DAYS": "7",
     // Escrow for people not on Dial yet: "on" uses the dial_escrow program (solana/README.md).
-    "ESCROW_PROGRAM": "off",
+    "ESCROW_PROGRAM": "on",
     "SIGNUP_DRIP_USD": "2",
     // Chains that settle in production. Add one only after `pnpm chains:status` shows its treasury ready.
     "CHAINS": "solana,tempo,ethereum,robinhood",

@@ -36,7 +36,7 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 
 - **Any phone.** Signup is replying with a name. Every money movement is confirmed with a 6-digit code texted to the payer (bound to that one payment, 10 minutes, 5 tries). A forged inbound message can't confirm anything because the code only goes to the real phone.
 - **Smartphone upgrade.** Text `upgrade` to add a passkey. Payments over $20 then need it; the WebAuthn challenge is the payment's hash.
-- **Paying someone new.** Their phone number is enough. Funds wait in a per-payment escrow address; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days.
+- **Paying someone new.** Their phone number is enough. Funds wait in escrow; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days. On Solana the escrow is an on-chain program ([`solana/`](solana/README.md)): it pays the recipient only on the operator's attestation, and after expiry anyone can send the money back to the sender, with or without Dial.
 - **Exit anytime.** `withdraw all to <address>`.
 
 Names work like an operator's switchboard: reply with any name ("J. P. Meyer, crypto anarchist" becomes J. P. Meyer, `@jpmeyer`), find people with `411 <name>`, and pay a name: your contacts first, then the directory (one match connects, several ask you to pick, none asks for a number).
@@ -63,7 +63,7 @@ Source: `src/app/api/mcp/route.ts`, `src/lib/agents/`, `skills/dial-operator/`.
 
 ## Stack
 
-Next.js 16 on Cloudflare Workers (OpenNext) · D1 · Drizzle · `@solana/kit` · SimpleWebAuthn · AI SDK · Payphone for SMS. TypeScript throughout; Rust for the on-chain escrow program in tranche 3. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Next.js 16 on Cloudflare Workers (OpenNext) · D1 · Drizzle · `@solana/kit` · SimpleWebAuthn · AI SDK · Payphone for SMS. TypeScript throughout; Rust (Anchor) for the Solana escrow program in `solana/`. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 The UI is a small skinnable kit in `src/ui`: role tokens in `theme/tokens.css`, one file per theme in `theme/themes/` (dark, light, matrix), single-purpose primitives and patterns built only on those tokens.
 
