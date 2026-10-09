@@ -120,6 +120,13 @@
       "when": 1791519940827,
       "tag": "0016_private_sends",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791522307277,
+      "tag": "0017_signup_codes",
+      "breakpoints": true
     }
   ]
 }

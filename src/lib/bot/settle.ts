@@ -42,6 +42,7 @@ import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settleme
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
+import { overDailyCapAtApproval } from "./money";
 import { approveSplit } from "./split";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -95,6 +96,12 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   if (!sender || !recipient) {
     await markFailed(deps.db, intent.id, "Missing sender or recipient");
     return { ok: false, reason: "failed", error: "Missing sender or recipient" };
+  }
+  if (!resume && (await overDailyCapAtApproval(deps, intent.senderId))) {
+    const error = "Over the daily limit at approval";
+    await markFailed(deps.db, intent.id, error);
+    await notify(deps, sender.phone, replies.overDaily(formatUsd(deps.perDayCap)));
+    return { ok: false, reason: "failed", error };
   }
 
   let result: { txHash: string; explorerUrl: string };

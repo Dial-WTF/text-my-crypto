@@ -235,8 +235,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     }
     case "whoami":
       return reply(replies.whoami(displayName(user), user.handle ?? ""));
-    case "upgrade":
-      return reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+    case "upgrade": {
+      const { token, code } = await createSignupToken(deps.db, user.phone, deps.now());
+      return reply(replies.upgrade(`${deps.appUrl}/s/${token}`, code));
+    }
     case "connect_agent":
       return reply(await connectAgentReply(deps, user, cmd.label));
     case "revoke_agents":
