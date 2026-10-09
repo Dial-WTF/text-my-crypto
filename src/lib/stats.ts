@@ -9,7 +9,7 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    .select({ payments: count(), moved: sql<number | null>`sum(${intents.amount})` })
+    .select({ payments: count(), moved: sql<number | null>`sum(case when ${intents.private} then 0 else ${intents.amount} end)` })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
   const [people] = await db.select({ n: count() }).from(users).where(isNotNull(users.claimedAt));
@@ -33,7 +33,8 @@ export type FeedItem = {
   id: string;
   from: string;
   to: string;
-  amount: bigint;
+  /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
+  amount: bigint | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -57,9 +58,9 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
   };
   return rows.map((r) => ({
     id: r.id,
-    from: who(r.senderId),
-    to: who(r.recipientId),
-    amount: r.amount,
+    from: r.private ? "someone" : who(r.senderId),
+    to: r.private ? "someone" : who(r.recipientId),
+    amount: r.private ? null : r.amount,
     chain: r.chain,
     status: r.status,
     txHash: r.txHash,

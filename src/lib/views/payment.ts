@@ -14,7 +14,10 @@ export type TxRef = { hash: string; url: string | null };
 export type PaymentView = {
   id: string;
   kindLabel: string;
-  amount: bigint;
+  /** Null when the payment is private and this audience isn't a party to it. */
+  amount: bigint | null;
+  /** A private, shielded Zcash send. */
+  shielded: boolean;
   from: string;
   to: string;
   network: string;
@@ -78,13 +81,17 @@ export async function buildPaymentView(
 ): Promise<PaymentView> {
   const [sender, recipient] = await Promise.all([getUserById(db, i.senderId), getUserById(db, i.recipientId)]);
   const open = i.status === "pending" && i.expiresAt > now;
-  const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
-  const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
+  // A private send shows anyone but its owner only what the shielded chain does: that it happened, on
+  // which chain, and its transaction id. No amount, names, note or address, at any status.
+  const hidden = i.private && opts.audience !== "party";
+  const full = !hidden && (opts.audience === "party" || (opts.audience === "public" && i.status === "pending"));
+  const name = (u: User | null) => (hidden ? "someone" : full ? (u ? displayName(u) : "someone") : publicName(u));
   const to = i.kind === "withdraw" ? withdrawTarget(i) : name(recipient);
   return {
     id: i.id,
-    kindLabel: KIND_LABEL[i.kind],
-    amount: i.amount,
+    kindLabel: i.private ? "Shielded payment" : KIND_LABEL[i.kind],
+    amount: hidden ? null : i.amount,
+    shielded: i.private,
     from: name(sender),
     to,
     network: networkName(i.chain, opts.network),

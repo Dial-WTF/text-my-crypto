@@ -9,6 +9,8 @@ export type MoneyCommand = {
   amountUsd: string;
   note?: string;
   chain?: Chain;
+  /** "send … privately": a shielded Zcash send, whatever the sender's default chain. Sends only. */
+  private?: true;
 };
 
 /** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
@@ -83,6 +85,18 @@ const WHOAMI = /^(?:whoami|who am i|me)\??$/i;
 const CONNECT_AGENT = /^connect\s+(?:an?\s+|my\s+)?agent(?:\s+(?:called\s+|named\s+)?(.+?))?\s*[.!]?$/i;
 const REVOKE_AGENTS = /^(?:revoke|disconnect|remove)\s+(?:all\s+|my\s+)?agents?\s*[.!]?$/i;
 
+// "privately send …", "send privately …", "send … privately" and "send … private" (before any "for …" or
+// "on …", or at the end). "for private lessons" stays a note.
+const PRIVATE_LEAD = /^privately\s+/i;
+const PRIVATE_AFTER_VERB = /^((?:please\s+)?(?:send|pay|give|transfer))\s+privately\s+/i;
+const PRIVATE_TAIL = /\s+(?:privately|private)(?=\s+for\s|\s+on\s|\s*[.!]?$)/i;
+
+/** The text without its "privately", or null when it doesn't ask for a private send. */
+function withoutPrivately(t: string): string | null {
+  const s = t.replace(PRIVATE_LEAD, "").replace(PRIVATE_AFTER_VERB, "$1 ").replace(PRIVATE_TAIL, "");
+  return s === t ? null : s;
+}
+
 /** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
   const t = raw.trim();
@@ -130,6 +144,16 @@ export function parseCommand(text: string): Command {
     const chain = parseChain(w[3]);
     return chain ? { ...cmd, chain } : { kind: "chat" };
   }
+  const plain = withoutPrivately(t);
+  if (plain !== null) {
+    const cmd = matchMoney(plain);
+    // Only sends can be private; anything else asked "privately" goes to the plain-English reader.
+    return cmd.kind === "send" ? { ...cmd, private: true } : { kind: "chat" };
+  }
+  return matchMoney(t);
+}
+
+function matchMoney(t: string): Command {
   for (const pat of PATTERNS) {
     const m = pat.re.exec(t);
     if (!m) continue;

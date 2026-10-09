@@ -147,7 +147,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   }
 
   const amount = money(intent.amount, intent.chain, deps.network);
-  const chain = chainLabel(intent.chain);
+  const chain = intent.private ? `${chainLabel(intent.chain)} (shielded)` : chainLabel(intent.chain);
 
   if (intent.escrowSecretEnc || intent.escrowProgram) {
     await markEscrowed(deps.db, intent.id, result, escrowExpiresAt);

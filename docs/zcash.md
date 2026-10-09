@@ -89,6 +89,22 @@ the pay page and the agent tools say the coin next to the dollars and never call
 Zcash balances are listed per chain and left out of the USDC total. People still type dollars
 ("send @alex $5 on zcash"); there is no ZEC-denominated command.
 
+## Sending privately
+
+"send @alex $5 privately" (also "privately send …", "send privately …", "send … private") is a
+shielded Zcash send whatever the sender's default chain; agents pass `private: true` to
+`send_payment`. The confirm text says it goes shielded on Zcash. The payment carries the
+`private` flag (migration 0013), and every public surface treats it accordingly:
+
+- The /a/<id> receipt and its share card show "Shielded payment", no amount, names or note. The
+  transaction id stays, since Zcash publishes that anyway. The sender and their agent still see
+  everything.
+- The public ledger and /ledger.json list it as shielded with no amount or handles, and the dollars-moved
+  total leaves it out.
+- Requests and invoices can't be private. "privately" on one goes to the plain-English reader.
+- With Zcash switched off, the reply says private sends aren't on yet. "privately on solana" is
+  refused: only Zcash can shield.
+
 ## The service API
 
 All routes except `/healthz` need `Authorization: Bearer $ZCASH_SERVICE_TOKEN`.

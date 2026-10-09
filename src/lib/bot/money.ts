@@ -46,6 +46,7 @@ export const moneyCommandSchema = z.object({
   amountUsd: z.string(),
   note: z.string().optional(),
   chain: z.enum(CHAINS).optional(),
+  private: z.literal(true).optional(),
 });
 
 export const withdrawCommandSchema = z.object({
@@ -63,6 +64,7 @@ const CIRCLE_FAUCET = "faucet.circle.com";
 export type MoneyError = {
   code:
     | "chain_unavailable"
+    | "private_chain"
     | "bad_amount"
     | "over_cap"
     | "over_daily"
@@ -158,9 +160,16 @@ function startOfUtcDay(d: Date): Date {
 type Checked = { ok: true; chain: Chain; adapter: SettlementAdapter; amount: bigint } | { ok: false; error: MoneyError };
 
 /** The checks that need no lookup: chain switched on, amount well-formed and under the per-payment cap. */
-export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain">): Checked {
-  const chain = cmd.chain ?? user.defaultChain;
+export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "private">): Checked {
+  // Private sends are shielded Zcash sends, whatever the sender's default chain.
+  if (cmd.private && cmd.chain && cmd.chain !== "zcash") {
+    return { ok: false, error: { code: "private_chain", message: replies.privateOnlyZcash(chainLabel(cmd.chain)) } };
+  }
+  const chain = cmd.private ? "zcash" : (cmd.chain ?? user.defaultChain);
   const adapter = deps.adapters[chain];
+  if (!adapter && cmd.private) {
+    return { ok: false, error: { code: "chain_unavailable", message: replies.privateUnavailable() } };
+  }
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
   if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.badAmount(formatUsd(deps.perTxCap)) } };
@@ -223,7 +232,10 @@ async function repeatReply(
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    const text = replies.confirmSend(money(pending.amount, pending.chain, deps.network), otherName, chainLabel(pending.chain), pending.note, code, link);
+    const amount = money(pending.amount, pending.chain, deps.network);
+    const text = pending.private
+      ? replies.confirmPrivateSend(amount, otherName, pending.note, code, link)
+      : replies.confirmSend(amount, otherName, chainLabel(pending.chain), pending.note, code, link);
     return { text, askNew: false };
   }
   return { text: replies.alreadyPending(money(pending.amount, pending.chain, deps.network), otherName, code, link), askNew: true };
@@ -291,6 +303,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
         note,
         escrowSecretEnc,
         escrowProgram,
+        private: cmd.private === true,
       },
       deps.now(),
     );
@@ -437,7 +450,9 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
   const other = describe(p.counterparty);
   switch (intent.kind) {
     case "send":
-      return replies.confirmSend(amount, other, chain, intent.note, code, link);
+      return intent.private
+        ? replies.confirmPrivateSend(amount, other, intent.note, code, link)
+        : replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
