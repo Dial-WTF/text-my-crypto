@@ -44,6 +44,11 @@ a {
   }
 }
 
+/* A ThemeScope with backdrop="off" (chain pages) hides the theme's backdrop for the whole page. */
+body:has([data-backdrop="off"]) [data-backdrop-layer] {
+  display: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -1,0 +1,106 @@
+/* Shared by the chain page demos. Colours are role tokens only, so the page's brand scope recolours them. */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  display: grid;
+  gap: var(--space-2xs);
+  align-content: start;
+  padding: var(--space-sm);
+  border: var(--rule-thin) solid var(--color-canvas-rule);
+  counter-increment: step;
+}
+
+.step::before {
+  content: counter(step);
+  justify-self: start;
+  min-width: 1.75rem;
+  padding: var(--space-3xs) var(--space-2xs);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: 700 var(--text-sm) / 1.2 var(--font-mono);
+  text-align: center;
+  text-shadow: none;
+}
+
+.stepTitle {
+  margin: 0;
+  font-weight: 700;
+}
+
+.stepBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-on-canvas-muted);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: var(--space-3xs) var(--space-xs);
+  border: var(--rule-thin) solid var(--color-on-card);
+  border-radius: var(--radius-sm);
+  font: 600 var(--text-sm) / 1.4 var(--font-mono);
+  white-space: nowrap;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.label {
+  display: grid;
+  gap: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-on-card-muted);
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2xs) var(--space-xs);
+  border: var(--rule-thin) solid var(--color-card-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-2);
+  color: var(--color-on-card);
+  font: 400 var(--text-md) / 1.4 var(--font-mono);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* The card's own ink, not the brand's focus colour: brand colours are tuned for the canvas, not cards. */
+.input:focus-visible {
+  outline: 2px solid var(--color-on-card);
+  outline-offset: 1px;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-on-card-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger-on-card);
+}
