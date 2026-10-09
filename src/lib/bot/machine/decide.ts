@@ -39,6 +39,8 @@ export type Action =
  * Order matters and encodes priority: compliance first, then onboarding, then pending prompts, then commands.
  */
 export function decide(s: Session, input: Input): Action {
+  // 0. A reaction to one of our texts is not a message to answer, whatever state the account is in.
+  if (input.kind === "reaction") return { do: "silence" };
   // 1. Compliance: STOP always wins; while opted out, only START gets a reply.
   if (input.kind === "stop") {
     if (s.optedOut) return { do: "silence" };
