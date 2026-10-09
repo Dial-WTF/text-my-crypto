@@ -184,6 +184,18 @@ export const webSessions = sqliteTable("web_sessions", {
   revokedAt: ts("revoked_at"),
 });
 
+/**
+ * Passkey sign-in challenges the wallet page handed out. Each is used once and lives five minutes.
+ * The browser's cookie holds an opaque id; only its hash is stored. Payment approvals don't use this
+ * table: their challenge is the intent hash.
+ */
+export const passkeyChallenges = sqliteTable("passkey_challenges", {
+  idHash: text("id_hash").primaryKey(),
+  purpose: text("purpose", { enum: ["login"] }).notNull(),
+  challenge: text("challenge").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+});
+
 /** Fixed-window call counters per agent key and bucket. */
 export const agentRate = sqliteTable(
   "agent_rate",
@@ -199,16 +211,21 @@ export const agentRate = sqliteTable(
 );
 
 /**
- * The production watchdog's open problems, one row per check that is failing. Lets it alert once,
- * repeat at most every 30 minutes, and send one all-clear when the row goes away.
+ * The watchdog's problems, one row per check, kept after they resolve so the 30-minute alert window
+ * survives a check that flaps. Open while `resolvedAt` is null.
  */
 export const watchdogProblems = sqliteTable("watchdog_problems", {
   key: text("key").primaryKey(),
   detail: text("detail").notNull(),
   /** Consecutive failing runs; some checks wait for a second failure before alerting. */
   failures: integer("failures").notNull(),
+  /** Consecutive passing runs while open; it takes two to resolve. */
+  passes: integer("passes").notNull().default(0),
+  /** When the current (or last) incident started. */
   firstSeenAt: ts("first_seen_at").notNull(),
+  /** The last alert for this check, in any incident. */
   lastAlertedAt: ts("last_alerted_at"),
+  resolvedAt: ts("resolved_at"),
 });
 
 export type User = typeof users.$inferSelect;

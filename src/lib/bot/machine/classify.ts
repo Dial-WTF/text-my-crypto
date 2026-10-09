@@ -9,8 +9,8 @@ export type Input =
   | { kind: "nevermind" }
   | { kind: "new" }
   | { kind: "affirm" }
-  | { kind: "status" }
-  | { kind: "thanks" }
+  | { kind: "status"; text: string }
+  | { kind: "thanks"; text: string }
   | { kind: "code"; code: string }
   | { kind: "pick"; index: number }
   | { kind: "phone"; phone: string }
@@ -40,8 +40,8 @@ export function classify(raw: string): Input {
   if (NEVERMIND.test(text)) return { kind: "nevermind" };
   if (NEW.test(text)) return { kind: "new" };
   if (AFFIRM.test(text)) return { kind: "affirm" };
-  if (STATUS.test(text)) return { kind: "status" };
-  if (THANKS.test(text)) return { kind: "thanks" };
+  if (STATUS.test(text)) return { kind: "status", text };
+  if (THANKS.test(text)) return { kind: "thanks", text };
   if (CODE.test(text)) return { kind: "code", code: text.replace(/\D/g, "") };
   if (PICK.test(text)) return { kind: "pick", index: Number(text) - 1 };
   if (PHONE_SHAPED.test(text)) {

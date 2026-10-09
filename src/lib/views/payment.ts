@@ -1,9 +1,10 @@
-import { chainLabel } from "@/lib/chains";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
-import type { Intent } from "@/lib/db/schema";
+import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
+import { networkName } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
+import type { Network } from "@/lib/settlement/registry";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
@@ -52,23 +53,39 @@ function statusOf(i: Intent, now: Date): PaymentView["status"] {
   }
 }
 
-export async function buildPaymentView(db: Db, i: Intent, now: Date): Promise<PaymentView> {
+/**
+ * Who sees the view. "public" is the /a/<id> page, which anyone holding the id can open (ids are
+ * on the public ledger): once a payment is past pending it names people by @handle only and drops
+ * the note. A pending payment keeps names and note, since the payer needs them to approve.
+ * "party" is for the account owner (their agent), who sees everything.
+ */
+export type PaymentAudience = "public" | "party";
+
+/** "@handle" for people with one, "someone new" for a number that hasn't signed up. */
+function publicName(u: User | null): string {
+  if (!u) return "someone";
+  return u.handle ? `@${u.handle}` : "someone new";
+}
+
+export async function buildPaymentView(
+  db: Db,
+  i: Intent,
+  now: Date,
+  opts: { network: Network; audience: PaymentAudience },
+): Promise<PaymentView> {
   const [sender, recipient] = await Promise.all([getUserById(db, i.senderId), getUserById(db, i.recipientId)]);
   const open = i.status === "pending" && i.expiresAt > now;
-  const to =
-    i.kind === "withdraw"
-      ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
-      : recipient
-        ? displayName(recipient)
-        : "someone";
+  const full = opts.audience === "party" || i.status === "pending";
+  const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
+  const to = i.kind === "withdraw" ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}` : name(recipient);
   return {
     id: i.id,
     kindLabel: KIND_LABEL[i.kind],
     amount: i.amount,
-    from: sender ? displayName(sender) : "someone",
+    from: name(sender),
     to,
-    network: `${chainLabel(i.chain)} devnet`,
-    note: i.note,
+    network: networkName(i.chain, opts.network),
+    note: full ? i.note : null,
     status: statusOf(i, now),
     deadline: open
       ? { label: "Approve by", at: i.expiresAt }

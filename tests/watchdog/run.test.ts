@@ -1,9 +1,14 @@
+import { drizzle } from "drizzle-orm/sql-js";
+import type { Database } from "sql.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@/lib/db/client";
+import * as schema from "@/lib/db/schema";
+import { watchdogProblems } from "@/lib/db/schema";
 import { logInbound, logOutbound } from "@/lib/sms/log";
 import { runWatchdog, type WatchdogDeps } from "@/lib/watchdog/run";
-import { resetScheduledForTests, scheduledWatchdog } from "@/lib/watchdog/scheduled";
-import { createTestDb } from "../helpers/db";
+import { type D1Like, scheduledWatchdog } from "@/lib/watchdog/scheduled";
+import { resetSlotForTests } from "@/lib/watchdog/slot";
+import { createSqlite, createTestDb } from "../helpers/db";
 import { fakeAdapter } from "../helpers/fakes";
 
 const ALEX = "+15550000010";
@@ -63,7 +68,7 @@ describe("watchdog run", () => {
     const report = await runWatchdog(deps());
     expect(report.ok).toBe(true);
     expect(Object.keys(report.checks).sort()).toEqual(
-      ["d1", "payphoneAuth", "payphoneInbox", "solanaBalance", "unanswered", "undelivered"].sort(),
+      ["app", "d1", "payphoneAuth", "payphoneInbox", "solanaBalance", "unanswered", "undelivered"].sort(),
     );
     expect(alerts).toEqual([]);
     expect(logs).toHaveLength(1);
@@ -73,7 +78,7 @@ describe("watchdog run", () => {
   it("texts the owner about an unanswered text once, then the all-clear once it is answered", async () => {
     await logInbound(db, { to: LINE, from: ALEX, body: "balance", dedupeKey: "k1" }, at(-2));
     await runWatchdog(deps());
-    expect(alerts).toEqual(["Dial watchdog. PROBLEM: unanswered: 1 text with no reply, oldest 2m (…0010)."]);
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Problem: a text got no reply (1 text with no reply, oldest 2m (…0010))."]);
     expect(alerts[0]).not.toContain(ALEX);
 
     now = at(1);
@@ -83,7 +88,58 @@ describe("watchdog run", () => {
     await logOutbound(db, ALEX, "You have $1.00", at(1));
     now = at(2);
     await runWatchdog(deps());
-    expect(alerts).toEqual([expect.any(String), "Dial watchdog. Cleared: unanswered."]);
+    now = at(3);
+    await runWatchdog(deps());
+    expect(alerts).toEqual([expect.any(String), "[Dial watchdog, for you only] Fixed: every text has a reply again."]);
+  });
+
+  it("says a text aged out of the window instead of claiming it was answered", async () => {
+    await logInbound(db, { to: LINE, from: ALEX, body: "balance", dedupeKey: "k1" }, at(-2));
+    await runWatchdog(deps());
+    for (const m of [59, 60]) {
+      now = at(m);
+      await runWatchdog(deps());
+    }
+    expect(alerts.at(-1)).toBe("[Dial watchdog, for you only] Never fixed, now over an hour old, so no longer watched: a text got no reply.");
+    expect(alerts.join(" ")).not.toContain("Fixed");
+  });
+
+  it("says an undelivered text aged out once it leaves Payphone's window", async () => {
+    const inbox: Inbox = [{ direction: "inbound", contact: ALEX, body: "482913", timestamp: at(-3).toISOString() }];
+    const fetchImpl = fakePayphone({ inbox }).fetchImpl;
+    await runWatchdog(deps({ fetchImpl }));
+    for (const m of [58, 59]) {
+      now = at(m);
+      await runWatchdog(deps({ fetchImpl }));
+    }
+    expect(alerts).toEqual([
+      expect.stringContaining("Problem: Payphone got a text but never passed it to the bot"),
+      "[Dial watchdog, for you only] Never fixed, now over an hour old, so no longer watched: Payphone got a text but never passed it to the bot.",
+    ]);
+  });
+
+  it("skips the Payphone checks where there is no Payphone key", async () => {
+    const pp = fakePayphone();
+    const report = await runWatchdog(deps({ fetchImpl: pp.fetchImpl, payphone: { baseUrl: "https://pp.test", line: LINE } }));
+    expect(report.checks.payphoneAuth).toBeUndefined();
+    expect(report.checks.undelivered).toBeUndefined();
+    expect(pp.calls).toEqual([]);
+  });
+
+  it("without D1 for alert state, alerts only on the 30-minute slot", async () => {
+    resetSlotForTests();
+    const broken = { ...db, select: () => { throw new Error("D1_ERROR: unavailable"); } } as unknown as Db;
+    const down = fakeAdapter();
+    down.getBalance = async () => {
+      throw new Error("fetch failed");
+    };
+    for (let m = 1; m <= 61; m++) {
+      now = at(m);
+      await runWatchdog(deps({ db: broken, adapters: { solana: down } }));
+    }
+    // T0 is on a slot boundary: minutes 30 and 60 are the only slot starts in 1..61.
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0]).toContain("Solana network not answering");
   });
 
   it("flags a text Payphone has that never reached the webhook", async () => {
@@ -92,7 +148,7 @@ describe("watchdog run", () => {
     ];
     const report = await runWatchdog(deps({ fetchImpl: fakePayphone({ inbox }).fetchImpl }));
     expect(report.checks.undelivered).toEqual({ ok: false, detail: "1 text in Payphone never reached Dial, oldest 3m (…0010)" });
-    expect(alerts[0]).toContain("undelivered");
+    expect(alerts[0]).toContain("Payphone got a text but never passed it to the bot");
   });
 
   it("skips reconciliation where the line does not point at this deployment", async () => {
@@ -108,7 +164,7 @@ describe("watchdog run", () => {
     expect(alerts).toEqual([]);
     now = at(1);
     await runWatchdog(deps({ fetchImpl: broken }));
-    expect(alerts).toEqual(["Dial watchdog. PROBLEM: payphoneAuth: HTTP 401."]);
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Problem: Payphone login failing (HTTP 401)."]);
   });
 
   it("checks every chain's RPC", async () => {
@@ -155,7 +211,28 @@ describe("cron trigger", () => {
     DIAL_OPERATOR_NUMBER: LINE,
     ALERT_PHONE: OWNER,
   };
-  beforeEach(() => resetScheduledForTests());
+  let sqlite: Database;
+  let d1: D1Like;
+  beforeEach(async () => {
+    resetSlotForTests();
+    sqlite = await createSqlite();
+    db = drizzle(sqlite, { schema }) as unknown as Db;
+    // D1's prepare/bind/first/run over the same SQLite the watchdog route uses.
+    d1 = {
+      prepare: (query) => ({
+        bind: (...values) => ({
+          first: async <T>() => {
+            const stmt = sqlite.prepare(query);
+            stmt.bind(values as never);
+            const row = stmt.step() ? (stmt.getAsObject() as T) : null;
+            stmt.free();
+            return row;
+          },
+          run: async () => sqlite.run(query, values as never),
+        }),
+      }),
+    };
+  });
 
   function sink() {
     const sent: Array<{ to: string; message: string }> = [];
@@ -165,6 +242,7 @@ describe("cron trigger", () => {
     }) as unknown as typeof fetch;
     return { sent, fetchImpl };
   }
+  const broken = async () => new Response("boom", { status: 500 });
 
   it("runs the watchdog route and sends nothing itself when it answers", async () => {
     const seen: string[] = [];
@@ -172,30 +250,57 @@ describe("cron trigger", () => {
     await scheduledWatchdog(async (req) => {
       seen.push(`${req.method} ${new URL(req.url).pathname}`);
       return Response.json({ ok: true });
-    }, env, { fetchImpl: s.fetchImpl });
+    }, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl });
     expect(seen).toEqual([`POST /api/sms/${env.SMS_WEBHOOK_SECRET}/watchdog`]);
     expect(s.sent).toEqual([]);
   });
 
-  it("texts only the owner when the app cannot answer, at most every 30 minutes", async () => {
+  it("texts only the owner from the second failing minute, then at most every 30 minutes, across isolates", async () => {
     const s = sink();
-    const broken = async () => new Response("boom", { status: 500 });
-    let t = T0.getTime();
-    await scheduledWatchdog(broken, env, { fetchImpl: s.fetchImpl, now: () => t });
-    t += 29 * 60_000;
-    await scheduledWatchdog(broken, env, { fetchImpl: s.fetchImpl, now: () => t });
-    expect(s.sent).toEqual([expect.objectContaining({ to: OWNER, message: expect.stringContaining("answered 500") })]);
-    t += 60_000;
-    await scheduledWatchdog(broken, env, { fetchImpl: s.fetchImpl, now: () => t });
+    // A new isolate every run: nothing but D1 carries over.
+    for (let m = 0; m <= 31; m++) {
+      await scheduledWatchdog(broken, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
+    }
+    expect(s.sent).toEqual([
+      { to: OWNER, from: LINE, message: expect.stringContaining("app: not answering (watchdog route answered 500)") },
+      { to: OWNER, from: LINE, message: expect.stringContaining("not answering") },
+    ]);
+    const [row] = await db.select().from(watchdogProblems);
+    expect(row).toMatchObject({ key: "app", failures: 32, lastAlertedAt: at(31) });
+  });
+
+  it("hands the all-clear to the watchdog route once the app answers again", async () => {
+    const s = sink();
+    for (const m of [0, 1]) await scheduledWatchdog(broken, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
+    expect(s.sent).toHaveLength(1);
+    for (const m of [2, 3]) {
+      now = at(m);
+      await runWatchdog(deps({ reconcile: false }));
+    }
+    expect(alerts).toEqual(["[Dial watchdog, for you only] Fixed: the bot is answering again."]);
+  });
+
+  it("without D1, texts only on the 30-minute slot", async () => {
+    const s = sink();
+    const noD1: D1Like = {
+      prepare: () => {
+        throw new Error("D1_ERROR: unavailable");
+      },
+    };
+    for (let m = 1; m <= 61; m++) {
+      await scheduledWatchdog(broken, { ...env, DB: noD1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
+    }
     expect(s.sent).toHaveLength(2);
   });
 
   it("never texts outside production SMS mode or without an owner", async () => {
     const s = sink();
-    const broken = async () => new Response("boom", { status: 500 });
-    await scheduledWatchdog(broken, { ...env, SMS_MODE: "log" }, { fetchImpl: s.fetchImpl });
-    await scheduledWatchdog(broken, { ...env, ALERT_PHONE: undefined }, { fetchImpl: s.fetchImpl });
-    await scheduledWatchdog(broken, { ...env, ALERT_PHONE: "not a phone" }, { fetchImpl: s.fetchImpl });
+    for (const m of [0, 1, 2]) {
+      const t = () => at(m).getTime();
+      await scheduledWatchdog(broken, { ...env, DB: d1, SMS_MODE: "log" }, { fetchImpl: s.fetchImpl, now: t });
+      await scheduledWatchdog(broken, { ...env, DB: d1, ALERT_PHONE: undefined }, { fetchImpl: s.fetchImpl, now: t });
+      await scheduledWatchdog(broken, { ...env, DB: d1, ALERT_PHONE: "not a phone" }, { fetchImpl: s.fetchImpl, now: t });
+    }
     expect(s.sent).toEqual([]);
   });
 });

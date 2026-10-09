@@ -1,8 +1,8 @@
 {
+  "id": "36baba7d-6f9b-4528-ae1a-c347d20fba49",
+  "prevId": "aeadedb4-b6df-4e3d-86c8-7792b5afd12f",
   "version": "6",
   "dialect": "sqlite",
-  "id": "ac64daa8-b62d-48a3-bb81-3fab886c2f85",
-  "prevId": "aeadedb4-b6df-4e3d-86c8-7792b5afd12f",
   "tables": {
     "agent_keys": {
       "name": "agent_keys",
@@ -71,15 +71,15 @@
         "agent_keys_user_id_users_id_fk": {
           "name": "agent_keys_user_id_users_id_fk",
           "tableFrom": "agent_keys",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -145,15 +145,15 @@
         "agent_links_user_id_users_id_fk": {
           "name": "agent_links_user_id_users_id_fk",
           "tableFrom": "agent_links",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -197,15 +197,15 @@
         "agent_rate_key_id_agent_keys_id_fk": {
           "name": "agent_rate_key_id_agent_keys_id_fk",
           "tableFrom": "agent_rate",
-          "tableTo": "agent_keys",
           "columnsFrom": [
             "key_id"
           ],
+          "tableTo": "agent_keys",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -258,15 +258,15 @@
         "contacts_owner_id_users_id_fk": {
           "name": "contacts_owner_id_users_id_fk",
           "tableFrom": "contacts",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -438,13 +438,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "escrow_program": {
-          "name": "escrow_program",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "escrow_expires_at": {
           "name": "escrow_expires_at",
           "type": "integer",
@@ -508,41 +501,41 @@
         "intents_created_by_users_id_fk": {
           "name": "intents_created_by_users_id_fk",
           "tableFrom": "intents",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "intents_sender_id_users_id_fk": {
           "name": "intents_sender_id_users_id_fk",
           "tableFrom": "intents",
-          "tableTo": "users",
           "columnsFrom": [
             "sender_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "intents_recipient_id_users_id_fk": {
           "name": "intents_recipient_id_users_id_fk",
           "tableFrom": "intents",
-          "tableTo": "users",
           "columnsFrom": [
             "recipient_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -601,15 +594,15 @@
         "login_links_user_id_users_id_fk": {
           "name": "login_links_user_id_users_id_fk",
           "tableFrom": "login_links",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -670,15 +663,15 @@
         "passkeys_user_id_users_id_fk": {
           "name": "passkeys_user_id_users_id_fk",
           "tableFrom": "passkeys",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -965,15 +958,15 @@
         "wallets_user_id_users_id_fk": {
           "name": "wallets_user_id_users_id_fk",
           "tableFrom": "wallets",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1077,15 +1070,15 @@
         "web_sessions_user_id_users_id_fk": {
           "name": "web_sessions_user_id_users_id_fk",
           "tableFrom": "web_sessions",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1096,9 +1089,9 @@
   "views": {},
   "enums": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
+    "tables": {}
   },
   "internal": {
     "indexes": {}

@@ -39,6 +39,33 @@ describe("env", () => {
     delete process.env.ALCHEMY_API_KEY;
   });
 
+  it("needs a Payphone key only when it sends real texts", () => {
+    Object.assign(process.env, base, { PAYPHONE_API_KEY: "" });
+    expect(env().PAYPHONE_API_KEY).toBeUndefined();
+    resetEnvForTests();
+    Object.assign(process.env, { SMS_MODE: "payphone" });
+    expect(() => env()).toThrow(/PAYPHONE_API_KEY/);
+    Reflect.deleteProperty(process.env, "SMS_MODE");
+    process.env.PAYPHONE_API_KEY = base.PAYPHONE_API_KEY;
+  });
+
+  it("treats blank optional settings as unset", () => {
+    Object.assign(process.env, base, { NETWORK: "", ALLOW_MAINNET: "", CHAINS: " ", TEMPO_TREASURY_KEY: "", ESCROW_TTL_DAYS: "" });
+    const e = env();
+    expect(e.NETWORK).toBe("testnet");
+    expect(e.ALLOW_MAINNET).toBeUndefined();
+    expect(e.CHAINS).toBe("solana,tempo");
+    expect(e.TEMPO_TREASURY_KEY).toBeUndefined();
+    expect(e.ESCROW_TTL_DAYS).toBe(7);
+    for (const k of ["NETWORK", "ALLOW_MAINNET", "CHAINS", "TEMPO_TREASURY_KEY", "ESCROW_TTL_DAYS"]) delete process.env[k];
+  });
+
+  it("still needs required settings: a blank one counts as missing", () => {
+    Object.assign(process.env, base, { SMS_WEBHOOK_SECRET: "" });
+    expect(() => env()).toThrow(/SMS_WEBHOOK_SECRET/);
+    process.env.SMS_WEBHOOK_SECRET = base.SMS_WEBHOOK_SECRET;
+  });
+
   it("rejects a bad bot number", () => {
     Object.assign(process.env, base, { DIAL_OPERATOR_NUMBER: "8066071387" });
     expect(() => env()).toThrow();

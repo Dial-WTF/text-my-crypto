@@ -111,6 +111,22 @@ describe("issuance links", () => {
     expect(await peekAgentLink(db, token, NOW)).toBeNull();
   });
 
+  it("holds the five-try limit against parallel guesses", async () => {
+    const { token, code } = await startAgentLink(db, userId, "agent", NOW);
+    const wrong = Array.from({ length: 12 }, (_, n) => String((Number(code) + n + 1) % 1_000_000).padStart(6, "0"));
+    const results = await Promise.all(wrong.map((c) => redeemAgentLink(db, token, c, NOW)));
+    expect(results.filter((r) => !r.ok && r.reason === "bad_code")).toHaveLength(5);
+    expect(results.filter((r) => !r.ok && r.reason === "closed")).toHaveLength(7);
+    expect(await redeemAgentLink(db, token, code, NOW)).toEqual({ ok: false, reason: "closed" });
+  });
+
+  it("lets the right code through on the fifth try", async () => {
+    const { token, code } = await startAgentLink(db, userId, "agent", NOW);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 0; i < 4; i++) await redeemAgentLink(db, token, wrong, NOW);
+    expect((await redeemAgentLink(db, token, code, NOW)).ok).toBe(true);
+  });
+
   it("expires after 15 minutes", async () => {
     const { token, code } = await startAgentLink(db, userId, "agent", NOW);
     expect(await peekAgentLink(db, token, later(15 * 60_000))).toBeNull();

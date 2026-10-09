@@ -1,8 +1,13 @@
 import { z } from "zod";
+import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
 
 const schema = z.object({
   APP_URL: z.url(),
-  PAYPHONE_API_KEY: z.string().min(1),
+  /** Needed to send texts (SMS_MODE=payphone). Staging and local log texts and can leave it out. */
+  PAYPHONE_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   PAYPHONE_BASE_URL: z.url().default("https://payphone.wtf"),
   DIAL_OPERATOR_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/),
   SMS_WEBHOOK_SECRET: z.string().min(32),
@@ -45,6 +50,17 @@ const schema = z.object({
     .transform((v) => v || undefined),
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
+  /** Workers AI model, used whenever the "ai" binding exists. Needs JSON mode (structured output). */
+  WORKERS_AI_MODEL: z.string().default("@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+  /** Only needed where there is no "ai" binding: Workers AI over REST. */
+  CLOUDFLARE_ACCOUNT_ID: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  WORKERS_AI_API_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   SMS_MODE: z.enum(["log", "payphone"]).default("log"),
   /**
    * The owner's phone. The watchdog texts alerts here and nowhere else. Unset or unreadable: alerts are
@@ -57,14 +73,29 @@ const schema = z.object({
 }).refine((e) => e.NETWORK === "testnet" || e.ALLOW_MAINNET === "yes", {
   message: "NETWORK=mainnet moves real money; set ALLOW_MAINNET=yes to confirm",
   path: ["ALLOW_MAINNET"],
+}).refine((e) => e.SMS_MODE === "log" || e.PAYPHONE_API_KEY !== undefined, {
+  message: "SMS_MODE=payphone sends texts through Payphone; set PAYPHONE_API_KEY",
+  path: ["PAYPHONE_API_KEY"],
 });
 
 export type Env = z.infer<typeof schema>;
 
+/**
+ * Drops variables set to "" (or only spaces). Dashboards and dotenv files leave blanks behind, and a
+ * blank NETWORK or ALLOW_MAINNET has to mean "unset", not fail the enum or count as a value.
+ */
+function withoutBlanks(source: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value.trim() !== "") out[key] = value;
+  }
+  return out;
+}
+
 let cached: Env | undefined;
 
 export function env(): Env {
-  cached ??= schema.parse(process.env);
+  cached ??= schema.parse(withoutBlanks(process.env));
   return cached;
 }
 
@@ -72,13 +103,15 @@ export function resetEnvForTests(): void {
   cached = undefined;
 }
 
-const rpcOverrideKey = /^RPC_[A-Z0-9_]+$/;
-
-/** RPC_<NETWORK ID> secrets (e.g. RPC_SOLANA_DEVNET), each pointing one network at a keyed RPC. */
+/**
+ * RPC_<NETWORK ID> secrets (e.g. RPC_SOLANA_DEVNET), each pointing one network at a keyed RPC. Only
+ * names the registry knows are read, so an unrelated RPC_* variable is ignored; blanks count as unset.
+ */
 export function rpcOverrides(source: Record<string, string | undefined> = process.env): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (rpcOverrideKey.test(key) && value) out[key] = z.url().parse(value);
+  for (const key of RPC_OVERRIDE_KEYS) {
+    const value = source[key]?.trim();
+    if (value) out[key] = z.url().parse(value);
   }
   return out;
 }
@@ -93,5 +126,5 @@ const publicSchema = z.object({
 
 /** The few settings public pages need. Never includes secrets. */
 export function publicEnv(): z.infer<typeof publicSchema> {
-  return publicSchema.parse(process.env);
+  return publicSchema.parse(withoutBlanks(process.env));
 }

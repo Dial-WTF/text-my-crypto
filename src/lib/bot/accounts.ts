@@ -10,11 +10,13 @@ import {
   isClaimed,
   uniqueHandle,
 } from "@/lib/identity";
+import { randomBase32 } from "@/lib/ids";
 import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import type { SettlementAdapter } from "@/lib/settlement/types";
+import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -43,7 +45,8 @@ export async function ensureWallet(
 
 /**
  * Sends a wallet its one test-funds drip. True when it landed now; false when the wallet already had it.
- * A failed transfer gives the drip back and rethrows, so it is retried next time instead of lost.
+ * A transfer that never went out gives the drip back and rethrows, so it is retried next time instead of lost.
+ * One that went out but wasn't confirmed keeps the drip taken: it may still land, and must not be sent twice.
  */
 export async function dripOnce(
   deps: Pick<BotDeps, "db" | "dripAmount" | "now">,
@@ -56,27 +59,30 @@ export async function dripOnce(
     await adapter.fund(wallet.address, deps.dripAmount);
     return true;
   } catch (e) {
-    await releaseDrip(deps.db, wallet.userId, wallet.chain);
+    if (!(e instanceof TransferUnconfirmedError)) await releaseDrip(deps.db, wallet.userId, wallet.chain);
     throw e;
   }
 }
 
-/** The sender's wallet on a chain; a wallet opened on first use gets the same test drip as signup. */
+/**
+ * The sender's wallet on a chain; a wallet opened on first use gets the same test drip as signup.
+ * `triedDrip` is true when that drip was attempted now, so the caller doesn't try it again this turn.
+ */
 export async function ensureSenderWallet(
   deps: Pick<BotDeps, "db" | "walletKey" | "dripAmount" | "now">,
   userId: string,
   chain: Chain,
   adapter: SettlementAdapter,
-): Promise<Wallet> {
+): Promise<{ wallet: Wallet; triedDrip: boolean }> {
   const existing = await getWallet(deps.db, userId, chain);
-  if (existing) return existing;
+  if (existing) return { wallet: existing, triedDrip: false };
   const wallet = await ensureWallet(deps, userId, chain, adapter);
   try {
     await dripOnce(deps, wallet, adapter);
   } catch (e) {
     console.error("first-use drip failed", chain, errorText(e));
   }
-  return wallet;
+  return { wallet, triedDrip: true };
 }
 
 export type SignupResult = { ok: true; user: User; reply: string } | { ok: false; error: string };
@@ -89,7 +95,8 @@ export type SignupResult = { ok: true; user: User; reply: string } | { ok: false
 export async function completeSignup(deps: BotDeps, phone: string, rawName: string): Promise<SignupResult> {
   const name = cleanDisplayName(rawName);
   if (!name) return { ok: false, error: replies.badName() };
-  const handle = await uniqueHandle(deps.db, handleFromName(name) ?? `dial${phone.slice(-4)}`);
+  // Handles are public (pay links, the ledger), so the fallback must not carry any phone digits.
+  const handle = await uniqueHandle(deps.db, handleFromName(name) ?? `dial${randomBase32(4)}`);
 
   const existing = await findUserByPhone(deps.db, phone);
   if (existing && isClaimed(existing)) return { ok: true, user: existing, reply: replies.whoami(displayName(existing), existing.handle ?? handle) };

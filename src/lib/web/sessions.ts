@@ -46,18 +46,26 @@ export async function loginLinkOpen(db: Db, token: string, now: Date): Promise<b
 
 export type LoginRedeemed = { ok: true; userId: string } | { ok: false; reason: "closed" | "bad_code" };
 
-/** Checks the texted code and burns the link. Five wrong codes close it. */
+/**
+ * Checks the texted code and burns the link. Five tries close it. The try is counted (one conditional
+ * UPDATE) before the code is compared, so parallel guesses can't get past the limit.
+ */
 export async function redeemLoginLink(db: Db, token: string, code: string, now: Date): Promise<LoginRedeemed> {
   const tokenHash = await hashLinkToken(token);
-  const [link] = await db.select().from(loginLinks).where(eq(loginLinks.tokenHash, tokenHash)).limit(1);
-  if (!link || link.usedAt || link.expiresAt <= now || link.codeAttempts >= MAX_CODE_ATTEMPTS) {
-    return { ok: false, reason: "closed" };
-  }
+  const [link] = await db
+    .update(loginLinks)
+    .set({ codeAttempts: sql`${loginLinks.codeAttempts} + 1` })
+    .where(
+      and(
+        eq(loginLinks.tokenHash, tokenHash),
+        isNull(loginLinks.usedAt),
+        gt(loginLinks.expiresAt, now),
+        lt(loginLinks.codeAttempts, MAX_CODE_ATTEMPTS),
+      ),
+    )
+    .returning({ codeHash: loginLinks.codeHash });
+  if (!link) return { ok: false, reason: "closed" };
   if (link.codeHash !== (await hashLinkCode(tokenHash, code.replace(/[\s-]/g, "")))) {
-    await db
-      .update(loginLinks)
-      .set({ codeAttempts: sql`${loginLinks.codeAttempts} + 1` })
-      .where(eq(loginLinks.tokenHash, tokenHash));
     return { ok: false, reason: "bad_code" };
   }
   const used = await db
@@ -97,4 +105,21 @@ export async function sessionUser(db: Db, token: string | undefined, now: Date):
 
 export async function endSession(db: Db, token: string, now: Date): Promise<void> {
   await db.update(webSessions).set({ revokedAt: now }).where(eq(webSessions.tokenHash, await hashSession(token)));
+}
+
+/**
+ * Signs the account out everywhere: ends every live web session and closes any unused sign-in link.
+ * For STOP and "revoke agents". Returns how many sessions were ended.
+ */
+export async function endSessionsForUser(db: Db, userId: string, now: Date): Promise<number> {
+  const ended = await db
+    .update(webSessions)
+    .set({ revokedAt: now })
+    .where(and(eq(webSessions.userId, userId), isNull(webSessions.revokedAt)))
+    .returning({ tokenHash: webSessions.tokenHash });
+  await db
+    .update(loginLinks)
+    .set({ usedAt: now })
+    .where(and(eq(loginLinks.userId, userId), isNull(loginLinks.usedAt)));
+  return ended.length;
 }

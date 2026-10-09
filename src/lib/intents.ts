@@ -80,26 +80,32 @@ export async function getIntent(db: Db, id: string): Promise<Intent | null> {
   return row ?? null;
 }
 
+/**
+ * How a code is issued. `keepAttempts` is for re-sending a code on a payment that already had one ("status",
+ * a repeated command): the wrong guesses made so far still count, so asking for a new code never buys more tries.
+ */
+export type IssueOptions = { keepAttempts?: boolean };
+
 /** Issues a fresh one-time code for the intent's current phase and returns it in plain text. */
-export async function issueCode(db: Db, id: string): Promise<string> {
-  const code = newCode();
-  await db
-    .update(intents)
-    .set({ codeHash: await hashCode(id, code), codeAttempts: 0 })
-    .where(eq(intents.id, id));
-  return code;
+export async function issueCode(db: Db, id: string, opts: IssueOptions = {}): Promise<string> {
+  return issueSharedCode(db, [id], opts);
 }
 
 /** Issues one code shared by several intents (e.g. every escrow waiting for the same person). */
-export async function issueSharedCode(db: Db, ids: string[]): Promise<string> {
+export async function issueSharedCode(db: Db, ids: string[], { keepAttempts = false }: IssueOptions = {}): Promise<string> {
   const code = newCode();
   for (const id of ids) {
     await db
       .update(intents)
-      .set({ codeHash: await hashCode(id, code), codeAttempts: 0 })
+      .set(keepAttempts ? { codeHash: await hashCode(id, code) } : { codeHash: await hashCode(id, code), codeAttempts: 0 })
       .where(eq(intents.id, id));
   }
   return code;
+}
+
+/** Too many wrong codes on this payment: no new code is issued for it. */
+export function isCodeLocked(i: Pick<Intent, "codeAttempts">): boolean {
+  return i.codeAttempts >= MAX_CODE_ATTEMPTS;
 }
 
 /** Intents a user can act on with a texted code: their own pending payments and escrows waiting for them. */
@@ -395,6 +401,31 @@ export async function hasLockedCode(db: Db, userId: string, now: Date): Promise<
     )
     .limit(1);
   return Boolean(row);
+}
+
+/**
+ * The user's newest payment since `since` that is still waiting on them or still moving: one they pay
+ * (unexpired and pending, or settling), or an escrow waiting for them to claim.
+ */
+export async function latestInFlightFor(db: Db, userId: string, since: Date, now: Date): Promise<Intent | null> {
+  const [row] = await db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        gte(intents.createdAt, since),
+        or(
+          and(
+            eq(intents.senderId, userId),
+            or(eq(intents.status, "settling"), and(eq(intents.status, "pending"), gt(intents.expiresAt, now))),
+          ),
+          and(eq(intents.recipientId, userId), eq(intents.status, "escrowed")),
+        ),
+      ),
+    )
+    .orderBy(desc(intents.createdAt))
+    .limit(1);
+  return row ?? null;
 }
 
 /** Payments a user is part of (paying, being paid, or asked for), newest first. */

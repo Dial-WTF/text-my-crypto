@@ -51,7 +51,7 @@ describe("registry", () => {
 describe("activeChains", () => {
   it("runs only listed chains that have a stablecoin on the selected network", () => {
     const chains = activeChains(env({ CHAINS: "solana,base,robinhood,zcash" }), {});
-    expect(chains.map((c) => c.chain)).toEqual(["solana", "base"]);
+    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood"]);
   });
 
   it("switches every chain to its mainnet entry together", () => {
@@ -67,6 +67,17 @@ describe("rpcOverrides", () => {
     });
     expect(() => rpcOverrides({ RPC_SOLANA_DEVNET: "not a url" })).toThrow();
   });
+
+  it("reads only the registry's names, trims values and treats blanks as unset", () => {
+    expect(
+      rpcOverrides({
+        RPC_SOLANA_DEVNET: "  https://x.example  ",
+        RPC_BASE_SEPOLIA: "   ",
+        RPC_TIMEOUT_MS: "3000",
+        RPC_SOMETHING_ELSE: "not a url",
+      }),
+    ).toEqual({ RPC_SOLANA_DEVNET: "https://x.example" });
+  });
 });
 
 describe("redactUrls", () => {
@@ -78,6 +89,13 @@ describe("redactUrls", () => {
     expect(out).not.toContain("SECRET");
     expect(out).toContain("tempo-moderato.g.alchemy.com/…");
     expect(out).toContain("devnet.helius-rpc.com/…");
+  });
+
+  it("drops user:pass@ in front of the host", async () => {
+    const { redactUrls, errorText } = await import("@/lib/settlement/types");
+    expect(redactUrls("fetch https://user:SECRET@rpc.example:8545/path?k=1 failed")).toBe("fetch rpc.example:8545/… failed");
+    expect(redactUrls("ws wss://SECRET@ws.example failed")).toBe("ws ws.example/… failed");
+    expect(errorText(new Error("at https://a:b@c@host.example/x"))).toBe("at host.example/…");
   });
 });
 

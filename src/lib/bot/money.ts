@@ -2,7 +2,7 @@ import { z } from "zod";
 import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import { setConversation } from "@/lib/conversations";
-import type { Intent, User } from "@/lib/db/schema";
+import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   createUnclaimedUser,
   describe,
@@ -16,6 +16,8 @@ import {
   createIntent,
   findPendingDuplicate,
   findRecentCompletedDuplicate,
+  isCodeLocked,
+  type IssueOptions,
   issueCode,
   newIntentId,
   sentSince,
@@ -27,7 +29,7 @@ import { hasOutboundSince } from "@/lib/sms/log";
 import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
-import type { SettlementAdapter } from "@/lib/settlement/types";
+import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { dripOnce, ensureSenderWallet, ensureWallet } from "./accounts";
 import { notify, text } from "./text";
 import type { BotDeps } from "./types";
@@ -96,11 +98,29 @@ export async function resolveCounterparty(deps: BotDeps, owner: User, raw: strin
   return { askFor: raw };
 }
 
-/** Over the threshold, an account with a passkey must use it: no SMS code is issued. */
-/** A fresh code for the payer, or null when this payment needs their passkey instead. */
-export async function codeFor(deps: BotDeps, payerId: string, intentId: string, amount: bigint): Promise<string | null> {
+/**
+ * A fresh code for the payer, or null when this payment needs their passkey instead: over the threshold,
+ * an account with a passkey must use it. Pass keepAttempts when re-sending a code for an existing payment.
+ */
+export async function codeFor(
+  deps: BotDeps,
+  payerId: string,
+  intentId: string,
+  amount: bigint,
+  opts: IssueOptions = {},
+): Promise<string | null> {
   if (amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
-  return issueCode(deps.db, intentId);
+  return issueCode(deps.db, intentId, opts);
+}
+
+/** dripOnce, but a failure is logged instead of ending the turn. */
+async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
+  try {
+    return await dripOnce(deps, wallet, adapter);
+  } catch (e) {
+    console.error("short-send drip failed", wallet.chain, errorText(e));
+    return false;
+  }
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -168,7 +188,9 @@ async function repeatReply(
   if ("justSent" in dup) return { text: replies.justSent(formatUsd(dup.justSent.amount), otherName), askNew: true };
   const { pending } = dup;
   if (kind !== "send") return { text: replies.alreadyRequested(formatUsd(pending.amount), otherName), askNew: false };
-  const code = await codeFor(deps, user.id, pending.id, pending.amount);
+  // Too many wrong codes on it already: repeating the command must not hand out a fresh one.
+  if (isCodeLocked(pending)) return { text: replies.codeMismatch(0), askNew: false };
+  const code = await codeFor(deps, user.id, pending.id, pending.amount, { keepAttempts: true });
   const link = `${deps.appUrl}/a/${pending.id}`;
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
@@ -189,14 +211,17 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   const { chain, adapter, amount } = checked;
   if (other.id === user.id) return fail("self", replies.selfSend());
 
-  const mine =
-    cmd.kind === "send" ? await ensureSenderWallet(deps, user.id, chain, adapter) : await ensureWallet(deps, user.id, chain, adapter);
+  const { wallet: mine, triedDrip } =
+    cmd.kind === "send"
+      ? await ensureSenderWallet(deps, user.id, chain, adapter)
+      : { wallet: await ensureWallet(deps, user.id, chain, adapter), triedDrip: false };
   const note = cmd.note ?? null;
 
   if (cmd.kind === "send") {
     let balance = await adapter.getBalance(mine.address);
-    // Short, and the test drip never landed (say the chain was down at signup): drop it now.
-    if (balance < amount && (await dripOnce(deps, mine, adapter))) {
+    // Short, and the test drip never landed (say the chain was down at signup): drop it now. A wallet opened
+    // this turn already had its try. A drip that fails (empty treasury, rate limit) just means "not enough".
+    if (balance < amount && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
       balance += deps.dripAmount;
       await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
     }

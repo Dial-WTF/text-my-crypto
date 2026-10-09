@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "preview": "opennextjs-cloudflare build && node scripts/scrub-build-env.mjs && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && node scripts/scrub-build-env.mjs && opennextjs-cloudflare deploy",
     "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
     "smoke": "node scripts/smoke.mjs",
     "ship": "node scripts/ship.mjs",
@@ -40,6 +40,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "viem": "^2.57.4",
+    "workers-ai-provider": "4.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

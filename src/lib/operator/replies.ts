@@ -74,6 +74,12 @@ export const replies = {
   statusEscrowed: (amount: string, who: string, until: string) =>
     `Sent. ${amount} is waiting for ${who} to claim it until ${until}. If they don't, text "reclaim".`,
   statusRefunded: (amount: string, url: string | null) => `That ${amount} came back to you.${url ? ` Receipt: ${url}` : ""}`,
+  statusReturnedToSender: (amount: string, from: string) =>
+    `The ${amount} from ${from} wasn't claimed in time, so it went back to them. Ask them to send it again.`,
+  statusClaimWaiting: (amount: string, from: string, code: string | null) =>
+    code
+      ? `${from} sent you ${amount} and it's waiting for you to claim it. New code: reply ${code} to claim it.`
+      : `${from} sent you ${amount} and it's waiting for you to claim it. Reply with the code from my text, or text "status" for a new one.`,
   statusFailed: (amount: string, who: string) => `Your ${amount} to ${who} didn't go through, and nothing moved. Text it again to retry.`,
   statusCancelled: (amount: string, who: string) => `Your ${amount} with ${who} was cancelled. Nothing moved.`,
   nothingInFlight: () => `Nothing in flight right now. Text "balance", "wallet" or "send @name $5".`,
