@@ -198,9 +198,12 @@ async function main() {
     return (await expectReply(newcomer, /Reply (\d{6}) to claim it\./, { timeoutMs: 90_000 }))[1];
   });
 
-  await step("claim code pays the newcomer; the sender is told", async () => {
+  await step("claim code pays the newcomer, who gets the wallet tour; the sender is told", async () => {
     await say(newcomer, claimCode);
-    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. Receipt: https?://`), { timeoutMs: 120_000 });
+    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. It's in your Dial wallet now, nothing to set up\\. Receipt: https?://`), {
+      timeoutMs: 120_000,
+    });
+    await expectReply(newcomer, /^Your Dial wallet: .+ Sending is just a text: .+ Guide: https?:\/\/\S+\/how-it-works#got-paid$/, { timeoutMs: 30_000 });
     await expectReply(sender, new RegExp(`claimed the ${PAY_RE} you sent`), { timeoutMs: 30_000 });
   });
 
