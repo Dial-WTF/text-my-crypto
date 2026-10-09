@@ -11,10 +11,11 @@ import { rmSync } from "node:fs";
 const stagingOnly = process.argv.includes("--staging-only");
 
 const steps = [
-  // Fast gates first: type-aware lint, types, dead code, then every test with the money-path coverage floors
+  // Fast gates first: types, type-aware lint, dead code, then every test with the money-path coverage floors
   // (property tests and the migration check included). `pnpm rust:check` is separate: it's slower.
-  ["lint", "pnpm", ["lint"]],
+  // Typecheck runs `next typegen` first: type-aware lint needs the route types it writes for new pages.
   ["typecheck", "pnpm", ["typecheck"]],
+  ["lint", "pnpm", ["lint"]],
   ["deadcode", "pnpm", ["deadcode"]],
   ["test + coverage floors", "pnpm", ["test:coverage"]],
   ["build", "pnpm", ["exec", "opennextjs-cloudflare", "build"]],
