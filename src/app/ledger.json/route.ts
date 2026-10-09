@@ -37,6 +37,7 @@ export async function GET(): Promise<Response> {
         tx: r.txHash,
         explorer: r.explorerUrl,
         at: r.at.toISOString(),
+        split: r.splitId,
       })),
     },
     { headers: { "cache-control": "public, max-age=30" } },
