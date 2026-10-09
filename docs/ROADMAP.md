@@ -37,12 +37,18 @@ There is no fully trustless proof of a phone number today: SMS is unsigned, and 
 
 ## More chains
 
-| Chain | Status | Language |
+Each chain carries the capability modules its network makes possible (see [CAPABILITIES.md](CAPABILITIES.md)).
+
+| Chain | Status (testnet) | Chain-native feature |
 | --- | --- | --- |
-| Solana | Tranche 1 (devnet USDC) | TypeScript; Rust for the escrow program |
-| Tempo | Next (AlphaUSD, passkey accounts) | TypeScript; Solidity if escrow goes on-chain |
-| Base | Next (USDC on Base Sepolia) | TypeScript; Solidity if escrow goes on-chain |
-| Zcash | Stretch (shielded sends, memo = payment id) | Rust wallet service in a Cloudflare Container |
+| Solana | Switched on (devnet USDC) | `dial_escrow` program; pay links are Blinks |
+| Tempo | Switched on (AlphaUSD) | Split payments in one batched transaction |
+| Ethereum | Switched on (Sepolia USDC) | ENS names |
+| Base | Switched on (Base Sepolia USDC) | Basenames |
+| Arbitrum | Switched on (Arbitrum Sepolia USDC) | Stylus escrow contract (in progress) |
+| Hyperliquid | Switched on (HyperEVM testnet USDC) | Transfers into HyperCore (in progress) |
+| Robinhood Chain | Switched on (Dial Test USD) | Stock token gifts (in progress) |
+| Zcash | Built, off until its wallet service is deployed | Shielded sends, payment id in the encrypted memo |
 
 ## Agents
 
