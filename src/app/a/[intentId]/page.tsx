@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db/client";
-import { publicEnv } from "@/lib/env";
+import { env, publicEnv } from "@/lib/env";
 import { getIntent } from "@/lib/intents";
 import { buildPaymentView } from "@/lib/views/payment";
 import { ApprovePanel } from "@/ui/patterns/ApprovePanel/ApprovePanel";
@@ -19,7 +19,7 @@ export default async function PaymentPage({ params }: PageProps<"/a/[intentId]">
   const db = getDb();
   const intent = await getIntent(db, intentId);
   if (!intent) notFound();
-  const view = await buildPaymentView(db, intent, new Date());
+  const view = await buildPaymentView(db, intent, new Date(), { network: env().NETWORK, audience: "public" });
 
   return (
     <SiteShell operatorNumber={publicEnv().DIAL_OPERATOR_NUMBER}>
