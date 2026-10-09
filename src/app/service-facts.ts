@@ -1,8 +1,8 @@
-import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
-import { env } from "@/lib/env";
+import { enabledChains } from "@/lib/chain-status";
+import { type Chain, chainLabel } from "@/lib/chains";
+import { env, publicEnv } from "@/lib/env";
 import { networkName } from "@/lib/ledger";
 import { activeChains, getAdapters } from "@/lib/settlement";
-import { settlesOn } from "./landing-content";
 
 /** The limits the operator enforces, as people read them ("$50"). */
 export type Limits = { perPayment: string; perDay: string; passkeyAbove: string; signupDrop: string; escrowDays: number };
@@ -28,24 +28,20 @@ export function limits(): Limits {
   }
 }
 
-export type LiveNetwork = { chain: Chain; name: string; network: string };
+export type EnabledNetwork = { chain: Chain; name: string; network: string };
 
 /**
- * The networks payments settle on right now: every active chain with a working adapter. When the
- * environment can't be read, the chains the landing page marks live.
+ * The networks payments settle on right now: every chain CHAINS switches on with a working adapter. When
+ * the adapters can't be built (secrets missing), the chains the public settings switch on.
  */
-export function liveNetworks(): LiveNetwork[] {
+export function enabledNetworks(): EnabledNetwork[] {
   try {
     const adapters = getAdapters();
     return activeChains()
       .filter(({ chain }) => adapters[chain])
       .map(({ chain, entry }) => ({ chain, name: chainLabel(chain), network: entry.network }));
   } catch {
-    return settlesOn
-      .filter((c) => c.status === "live")
-      .flatMap((c) => {
-        const chain = CHAINS.find((id) => chainLabel(id) === c.name);
-        return chain ? [{ chain, name: c.name, network: networkName(chain, "testnet") }] : [];
-      });
+    const { CHAINS: chains, NETWORK: network } = publicEnv();
+    return enabledChains(chains, network).map((chain) => ({ chain, name: chainLabel(chain), network: networkName(chain, network) }));
   }
 }

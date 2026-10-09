@@ -5,6 +5,7 @@ import { Mono } from "@/ui/primitives/Mono/Mono";
 import { QrCode } from "@/ui/primitives/QrCode/QrCode";
 import { Receipt, ReceiptLine, ReceiptRule } from "@/ui/primitives/Receipt/Receipt";
 import { Stack } from "@/ui/primitives/Stack/Stack";
+import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
 export type PayCardChain = { network: string; address: string; uri: string; explorer: string };
@@ -47,6 +48,7 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
           Text “{byText.body}”
         </ButtonLink>
         <Fine>Opens your messages addressed to the Dial operator. You confirm with a code it texts back.</Fine>
+        <SmsConsent on="card" />
       </Stack>
 
       {chains.map((c) => (

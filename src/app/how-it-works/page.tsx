@@ -7,7 +7,7 @@ import { Prose } from "@/ui/patterns/Prose/Prose";
 import { Section } from "@/ui/patterns/Section/Section";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { Colophon } from "../colophon";
-import { limits, liveNetworks } from "../service-facts";
+import { limits, enabledNetworks } from "../service-facts";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export default function HowItWorksPage() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();
   const phone = formatPhone(number);
   const l = limits();
-  const networks = liveNetworks();
+  const networks = enabledNetworks();
   const program = escrowProgram();
   const hi = `sms:${number}?&body=hi`;
 

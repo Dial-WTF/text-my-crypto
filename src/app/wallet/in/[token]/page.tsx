@@ -6,11 +6,20 @@ import { Desk } from "@/ui/patterns/Desk/Desk";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { WalletCodeForm, WalletLinkClosed } from "@/ui/patterns/WalletSignIn/WalletSignIn";
 import { Colophon } from "../../../colophon";
+import { pageMeta } from "../../../seo";
 import { signInWithCode } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Open your wallet", robots: { index: false } };
+export async function generateMetadata({ params }: PageProps<"/wallet/in/[token]">): Promise<Metadata> {
+  const { token } = await params;
+  return pageMeta({
+    path: `/wallet/in/${encodeURIComponent(token)}`,
+    title: "Open your wallet",
+    description: "A one-time link to your Dial wallet. It opens with the code from the operator's text.",
+    index: false,
+  });
+}
 
 export default async function WalletLinkPage({ params, searchParams }: PageProps<"/wallet/in/[token]">) {
   const { token } = await params;

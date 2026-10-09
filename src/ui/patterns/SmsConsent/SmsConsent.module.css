@@ -1,0 +1,30 @@
+.consent {
+  max-width: var(--measure);
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+.canvas {
+  color: var(--color-on-canvas-muted);
+}
+
+.card {
+  color: var(--color-on-card-muted);
+}
+
+.link {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.link:hover {
+  color: var(--color-on-canvas);
+}
+
+.card .link:hover {
+  color: var(--color-on-card);
+}

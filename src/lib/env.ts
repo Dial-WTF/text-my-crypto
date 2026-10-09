@@ -2,6 +2,22 @@ import { z } from "zod";
 import { DEFAULT_OPERATOR_NUMBER } from "@/lib/operator-line";
 import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
 
+/**
+ * Settings that are safe to show on a public page: which network and chains run, and the money limits.
+ * Shared by env() and publicEnv() so a page and the operator never disagree on a default.
+ */
+const publicSettings = {
+  /** Which column of the chain registry runs. Mainnet also needs ALLOW_MAINNET=yes. */
+  NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
+  /** Comma-separated chains to settle on. A chain also needs its treasury key and a stablecoin in the registry. */
+  CHAINS: z.string().default("solana,tempo"),
+  SIGNUP_DRIP_USD: z.string().default("25"),
+  PER_TX_CAP_USD: z.string().default("50"),
+  PER_DAY_CAP_USD: z.string().default("200"),
+  PASSKEY_THRESHOLD_USD: z.string().default("20"),
+  ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
+};
+
 const schema = z.object({
   APP_URL: z.url(),
   /** Needed to send texts (SMS_MODE=payphone). Staging and local log texts and can leave it out. */
@@ -13,11 +29,8 @@ const schema = z.object({
   DIAL_OPERATOR_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/),
   SMS_WEBHOOK_SECRET: z.string().min(32),
   WALLET_ENCRYPTION_KEY: z.string().min(40),
-  /** Which column of the chain registry runs. Mainnet also needs ALLOW_MAINNET=yes. */
-  NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
+  ...publicSettings,
   ALLOW_MAINNET: z.literal("yes").optional(),
-  /** Comma-separated chains to settle on. A chain also needs its treasury key and a stablecoin in the registry. */
-  CHAINS: z.string().default("solana,tempo"),
   /** One key for every network Alchemy serves. RPC_<NETWORK ID> secrets override single networks. */
   ALCHEMY_API_KEY: z
     .string()
@@ -33,11 +46,6 @@ const schema = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
-  SIGNUP_DRIP_USD: z.string().default("25"),
-  PER_TX_CAP_USD: z.string().default("50"),
-  PER_DAY_CAP_USD: z.string().default("200"),
-  PASSKEY_THRESHOLD_USD: z.string().default("20"),
-  ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
   /**
    * "on": escrow for people not on Dial yet goes through the chain's escrow program (Solana's dial_escrow),
    * where the money can only go to the recipient on the attestor's word or back to the sender after expiry.
@@ -123,9 +131,10 @@ const publicSchema = z.object({
     .string()
     .regex(/^\+[1-9]\d{7,14}$/)
     .default(DEFAULT_OPERATOR_NUMBER),
+  ...publicSettings,
 });
 
-/** The few settings public pages need. Never includes secrets. */
+/** The few settings public pages need: URL, phone number, network, chains and limits. Never includes secrets. */
 export function publicEnv(): z.infer<typeof publicSchema> {
   return publicSchema.parse(withoutBlanks(process.env));
 }
