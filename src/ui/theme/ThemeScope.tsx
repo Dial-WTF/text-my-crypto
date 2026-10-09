@@ -8,6 +8,12 @@ type ThemeScopeProps = {
   theme?: ThemeId;
   /** Recolours accents and fills inside this subtree. Canvas and text stay with the mode. */
   brand?: BrandId;
+  /**
+   * "page" lets the brand take the whole page: headings, links, list markers, rules, buttons, card edges
+   * and the hero, and in matrix the text and glow too. Leave out for a tile or swatch, which keeps the
+   * page's look and recolours only its own accents.
+   */
+  extent?: "page";
   /** "off" hides the page's theme backdrop (the matrix rain) while this scope is on the page. */
   backdrop?: "off";
   as?: "div" | "section" | "li";
@@ -19,12 +25,13 @@ type ThemeScopeProps = {
  * Applies a theme and/or brand to a subtree. Components read role tokens (--color-*), so anything
  * inside picks the scope up with no props of its own, and scopes nest.
  */
-export function ThemeScope({ theme, brand, backdrop, as: Tag = "div", className, children }: ThemeScopeProps) {
+export function ThemeScope({ theme, brand, extent, backdrop, as: Tag = "div", className, children }: ThemeScopeProps) {
   return (
     <Tag
-      className={[styles.scope, theme ? styles.themed : "", className ?? ""].filter(Boolean).join(" ")}
+      className={[styles.scope, theme ? styles.themed : "", brand && extent ? styles.page : "", className ?? ""].filter(Boolean).join(" ")}
       data-theme={theme}
       data-brand={brand}
+      data-brand-extent={brand ? extent : undefined}
       data-backdrop={backdrop}
     >
       {children}

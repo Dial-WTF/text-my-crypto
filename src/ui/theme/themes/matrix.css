@@ -31,3 +31,22 @@
   --card-edge: none;
   --card-border: var(--rule-thin) solid var(--color-card-rule);
 }
+
+/* A brand page in matrix (<ThemeScope brand extent="page">): the terminal font stays and the phosphor green
+ * goes. Text turns a calm neutral, panels lose their green tint, and the glow takes the brand's accent.
+ * tests/theme-brands.test.ts checks this text against the canvas and the panels. */
+[data-theme="matrix"] [data-brand-extent="page"],
+[data-theme="matrix"][data-brand-extent="page"] {
+  --color-on-canvas: oklch(93% 0.008 250);
+  --color-on-canvas-muted: oklch(76% 0.01 250);
+  --color-canvas-2: oklch(12% 0.006 260);
+
+  --color-card: oklch(9.5% 0.006 260 / 0.95);
+  --color-card-2: oklch(14% 0.008 260);
+  --color-on-card: oklch(93% 0.008 250);
+  --color-on-card-muted: oklch(76% 0.01 250);
+  /* Again here, so the border picks up the brand page's card rule rather than the page's green one. */
+  --card-border: var(--rule-thin) solid var(--color-card-rule);
+
+  --text-glow: 0 0 0.4em color-mix(in oklab, var(--color-accent) 35%, transparent);
+}

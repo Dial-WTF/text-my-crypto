@@ -145,6 +145,20 @@ describe("chain tiles", () => {
     expect(html).toContain('data-brand="zcash"');
     expect(html.match(/<a /g)).toHaveLength(8);
   });
+
+  it("give every chain tile its brand for hover, and wear it at rest only when asked (/judges)", () => {
+    const statuses = chainStatuses("solana,tempo", "testnet", new Set());
+    const landing = renderToStaticMarkup(createElement(ChainStrip, { heading: "Settles on", items: settlesOn(statuses) }));
+    const judges = renderToStaticMarkup(createElement(ChainStrip, { heading: "Chains", items: settlesOn(statuses, { branded: true }) }));
+    for (const html of [landing, judges]) {
+      expect(html.match(/data-brand="/g)).toHaveLength(8);
+      // The visible cue is decoration; the link's own name already says where it goes.
+      expect(html).toMatch(/aria-hidden="true">How Dial uses Solana<span[^>]*>→<\/span><\/span>/);
+      expect(html).not.toContain("data-brand-extent");
+    }
+    expect(settlesOn(statuses).some((t) => t.brandAtRest)).toBe(false);
+    expect(settlesOn(statuses, { branded: true }).every((t) => t.brandAtRest)).toBe(true);
+  });
 });
 
 describe("latestSplit", () => {

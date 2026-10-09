@@ -3,6 +3,10 @@
   gap: var(--space-lg);
   padding: var(--space-2xl) var(--gutter) 0;
   min-width: 0;
+  /* A rule above the heading, inside the gutters. Transparent in the house look; a brand page colours it.
+   * A background, so it takes no space and the house layout is unchanged. */
+  background: linear-gradient(var(--color-section-rule), var(--color-section-rule)) var(--gutter)
+    calc(var(--space-2xl) - var(--space-md)) / calc(100% - 2 * var(--gutter)) var(--rule-thin) no-repeat;
 }
 
 .heading {
@@ -10,6 +14,7 @@
   margin: 0;
   font: 800 var(--text-3xl) / 0.95 var(--font-display);
   text-transform: var(--display-case);
+  color: var(--color-heading);
   overflow-wrap: anywhere;
   min-width: 0;
 }
