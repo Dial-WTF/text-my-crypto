@@ -2,7 +2,7 @@
 
 Text money to anyone. Text **+1 806 607 1387**, say hi, and the Dial operator handles the rest: send, request, invoice, receive and withdraw USDC by plain SMS. No app, no wallet address. Works on any phone.
 
-Live: https://text-my-crypto.raspy-thunder-20d2.workers.dev
+Live: https://dialoperator.cc
 
 ```
 you: hi
@@ -49,7 +49,7 @@ Commands: `send jeremy $10`, `split $30 between @alex @sam on tempo`, `411 jerem
 Any MCP client can pay, request or invoice anyone with a phone number. The person still approves every payment from a text.
 
 1. Text `connect agent` to +1 806 607 1387. You get a one-time link and code; the page shows an agent key once.
-2. Point your MCP client at `https://text-my-crypto.raspy-thunder-20d2.workers.dev/api/mcp` with `Authorization: Bearer <key>`.
+2. Point your MCP client at `https://dialoperator.cc/api/mcp` with `Authorization: Bearer <key>`.
 3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `split_payment`, `withdraw`, `get_payment`, `list_payments`.
 
 Money tools create a pending payment, text the payer a code, and return `{ intentId, status: "awaiting_approval", approveUrl }`. Agents poll `get_payment`; there is no tool that approves. Text `revoke agents` to turn off every key. Keys are stored as SHA-256 hashes and rate-limited per key.
@@ -93,6 +93,8 @@ Local runs use `SMS_MODE=log`: replies are printed, never sent. `pnpm dev` handl
 `pnpm ship` is the gated deploy: lint, typecheck, deadcode and tests with the coverage floors, one build, then **staging** (D1 migrations, deploy, `pnpm smoke --env staging`), and only if the smoke test passes, **production** (D1 migrations, deploy). Pushes to `main` run the same script in `.github/workflows/deploy.yml`, which needs the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `STAGING_SMS_WEBHOOK_SECRET` repository secrets. `pnpm run deploy` still deploys production directly, skipping the gate.
 
 Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KEY`, `SOLANA_TREASURY_SEED`, optional `AI_GATEWAY_API_KEY`, optional `ALERT_PHONE`) live in the Worker: keep them in `.env.production.local` and run `pnpm secrets:push`.
+
+Production answers on https://dialoperator.cc (a Worker custom domain; `APP_URL`). GET and HEAD requests to `www.dialoperator.cc`, and to pages on the old `text-my-crypto.raspy-thunder-20d2.workers.dev` address, get a 301 to the same path there (`src/lib/canonical-host.ts`). Anything under `/api/` on workers.dev is served where it is: Payphone's inbound webhook, the MCP server and the Actions API keep the address they were given.
 
 ### Staging
 
