@@ -16,6 +16,7 @@
     "secrets:push": "node scripts/secrets-push.mjs",
     "contracts:build": "node scripts/build-contracts.mjs",
     "program:build": "node scripts/build-program.mjs",
+    "rust:check": "node scripts/rust-check.mjs",
     "contracts:deploy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deploy-test-usd.mjs",
     "escrow:deploy:arbitrum": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deploy-arbitrum-escrow.mjs",
     "chains:status": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/chains-status.mjs",
