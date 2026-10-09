@@ -49,7 +49,7 @@ describe("first-contact disclosures", () => {
     );
     const commands = replies.commands();
     for (const c of ["send", "request", "invoice", "balance", "receive", "wallet", "withdraw", "reclaim", "411", "connect agent", "status"]) {
-      expect(commands).toContain(c);
+      expect(commands.toLowerCase()).toContain(c);
     }
     expect(help).toMatch(GSM);
     expect(commands).toMatch(GSM);

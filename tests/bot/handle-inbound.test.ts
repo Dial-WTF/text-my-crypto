@@ -45,6 +45,9 @@ beforeEach(async () => {
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: sol }, now: () => clock });
 });
 
+/** The latest claim receipt to `phone` (a first claim is followed by the wallet tour). */
+const lastClaimed = (phone: string) => [...sms.to(phone)].reverse().find((m) => m.startsWith("Claimed")) ?? "";
+
 describe("signup over SMS", () => {
   it("asks for a name, then creates the account, wallet and test drip", async () => {
     expect(await say(JEREMY, "hi")).toBe(
@@ -188,7 +191,7 @@ describe("send to someone not on Dial (escrow)", () => {
     const riley = await findUserByPhone(db, NEWBIE);
     const rw = await getWallet(db, riley!.id, "solana");
     expect(sol.settled.at(-1)).toMatchObject({ to: rw!.address, amount: 5_000_000n, memo: id, closeSource: true });
-    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: /);
+    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: /);
     expect(sms.last(ALEX)).toBe("riley claimed the $5 you sent.");
     expect((await getIntent(db, id))?.status).toBe("settled");
   });
@@ -250,7 +253,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     const riley = await findUserByPhone(db, NEWBIE);
     const rw = await getWallet(db, riley!.id, "solana");
     expect(esc.calls.at(-1)).toEqual({ op: "claim", intentId: id, to: rw!.address });
-    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
     expect(sms.last(ALEX)).toBe("riley claimed the $5 you sent.");
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
   });
@@ -266,7 +269,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     );
 
     await say(NEWBIE, codeIn(reply));
-    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: /);
+    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: /);
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
   });
 
@@ -412,7 +415,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     expect(await say(ALEX, "reclaim")).toBe("Nothing to reclaim right now. Unclaimed payments can come back after 7 days.");
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
     expect(sms.to(ALEX)).toContain("riley claimed the $5 you sent.");
-    expect(sms.last(NEWBIE)).toMatch(/^Claimed \$5 from alex\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
   });
 
   it("a refund someone else sent is recorded when the recipient tries to claim", async () => {

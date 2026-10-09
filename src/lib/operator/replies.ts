@@ -54,7 +54,7 @@ export const replies = {
     `${PROGRAM}: send and get paid in crypto by text. Help: ${appUrl}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
   /** Sent right after `help`. */
   commands: () =>
-    `Commands: send @name $5, request $5 from @name, invoice @name $5, balance, receive, wallet, withdraw all to <address>, reclaim, 411 name, connect agent, status.`,
+    `Your wallet is ready. BALANCE, SEND @name $5, REQUEST $5 from @name, INVOICE @name $5, RECEIVE, WALLET, WITHDRAW, RECLAIM, 411 name, CONNECT AGENT, STATUS`,
   optedOut: (cancelledPayment = false) =>
     `You're unsubscribed from the Dial operator. No more texts.` +
     (cancelledPayment ? ` Your pending payment won't go through.` : "") +
@@ -172,7 +172,17 @@ export const replies = {
     `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Receipt: ${explorerUrl}`,
   receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
     `${from} sent you ${usdc(amount)}${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
-  claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
+  claimed: (amount: string, from: string, explorerUrl: string) =>
+    `Claimed ${amount} from ${from}. It's in your Dial wallet now, nothing to set up. Receipt: ${explorerUrl}`,
+  /**
+   * After someone's first claim: what their wallet holds, that paying anyone is a text, how to cash out and
+   * where the dashboard is. `balances` is like ["$3 USDC on Solana"]; empty when no chain answered.
+   */
+  firstClaimTour: (balances: string[], appUrl: string) =>
+    `${balances.length ? `Your Dial wallet: ${balances.join(", ")}.` : "Your Dial wallet holds it."} Sending is just a text: SEND @friend $1 pays a friend, WITHDRAW ALL TO <your address> moves it to your own wallet. Text WALLET for your dashboard. Guide: ${appUrl}/how-it-works#got-paid`,
+  /** A bare "withdraw" or "cash out": how to say where the money goes. */
+  withdrawHowTo: (appUrl: string) =>
+    `To move money to your own wallet, text WITHDRAW ALL TO <your address> or WITHDRAW $5 TO <address>. For an 0x address, add the chain: ON BASE. Step by step: ${appUrl}/how-it-works#cash-out`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
   claimFailed: (amount: string, from: string, code: string) =>
     `Couldn't confirm your claim of the ${amount} from ${from} yet. Reply ${code} to finish it: if it already went through, you'll just get the receipt.`,

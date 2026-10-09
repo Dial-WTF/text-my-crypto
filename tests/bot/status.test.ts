@@ -205,7 +205,9 @@ describe("status on an escrow", () => {
     if (fresh !== offered) expect(await say(SAM, offered)).toMatch(/^That code didn't match/);
     later(1);
     await say(SAM, fresh);
-    expect(sms.last(SAM)).toMatch(/^Claimed \$5 from Alex/);
+    const [claimed, tour] = sms.to(SAM).slice(-2);
+    expect(claimed).toMatch(/^Claimed \$5 from Alex/);
+    expect(tour).toMatch(/^Your Dial wallet: /);
     expect((await getIntent(db, id))?.status).toBe("settled");
   });
 

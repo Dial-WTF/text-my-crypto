@@ -222,7 +222,9 @@ describe("stocks by text", () => {
     await say(NEWBIE, codeIn(offer));
 
     expect(tsla.settled[1]).toMatchObject({ to: await walletOf(NEWBIE), amount: 500_000n, memo: id });
-    expect(sms.to(NEWBIE)).toContain(`Claimed 0.5 TSLA from Jeremy. Receipt: https://explorer.testnet.chain.robinhood.com/tx/0xTSLA_${id}`);
+    expect(sms.to(NEWBIE)).toContain(
+      `Claimed 0.5 TSLA from Jeremy. It's in your Dial wallet now, nothing to set up. Receipt: https://explorer.testnet.chain.robinhood.com/tx/0xTSLA_${id}`,
+    );
     expect(sms.last(JEREMY)).toBe("Newbie claimed the 0.5 TSLA you sent.");
   });
 

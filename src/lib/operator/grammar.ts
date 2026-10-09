@@ -58,6 +58,8 @@ export type Command =
   /** "send @alex $5 of TSLA": a dollar amount of a stock, which needs a price. */
   | { kind: "stock_priced"; symbol: string }
   | { kind: "help" }
+  /** "withdraw" or "cash out" with no destination: explain how to say one. */
+  | { kind: "withdraw_help" }
   | { kind: "chat" };
 
 // A handle, up to three plain words ("my guy", "my brother jake"), or a phone number. Lazy, so a trailing
@@ -217,6 +219,7 @@ const RECEIVE = /^(?:receive|my address|address|deposit|pay link|my pay link)\??
 const WALLET = /^(?:wallet|my wallet|open wallet|log ?in|sign ?in)\??$/i;
 const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
+const WITHDRAW_HELP = /^(?:how (?:do i |can i |to )?)?(?:withdraw|cash ?out|take (?:it|my money) out|move (?:it|my money) out)(?: (?:all|everything|my money|it|money))?\??$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
 const DECLINE = /^(?:no|nope|decline)$/i;
 const DIRECTORY = /^(?:411|directory|lookup|look up|find|who is|whos|who's)\s+(.{2,40}?)\??$/i;
@@ -292,6 +295,7 @@ export function parseCommand(text: string): Command {
   if (STOCKS.test(t)) return { kind: "stocks" };
   if (HELP.test(t)) return { kind: "help" };
   if (RECLAIM.test(t)) return { kind: "reclaim" };
+  if (WITHDRAW_HELP.test(t)) return { kind: "withdraw_help" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
   if (WHOAMI.test(t)) return { kind: "whoami" };

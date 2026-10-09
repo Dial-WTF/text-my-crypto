@@ -1,5 +1,5 @@
 import { errorText } from "@/lib/settlement/types";
-import { type Chain, CHAINS } from "@/lib/chains";
+import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   claimUser,
@@ -13,7 +13,7 @@ import {
 import { randomBase32 } from "@/lib/ids";
 import { escrowedTo, isCodeLocked, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
-import { money } from "@/lib/settlement/amounts";
+import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import { formatTotals } from "@/lib/stocks";
@@ -190,4 +190,26 @@ async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
 export async function offerWaiting(deps: BotDeps, user: User): Promise<void> {
   await offerEscrowClaims(deps, user);
   await offerPendingRequests(deps, user);
+}
+
+/**
+ * "$3 USDC on Solana" for each enabled chain where the user has a wallet. With `quiet`, a chain that won't
+ * answer is left out instead of failing the whole reply (for texts nobody asked for, like the claim tour).
+ */
+export async function balanceLines(deps: BotDeps, user: User, { quiet = false } = {}): Promise<string[]> {
+  const lines: string[] = [];
+  for (const [chain, adapter] of enabledChains(deps)) {
+    const w = await getWallet(deps.db, user.id, chain);
+    if (!w) continue;
+    let raw: bigint;
+    try {
+      raw = await adapter.getBalance(w.address);
+    } catch (e) {
+      if (quiet) continue;
+      throw e;
+    }
+    const amount = money(raw, chain, deps.network);
+    lines.push(`${namesItsCoin(amount) ? amount : `${amount} USDC`} on ${chainLabel(chain)}`);
+  }
+  return lines;
 }

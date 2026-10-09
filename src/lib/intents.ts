@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import { hashCode, MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
@@ -659,4 +659,13 @@ export async function claimSplitForSettlement(db: Db, splitId: string, now: Date
     .set({ status: "settling", codeHash: null, approvedAt: now })
     .where(and(eq(intents.splitId, splitId), eq(intents.status, "pending"), gt(intents.expiresAt, now)))
     .returning();
+}
+
+/** How many payments sent to this person they have claimed (escrows released to them). */
+export async function claimedCount(db: Db, userId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(intents)
+    .where(and(eq(intents.recipientId, userId), eq(intents.status, "settled"), isNotNull(intents.releaseTxHash)));
+  return row?.n ?? 0;
 }

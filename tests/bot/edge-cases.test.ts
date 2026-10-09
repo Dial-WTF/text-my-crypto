@@ -62,7 +62,7 @@ describe("STOP / START / HELP", () => {
     expect(await send(NEWBIE, "hi")).toEqual([]);
     expect(await send(ALEX, "HELP")).toEqual([
       "Dial operator by Dial.Work: send and get paid in crypto by text. Help: https://tmc.test/how-it-works. Msg & data rates may apply. Reply STOP to cancel.",
-      "Commands: send @name $5, request $5 from @name, invoice @name $5, balance, receive, wallet, withdraw all to <address>, reclaim, 411 name, connect agent, status.",
+      "Your wallet is ready. BALANCE, SEND @name $5, REQUEST $5 from @name, INVOICE @name $5, RECEIVE, WALLET, WITHDRAW, RECLAIM, 411 name, CONNECT AGENT, STATUS",
     ]);
   });
 
