@@ -104,6 +104,7 @@ describe("MCP over Streamable HTTP", () => {
         "get_payment",
         "get_receive_address",
         "get_wallet",
+        "list_chain_features",
         "list_payments",
         "request_payment",
         "resolve_recipient",

@@ -16,6 +16,19 @@ export async function publicStats(db: Db): Promise<PublicStats> {
   return { payments: money?.payments ?? 0, movedUsd: BigInt(money?.moved ?? 0), people: people?.n ?? 0 };
 }
 
+/**
+ * How many payments have moved on each chain (settled, escrowed or refunded; withdrawals count, since money
+ * moved). A chain with none here is never called "live" on the site.
+ */
+export async function movedByChain(db: Db): Promise<Partial<Record<Chain, number>>> {
+  const rows = await db
+    .select({ chain: intents.chain, n: count() })
+    .from(intents)
+    .where(inArray(intents.status, MOVED))
+    .groupBy(intents.chain);
+  return Object.fromEntries(rows.filter((r) => r.n > 0).map((r) => [r.chain, r.n]));
+}
+
 export type FeedItem = {
   id: string;
   from: string;

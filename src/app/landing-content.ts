@@ -1,4 +1,10 @@
+import { type ChainState, type ChainStatus, listWords } from "@/lib/chain-status";
+import { type Chain, chainLabel } from "@/lib/chains";
+import { formatUsd, usdToBaseUnits } from "@/lib/money";
+import type { Network } from "@/lib/settlement/registry";
+import type { LogoId } from "@/ui/brand/logoPaths";
 import type { ChainStripItem } from "@/ui/patterns/ChainStrip/ChainStrip";
+import type { Limit } from "@/ui/patterns/Limits/Limits";
 import type { TranscriptLine } from "@/ui/patterns/Transcript/Transcript";
 
 export const transcript: TranscriptLine[] = [
@@ -14,19 +20,72 @@ export const transcript: TranscriptLine[] = [
   { from: "operator", text: "Sent $10 to jeremy. They have 7 days to claim it." },
 ];
 
+/** What each chain does for the operator. Its status comes from chainStatuses, never from this copy. */
+const CHAIN_COPY: Record<Chain, { name: string; logo: LogoId; role: string }> = {
+  solana: { name: "Solana", logo: "solana", role: "USDC settlement, memo per payment, on-chain escrow for people not on Dial yet" },
+  tempo: { name: "Tempo", logo: "tempo", role: "Stablecoin payments with a memo; operator pays the fees" },
+  base: { name: "Base", logo: "base", role: "USDC by signed authorization; operator pays the gas" },
+  ethereum: { name: "Ethereum", logo: "ethereum", role: "USDC on L1 by signed authorization; operator pays the gas" },
+  arbitrum: { name: "Arbitrum", logo: "arbitrum", role: "USDC on Arbitrum, same signed-authorization flow" },
+  hyperevm: { name: "Hyperliquid", logo: "hyperliquid", role: "USDC on HyperEVM, same signed-authorization flow" },
+  robinhood: { name: "Robinhood Chain", logo: "robinhood", role: "Same EVM flow, in a test dollar until there is test USDC on it" },
+  zcash: { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo" },
+};
 
-// Every chain with a prize track in the Crypto World's Fair. "Live" means a payment has settled there from a text;
-// "Wired" means the adapter is built and tested on that chain's testnet but not switched on in production yet.
-export const settlesOn: ChainStripItem[] = [
-  { name: "Solana", logo: "solana", role: "USDC settlement, memo per payment, per-payment escrow", status: "live", statusLabel: "Live · devnet" },
-  { name: "Tempo", logo: "tempo", role: "Stablecoin payments with a memo; operator pays the fees", status: "next", statusLabel: "Wired · Moderato" },
-  { name: "Base", logo: "base", role: "USDC by signed authorization; operator pays the gas", status: "next", statusLabel: "Wired · Sepolia" },
-  { name: "Ethereum", logo: "ethereum", role: "USDC on L1, same signed-authorization flow", status: "next", statusLabel: "Wired · Sepolia" },
-  { name: "Arbitrum", logo: "arbitrum", role: "USDC on Arbitrum One, same flow", status: "next", statusLabel: "Wired · Sepolia" },
-  { name: "Hyperliquid", logo: "hyperliquid", role: "USDC on HyperEVM, same flow", status: "next", statusLabel: "Wired · testnet" },
-  { name: "Robinhood Chain", logo: "robinhood", role: "Same EVM flow once a test stablecoin ships", status: "next", statusLabel: "Building" },
-  { name: "Zcash", logo: "zcash", role: "Shielded sends, payment id in the encrypted memo", status: "next", statusLabel: "Building" },
-];
+const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, building: 3 };
+
+/** One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building. */
+export function settlesOn(statuses: ChainStatus[]): ChainStripItem[] {
+  return [...statuses]
+    .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
+    .map((s) => ({ ...CHAIN_COPY[s.chain], status: s.state === "live" ? "live" : "next", statusLabel: s.label }));
+}
+
+/**
+ * The colophon's chain line: where payments have settled, what is switched on without a payment yet, what
+ * is wired but off and what is being built. Only chains with a settled payment are said to settle.
+ */
+export function chainsSentence(statuses: ChainStatus[], network: Network): string {
+  const named = (state: ChainState, name: (s: ChainStatus) => string) => statuses.filter((s) => s.state === state).map(name);
+  const live = named("live", (s) => s.network);
+  const ready = named("ready", (s) => s.network);
+  const wired = named("wired", (s) => chainLabel(s.chain));
+  const building = named("building", (s) => chainLabel(s.chain));
+  const verb = (n: string[]) => (n.length === 1 ? "is" : "are");
+  const money = network === "testnet" ? "test stablecoins" : "stablecoins";
+  return [
+    live.length ? `Payments have settled in ${money} on ${listWords(live)}.` : "",
+    ready.length ? `${listWords(ready)} ${verb(ready)} switched on, with no payment settled there yet.` : "",
+    live.length || ready.length ? "" : "No chain is switched on right now.",
+    wired.length ? `${listWords(wired)} ${verb(wired)} wired but switched off.` : "",
+    building.length ? `${listWords(building)} ${verb(building)} still being built.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export type LimitSettings = {
+  perPaymentUsd: string;
+  perDayUsd: string;
+  passkeyAboveUsd: string;
+  signupDripUsd: string;
+  escrowDays: number;
+};
+
+/** "$50" from "50", the way the operator's own texts write it. */
+const usd = (v: string) => formatUsd(usdToBaseUnits(v));
+
+/** The landing page's limits, from the same settings the operator enforces. The test drop only exists on testnet. */
+export function limitItems(l: LimitSettings, network: Network): Limit[] {
+  const drip = network === "testnet" && usdToBaseUnits(l.signupDripUsd) > 0n;
+  return [
+    { value: usd(l.perPaymentUsd), label: "most in one payment" },
+    { value: usd(l.perDayUsd), label: "most you can send in a day" },
+    { value: `Over ${usd(l.passkeyAboveUsd)}`, label: "your passkey approves it, once you add one" },
+    ...(drip ? [{ value: usd(l.signupDripUsd), label: "test USDC in your wallet when you sign up" }] : []),
+    { value: `${l.escrowDays} days`, label: "for someone new to claim your payment; after that, text “reclaim”" },
+  ];
+}
 
 export const runsOn: ChainStripItem[] = [
   { name: "Cloudflare", logo: "cloudflare", role: "Workers + D1 run the operator", status: "live", statusLabel: "Live" },

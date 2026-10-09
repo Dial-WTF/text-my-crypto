@@ -7,11 +7,21 @@ import { Notice } from "@/ui/patterns/Notice/Notice";
 import { PasskeySetup } from "@/ui/patterns/PasskeySetup/PasskeySetup";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { Receipt, ReceiptLine } from "@/ui/primitives/Receipt/Receipt";
+import { Colophon } from "../../colophon";
+import { pageMeta } from "../../seo";
 import { beginPasskeySetup, finishPasskeySetup } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Add a passkey", robots: { index: false } };
+export async function generateMetadata({ params }: PageProps<"/s/[token]">): Promise<Metadata> {
+  const { token } = await params;
+  return pageMeta({
+    path: `/s/${encodeURIComponent(token)}`,
+    title: "Add a passkey",
+    description: "A one-time link to add a passkey to your Dial account, so one tap approves payments.",
+    index: false,
+  });
+}
 
 export default async function PasskeyPage({ params }: PageProps<"/s/[token]">) {
   const { token } = await params;
@@ -21,7 +31,7 @@ export default async function PasskeyPage({ params }: PageProps<"/s/[token]">) {
   const ready = user && isClaimed(user) && user.handle;
 
   return (
-    <SiteShell operatorNumber={publicEnv().DIAL_OPERATOR_NUMBER}>
+    <SiteShell operatorNumber={publicEnv().DIAL_OPERATOR_NUMBER} colophon={<Colophon />}>
       <Desk
         heading="Add a passkey"
         lede="One tap with your face or fingerprint approves payments. Your texts keep working for small ones."

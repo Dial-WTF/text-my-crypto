@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { ensureWallet } from "@/lib/bot/accounts";
 import { handleInbound } from "@/lib/bot/handle-inbound";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
@@ -47,10 +48,10 @@ beforeEach(async () => {
 describe("signup over SMS", () => {
   it("asks for a name, then creates the account, wallet and test drip", async () => {
     expect(await say(JEREMY, "hi")).toBe(
-      "hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?",
+      "hi, I'm the Dial operator by Dial.Work. I can help you text your crypto. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms\nWhat name should people use to pay you?",
     );
     expect(await say(JEREMY, "Jeremy")).toBe(
-      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It\'s play money, not real dollars. Text 411 and a name to find anyone.',
+      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It\'s play money, not real dollars. Text 411 and a name to find anyone. Text HELP anytime.',
     );
     const u = await findUserByPhone(db, JEREMY);
     expect(u?.handle).toBe("jeremy");
@@ -174,9 +175,10 @@ describe("send to someone not on Dial (escrow)", () => {
     expect(sol.settled.at(-1)).toMatchObject({ to: intent?.recipientAddress, amount: 5_000_000n });
     expect(sms.last(ALEX)).toBe('Sent $5 to +•••••••0099. They have 7 days to claim it. If they don\'t, text "reclaim" to get it back.');
     expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\. Reply to this text to claim it\. See it: https:\/\/tmc\.test\/a\/pi_/);
+    expect(sms.last(NEWBIE)).toMatch(/ Dial operator: msg & data rates may apply\. Reply STOP to opt out\.$/);
 
     expect(await say(NEWBIE, "hey")).toBe(
-      "hi, I'm the Dial operator. alex sent you $5 USDC and it's waiting for you. What name should people use to pay you?",
+      "hi, I'm the Dial operator by Dial.Work. alex sent you $5 USDC and it's waiting for you. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms\nWhat name should people use to pay you?",
     );
     await say(NEWBIE, "riley");
     const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
@@ -519,6 +521,72 @@ describe("withdraw", () => {
     expect(await say(ALEX, "withdraw $1 to 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb on tempo")).toBe(
       "Tempo isn't switched on yet. Try Solana.",
     );
+  });
+
+  describe("a 0x address on a Solana account", () => {
+    const EVM_OUT = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb";
+    // Like the real adapters: Solana takes base58 only, the EVM-style chains 0x only.
+    const solanaOnly = (a: FakeAdapter): FakeAdapter => Object.assign(a, { isValidAddress: (x: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x) });
+    const evm = (chain: "ethereum" | "robinhood" | "tempo"): FakeAdapter =>
+      Object.assign(fakeAdapter({ chain, defaultBalance: 100_000_000n }), { isValidAddress: (x: string) => /^0x[0-9a-fA-F]{40}$/.test(x) });
+
+    it("says it isn't a Solana address when no EVM-style chain is on", async () => {
+      deps = { ...deps, adapters: { solana: solanaOnly(sol) } };
+      expect(await say(ALEX, `withdraw all to ${EVM_OUT}`)).toBe("That doesn't look like a Solana address. Check it and try again.");
+    });
+
+    it("uses the only EVM-style chain that's on", async () => {
+      deps = { ...deps, adapters: { solana: solanaOnly(sol), ethereum: evm("ethereum") } };
+      expect(await say(ALEX, `withdraw $5 to ${EVM_OUT}`)).toMatch(/^Withdraw \$5 USDC to 0x74…bEbb on Ethereum\? Reply \d{6} to confirm/);
+    });
+
+    it("asks which chain when several fit, and takes the answer", async () => {
+      deps = { ...deps, adapters: { solana: solanaOnly(sol), tempo: evm("tempo"), ethereum: evm("ethereum"), robinhood: evm("robinhood") } };
+      expect(await say(ALEX, `withdraw $5 to ${EVM_OUT}`)).toBe("Which chain: ethereum, robinhood, tempo?");
+      expect(await say(ALEX, "robinhood")).toMatch(/^Withdraw \$5 USDC to 0x74…bEbb on Robinhood Chain\? Reply \d{6} to confirm/);
+      // The question is used up: the chain name alone is now just chat.
+      expect(await say(ALEX, "robinhood")).not.toMatch(/^Withdraw/);
+    });
+  });
+
+  it("looks at every chain before saying there's nothing to withdraw", async () => {
+    const tempo = fakeAdapter({ chain: "tempo" });
+    deps = { ...deps, adapters: { solana: sol, tempo } };
+    const alex = (await findUserByPhone(db, ALEX))!;
+    sol.balances.set((await getWallet(db, alex.id, "solana"))!.address, 0n);
+    expect(await say(ALEX, `withdraw all to ${OUT}`)).toBe("Your balance is $0. Nothing to withdraw.");
+
+    tempo.balances.set((await ensureWallet(deps, alex.id, "tempo", tempo)).address, 5_000_000n);
+    expect(await say(ALEX, `withdraw all to ${OUT}`)).toBe(
+      'Your Solana balance is $0. You have $5 on Tempo. To move it, text "withdraw all to <address> on tempo".',
+    );
+  });
+});
+
+describe("not enough money", () => {
+  beforeEach(async () => {
+    await signUp(ALEX, "alex");
+    await signUp(JEREMY, "jeremy");
+    sol.balances.set((await getWallet(db, (await findUserByPhone(db, JEREMY))!.id, "solana"))!.address, 2_000_000n);
+  });
+
+  it("points to their pay page and, on a Circle testnet, the faucet", async () => {
+    expect(await say(JEREMY, "send @alex $5")).toBe(
+      "You have $2 in test USDC, not enough for that one. Add more: https://tmc.test/@jeremy Free test USDC: faucet.circle.com",
+    );
+  });
+
+  it("leaves the Circle faucet out where it has no test USDC", async () => {
+    const tempo = fakeAdapter({ chain: "tempo", defaultBalance: 0n });
+    deps = { ...deps, adapters: { solana: sol, tempo }, dripAmount: 0n };
+    expect(await say(JEREMY, "send @alex $5 on tempo")).toBe(
+      "You have $0 in test USDC, not enough for that one. Add more: https://tmc.test/@jeremy",
+    );
+  });
+
+  it("on mainnet, just the pay page", async () => {
+    deps = { ...deps, network: "mainnet" };
+    expect(await say(JEREMY, "send @alex $5")).toBe("You have $2 USDC, not enough for that one. Add more: https://tmc.test/@jeremy");
   });
 });
 

@@ -55,7 +55,7 @@ export const contacts = sqliteTable(
 
 export const conversations = sqliteTable("conversations", {
   phone: text("phone").primaryKey(),
-  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice", "awaiting_duplicate"] }).notNull(),
+  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice", "awaiting_duplicate", "awaiting_chain"] }).notNull(),
   payload: text("payload").notNull().default("{}"),
   expiresAt: ts("expires_at").notNull(),
 });

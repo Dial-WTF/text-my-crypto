@@ -1,4 +1,4 @@
-import { chainLabel } from "@/lib/chains";
+import { type Chain, chainLabel } from "@/lib/chains";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { saveContact } from "@/lib/contacts";
 import {
@@ -44,7 +44,7 @@ import { endSessionsForUser } from "@/lib/web/sessions";
 import { walletLinkReply } from "./web";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
-import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
+import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { latestRecent, needsMention, statusReply } from "./status";
 import { text } from "./text";
@@ -88,7 +88,7 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   return out;
 }
 
-const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "command"]);
+const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "useChain", "command"]);
 
 async function loadSession(
   deps: BotDeps,
@@ -118,11 +118,14 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
   switch (action.do) {
     case "silence":
       return;
-    case "optOut":
+    case "optOut": {
+      // CANCEL is a carrier opt-out word, but it may also mean "cancel my payment": do both, and say so.
+      const cancelled = action.cancelPending && ctx.user ? await cancelUnapproved(deps.db, ctx.user.id, deps.now()) : 0;
       await optOut(deps.db, phone, deps.now());
       // Opting out also signs them out of the wallet on the web: STOP means stop everything.
       if (ctx.user) await endSessionsForUser(deps.db, ctx.user.id, deps.now());
-      return reply(replies.optedOut(), true);
+      return reply(replies.optedOut(cancelled > 0), true);
+    }
     case "optIn":
       await optIn(deps.db, phone);
       await reply(replies.optedIn());
@@ -130,7 +133,7 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       if (ctx.user && isClaimed(ctx.user)) await offerWaiting(deps, ctx.user);
       return;
     case "help":
-      return reply(replies.help());
+      return helpReplies(deps, reply);
     case "welcome":
       await setConversation(deps.db, phone, { state: "awaiting_name", payload: {} }, deps.now());
       return reply(await welcome(deps, ctx.user));
@@ -147,7 +150,7 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
   }
 
   const user = ctx.user;
-  if (!user) return reply(replies.welcome());
+  if (!user) return reply(replies.welcome(deps.appUrl));
 
   switch (action.do) {
     case "approve":
@@ -165,9 +168,24 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
     case "pick":
     case "useNumber":
       return reply(await answerPrompt(deps, user, ctx.convo, action));
+    case "useChain":
+      return reply(await answerChain(deps, user, ctx.convo, action.chain));
     case "command":
       return runCommand(deps, user, action.text, reply);
   }
+}
+
+/** HELP: who this is and where to get help, then the commands. */
+async function helpReplies(deps: BotDeps, reply: (b: string) => Promise<void>): Promise<void> {
+  await reply(replies.help(deps.appUrl));
+  await reply(replies.commands());
+}
+
+/** "ethereum" after the operator asked which chain a withdrawal goes out on. */
+async function answerChain(deps: BotDeps, user: User, convo: Conversation | null, chain: Chain): Promise<string> {
+  if (convo?.state !== "awaiting_chain") return replies.chatFallback();
+  const parsed = withdrawCommandSchema.safeParse(JSON.parse(convo.payload.command));
+  return parsed.success ? prepareWithdraw(deps, user, { ...parsed.data, chain }) : replies.chatFallback();
 }
 
 /** Replies to "1", a phone number, or NEW after the operator asked a question. */
@@ -182,7 +200,7 @@ async function answerPrompt(
   if (!parsed.success) return replies.chatFallback();
   if (action.do === "confirmNew") return prepareMoney(deps, user, parsed.data, { allowDuplicate: true });
   if (action.do === "useNumber") {
-    if (convo.state !== "awaiting_duplicate") await saveContact(deps.db, user.id, convo.payload.name, action.phone);
+    if (convo.state === "awaiting_number" || convo.state === "awaiting_choice") await saveContact(deps.db, user.id, convo.payload.name, action.phone);
     return prepareMoney(deps, user, { ...parsed.data, counterparty: action.phone });
   }
   const handle = convo.state === "awaiting_choice" ? convo.payload.handles[action.index] : undefined;
@@ -194,7 +212,7 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
   const cmd = turn.command;
   switch (cmd.kind) {
     case "help":
-      return reply(replies.help());
+      return helpReplies(deps, reply);
     case "chat":
       return reply(await chatReply(deps, user, body, turn.reply));
     case "balance":
@@ -252,9 +270,9 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
     const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
     const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender));
+    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender), deps.appUrl);
   }
-  return replies.welcome();
+  return replies.welcome(deps.appUrl);
 }
 
 /** A 6-digit reply: approve the payment it belongs to, release an escrow, or explain why not. */

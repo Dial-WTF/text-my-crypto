@@ -34,6 +34,7 @@ const ARGS: Record<string, string> = {
   list_payments: "limit?",
   get_pay_link: "handle?, amountUsd?, note?",
   get_wallet: "none",
+  list_chain_features: "none",
 };
 
 export default function AgentsPage() {

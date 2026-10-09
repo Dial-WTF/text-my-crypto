@@ -4,11 +4,29 @@ const approveWith = (code: string | null, link: string, verb = "confirm") =>
 const plural = (n: number, word: string) =>
   `${n} ${n === 1 ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`}`;
 
+/** The program's name, as carriers expect it in the first text and in HELP. */
+const PROGRAM = "Dial operator by Dial.Work";
+/** Two GSM-7 segments: 2 x 153 characters. */
+export const TWO_SEGMENTS = 306;
+/** Carrier (A2P 10DLC) first-contact disclosure, after the program name. */
+const disclosure = (appUrl: string) =>
+  `Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: ${appUrl}/terms`;
+const ASK_NAME = "What name should people use to pay you?";
+/**
+ * The first text anyone gets: program name, disclosure, then the question. Past two segments, the
+ * disclosure leads on a line of its own and the rest shrinks to `short` plus the question.
+ */
+const firstContact = (appUrl: string, intro: string, short: string) => {
+  const full = `hi, I'm the ${PROGRAM}. ${intro} ${disclosure(appUrl)}\n${ASK_NAME}`;
+  return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
+};
+/** Ends every text to someone who never texted the operator. */
+const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
+
 export const replies = {
-  welcome: () =>
-    `hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?`,
-  welcomeWithMoney: (amount: string, from: string) =>
-    `hi, I'm the Dial operator. ${from} sent you ${amount} USDC and it's waiting for you. What name should people use to pay you?`,
+  welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
+  welcomeWithMoney: (amount: string, from: string, appUrl: string) =>
+    firstContact(appUrl, `${from} sent you ${amount} USDC and it's waiting for you.`, `${from} sent you ${amount} USDC.`),
   badName: () => `What should I call you? Any name works, like Alex or J. P. Meyer.`,
   nameFirst: () => `First things first: what name should people use to pay you?`,
   joined: (name: string, handle: string, drip: string | null) =>
@@ -16,7 +34,7 @@ export const replies = {
     (drip
       ? ` Dial is on testnet for now, so I put ${drip} of test USDC in your wallet to try it. It's play money, not real dollars.`
       : ` Dial is on testnet for now: the USDC here is play money.`) +
-    ` Text 411 and a name to find anyone.`,
+    ` Text 411 and a name to find anyone. Text HELP anytime.`,
   renamed: (name: string, handle: string) => `Done. You're ${name} now, still @${handle}.`,
   whoami: (name: string, handle: string) => `You're ${name}, @${handle}. People can text me "send @${handle} $5".`,
   directory: (query: string, entries: string[]) =>
@@ -26,10 +44,15 @@ export const replies = {
   chooseRecipient: (name: string, options: string[]) =>
     `I found ${options.length} people for "${name}": ${options.map((o, i) => `${i + 1}) ${o}`).join("  ")}. Reply ${options.map((_, i) => i + 1).join(" or ")}, or their number.`,
   claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${amount} USDC. Reply ${code} to claim it.`,
-  help: () =>
-    `Dial operator by Dial.Work. Try "send @jeremy $10", "request $25 from adam", "411 jeremy", "balance" or "call me <name>". Reply STOP to stop texts. Testnet only.`,
-  optedOut: () =>
-    `You're unsubscribed from the Dial operator. No more texts. Your money stays in your wallet: reply START anytime to get back to it.`,
+  help: (appUrl: string) =>
+    `${PROGRAM}: send and get paid in crypto by text. Help: ${appUrl}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
+  /** Sent right after `help`. */
+  commands: () =>
+    `Commands: send @name $5, request $5 from @name, invoice @name $5, balance, receive, wallet, withdraw all to <address>, reclaim, 411 name, connect agent, status.`,
+  optedOut: (cancelledPayment = false) =>
+    `You're unsubscribed from the Dial operator. No more texts.` +
+    (cancelledPayment ? ` Your pending payment won't go through.` : "") +
+    ` Your money stays in your wallet: reply START anytime to get back to it.`,
   optedIn: () => `Welcome back. The Dial operator is texting you again. Reply HELP for commands, STOP to stop.`,
   codeHint: () => `To confirm, reply with the 6-digit code from my last text. It keeps anyone else from spending your money.`,
   cancelled: (n: number) => (n > 0 ? `OK, cancelled. Nothing was sent.` : `OK, forgot about it.`),
@@ -89,8 +112,11 @@ export const replies = {
   selfSend: () => `That's you. Pick someone else.`,
   overCap: (cap: string) => `Test mode caps payments at ${cap}. Try a smaller amount.`,
   overDaily: (cap: string) => `Text-only accounts can send ${cap} a day. Text "upgrade" to add a passkey for higher limits.`,
-  insufficient: (balance: string) =>
-    `You have ${balance} in test USDC, not enough for that one. Text "receive" for your address to top up from a testnet faucet.`,
+  /** `payUrl` is their pay page, which lists deposit options; `faucet` is set on testnet chains Circle's faucet covers. */
+  insufficient: (balance: string, payUrl: string, testnet: boolean, faucet: string | null) =>
+    testnet
+      ? `You have ${balance} in test USDC, not enough for that one. Add more: ${payUrl}${faucet ? ` Free test USDC: ${faucet}` : ""}`
+      : `You have ${balance} USDC, not enough for that one. Add more: ${payUrl}`,
   dripped: (amount: string) =>
     `Dial is on testnet for now, so I put ${amount} of test USDC in your wallet to try it. It's play money, not real dollars.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
@@ -106,6 +132,11 @@ export const replies = {
     code
       ? `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
       : `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
+  /** payRequest for someone not on Dial: no code yet. They get one once they sign up (offerWaiting). */
+  payRequestNewcomer: (from: string, amount: string, note: string | null) =>
+    `${from} is asking you for ${amount} USDC${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
+  payInvoiceNewcomer: (from: string, amount: string, note: string | null) =>
+    `${from} sent you an invoice for ${amount} USDC${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
   codeMismatch: (triesLeft?: number) =>
     triesLeft === undefined
       ? `That code didn't match anything waiting on you. Check my last text.`
@@ -124,7 +155,7 @@ export const replies = {
   received: (who: string, amount: string, from: string, chain: string, note: string | null, explorerUrl: string) =>
     `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Receipt: ${explorerUrl}`,
   receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
-    `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link}`,
+    `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
   claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
   claimFailed: (amount: string, from: string, code: string) =>
@@ -154,7 +185,13 @@ export const replies = {
   withdrew: (amount: string, address: string, explorerUrl: string) =>
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
-  nothingToWithdraw: () => `Your balance is $0. Nothing to withdraw.`,
+  /** `chains` are words people can type back, like "ethereum". */
+  whichChain: (chains: string[]) => `Which chain: ${chains.join(", ")}?`,
+  /** `elsewhere` lists balances on other chains ("$5 on Base"); `example` is a chain word to add. */
+  nothingToWithdraw: (chain: string, elsewhere: string[] = [], example?: string) =>
+    elsewhere.length > 0 && example
+      ? `Your ${chain} balance is $0. You have ${elsewhere.join(", ")}. To move it, text "withdraw all to <address> on ${example}".`
+      : `Your balance is $0. Nothing to withdraw.`,
   chainDown: (chain: string) => `The ${chain} network isn't answering right now. Nothing moved. Try again in a minute.`,
   failed: () => `That payment didn't go through. No funds moved.`,
   sendUnconfirmed: (amount: string, who: string) =>

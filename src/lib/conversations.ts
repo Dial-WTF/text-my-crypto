@@ -9,6 +9,8 @@ const conversationSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("awaiting_name"), payload: z.object({}).strict() }),
   z.object({ state: z.literal("awaiting_number"), payload: z.object({ name: z.string(), command: z.string() }) }),
   z.object({ state: z.literal("awaiting_duplicate"), payload: z.object({ command: z.string() }) }),
+  /** A withdrawal whose address fits several chains: which one? `command` is the WithdrawCommand. */
+  z.object({ state: z.literal("awaiting_chain"), payload: z.object({ command: z.string() }) }),
   z.object({
     state: z.literal("awaiting_choice"),
     payload: z.object({ name: z.string(), command: z.string(), handles: z.array(z.string()).min(2).max(5) }),
