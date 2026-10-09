@@ -1,39 +1,47 @@
+/* A full-width band in the brand's hero fill. Everything on it reads --color-on-hero, which the contrast
+ * test checks against every part of the fill; the body below stays on the reader's canvas. */
 .hero {
-  display: grid;
-  gap: var(--space-sm);
-  padding: var(--space-xl) var(--gutter) 0;
   min-width: 0;
+  padding: var(--space-xl) var(--gutter);
+  background-color: var(--color-canvas);
+  background-image: var(--fill-hero);
+  color: var(--color-on-hero);
+  /* A matrix glow belongs on the canvas, not on a solid fill. */
+  text-shadow: none;
 }
 
-/* The brand's colours as a fill, never under text. */
-.band {
-  width: min(100%, 18rem);
-  height: var(--rule-thick);
-  background: var(--fill-brand);
-}
-
-.heading {
-  display: flex;
+.inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "logo heading"
+    "logo meta"
+    "lede lede";
   align-items: center;
-  gap: var(--space-sm);
-  margin: 0;
-  font: 800 var(--text-3xl) / 0.95 var(--font-display);
-  text-transform: var(--display-case);
+  gap: var(--space-sm) var(--space-md);
   min-width: 0;
 }
 
 .logo {
+  grid-area: logo;
   display: inline-flex;
-  flex-shrink: 0;
-  color: var(--color-accent);
+  font-size: clamp(4rem, 13vw, 9rem);
+  line-height: 0;
 }
 
-.name {
+.heading {
+  grid-area: heading;
+  align-self: end;
+  margin: 0;
+  font: 800 var(--text-3xl) / 0.95 var(--font-display);
+  text-transform: var(--display-case);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .meta {
+  grid-area: meta;
+  align-self: start;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -41,12 +49,14 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--color-on-canvas-muted);
 }
 
+/* The badge is a chip of the canvas in the brand's accent, so it reads the same on any hero fill. */
 .status {
   padding: var(--space-3xs) var(--space-2xs);
-  border: var(--rule-thin) solid currentColor;
+  border: var(--rule-thin) solid var(--color-canvas);
+  background: var(--color-canvas);
+  color: var(--color-accent);
   font-size: var(--text-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -57,11 +67,27 @@
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-accent-ink);
-  text-shadow: none;
+}
+
+.network {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .lede {
+  grid-area: lede;
   max-width: var(--measure);
-  margin: 0;
+  margin: var(--space-2xs) 0 0;
   font-size: var(--text-lg);
+}
+
+@media (min-width: 48rem) {
+  .inner {
+    column-gap: var(--space-lg);
+  }
+
+  .lede {
+    grid-column: 2;
+    margin-top: 0;
+  }
 }
