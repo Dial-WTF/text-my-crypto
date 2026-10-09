@@ -6,6 +6,7 @@ import { type ActionPayment, actionPayments } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
+import type { PaymentActions } from "@/lib/settlement/capabilities";
 import { errorText } from "@/lib/settlement/types";
 
 /**
@@ -43,9 +44,10 @@ export async function recordActionPayments(deps: Pick<BotDeps, "db" | "sendSms" 
     .limit(BATCH);
   for (const row of pending) {
     // A chain switched off since: leave its rows for when it is back, or for the purge.
-    if (!deps.adapters[row.chain]?.actions) continue;
+    const actions = deps.adapters[row.chain]?.actions;
+    if (!actions) continue;
     try {
-      if (await recordOne(deps, row)) report.recorded++;
+      if (await recordOne(deps, actions, row)) report.recorded++;
       else if (row.expiresAt <= deps.now()) {
         await deps.db.delete(actionPayments).where(and(eq(actionPayments.id, row.id), isNull(actionPayments.signature)));
         report.expired++;
@@ -58,9 +60,7 @@ export async function recordActionPayments(deps: Pick<BotDeps, "db" | "sendSms" 
   return report;
 }
 
-async function recordOne(deps: Pick<BotDeps, "db" | "sendSms" | "now" | "adapters">, row: ActionPayment): Promise<boolean> {
-  const actions = deps.adapters[row.chain]?.actions;
-  if (!actions) return false;
+async function recordOne(deps: Pick<BotDeps, "db" | "sendSms" | "now">, actions: PaymentActions, row: ActionPayment): Promise<boolean> {
   for (const paid of await actions.findByReference(row.reference, row.recipientAddress)) {
     let claimed: ActionPayment[];
     try {
