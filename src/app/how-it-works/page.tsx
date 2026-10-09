@@ -151,7 +151,8 @@ export default function HowItWorksPage() {
               Dial yet
             </li>
             <li>
-              open your dashboard on the web: <code>wallet</code> (you get a one-time link and a code)
+              open your dashboard on the web: <code>wallet</code> (you get your wallet link, which never changes, and a
+              code that opens it once)
             </li>
             <li>
               share your pay link so people can pay you: <code>receive</code>

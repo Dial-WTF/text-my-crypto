@@ -69,3 +69,13 @@ describe("first-contact disclosures", () => {
     expect(replies.joined("Riley", "riley", null)).toMatch(/ Text HELP anytime\.$/);
   });
 });
+
+describe("the wallet text", () => {
+  it("carries the permanent link and the code, in one GSM-7 segment even for a 32-character handle", () => {
+    const link = `${APP}/@${"a".repeat(32)}/wallet`;
+    const body = replies.walletLink(link, "123456");
+    expect(body).toBe(`Your wallet: ${link} Code: 123456. It works once, for 15 minutes.`);
+    expect(body).toMatch(GSM);
+    expect(body.length).toBeLessThanOrEqual(160);
+  });
+});

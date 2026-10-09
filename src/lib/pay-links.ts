@@ -54,6 +54,11 @@ export function payByTextBody(handle: string, amountUsd?: string, note?: string)
   return `send @${handle} $${amountUsd}${note ? ` for ${note}` : ""}`;
 }
 
+/** The handle's permanent wallet sign-in page. It opens with a code the operator texts after WALLET. */
+export function walletPageUrl(appUrl: string, handle: string): string {
+  return `${appUrl}/@${handle}/wallet`;
+}
+
 export function smsUri(number: string, body: string): string {
   return `sms:${number}?&body=${enc(body)}`;
 }

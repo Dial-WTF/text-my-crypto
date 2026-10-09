@@ -10,6 +10,7 @@ import { EscrowExpiredError, type EscrowLookup, EscrowUnconfirmedError } from "@
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
 import { passkeys } from "@/lib/db/schema";
+import { redeemWalletCode } from "@/lib/web/sessions";
 import { createTestDb } from "../helpers/db";
 import { type FakeAdapter, fakeAdapter, fakeEscrow, smsSink, testDeps } from "../helpers/fakes";
 
@@ -505,6 +506,21 @@ describe("directory", () => {
   });
 });
 
+describe("wallet", () => {
+  it("texts the permanent wallet link and a code; a newer WALLET closes the older code", async () => {
+    await signUp(ALEX, "Alex");
+    const first = await say(ALEX, "wallet");
+    expect(first).toMatch(/^Your wallet: https:\/\/tmc\.test\/@alex\/wallet Code: \d{6}\. It works once, for 15 minutes\.$/);
+    clock = new Date(clock.getTime() + 60_000);
+    const second = await say(ALEX, "WALLET");
+    const alex = (await findUserByPhone(db, ALEX))!;
+    if (codeIn(first) !== codeIn(second)) {
+      expect(await redeemWalletCode(db, alex.id, codeIn(first), clock)).toEqual({ ok: false, reason: "bad_code" });
+    }
+    expect(await redeemWalletCode(db, alex.id, codeIn(second), clock)).toEqual({ ok: true, userId: alex.id });
+  });
+});
+
 describe("withdraw", () => {
   const OUT = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
   beforeEach(async () => {
@@ -628,11 +644,6 @@ describe("balance, receive, upgrade, chat", () => {
     expect(await say(ALEX, "receive")).toBe(
       'Your pay link: https://tmc.test/@alex Anyone can pay you there, or text me "send alex $5". To deposit, send USDC to Solana: solanaAddr1',
     );
-  });
-
-  it("texts a one-time wallet link and code", async () => {
-    const reply = await say(ALEX, "wallet");
-    expect(reply).toMatch(/^Your wallet: https:\/\/tmc\.test\/wallet\/in\/[\w-]{32} Enter \d{6} there to open it\./);
   });
 
   it("offers a passkey upgrade link", async () => {
