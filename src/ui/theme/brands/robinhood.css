@@ -1,0 +1,17 @@
+/* Brand · Robinhood Chain: Robinhood's neon green.
+ * Accents and fills only; canvas and text stay with the reader's mode. The first block is the dark
+ * variant (dark and matrix), the second the light one. tests/theme-brands.test.ts checks the contrast. */
+[data-brand="robinhood"] {
+  --color-accent: oklch(93% 0.21 125);
+  --color-accent-ink: oklch(18% 0.03 125);
+  --color-focus: oklch(93% 0.21 125);
+  --fill-brand: linear-gradient(oklch(93% 0.21 125), oklch(93% 0.21 125));
+}
+
+[data-theme="light"] [data-brand="robinhood"],
+[data-theme="light"][data-brand="robinhood"] {
+  --color-accent: oklch(46% 0.13 135);
+  --color-accent-ink: oklch(98% 0.01 135);
+  --color-focus: oklch(46% 0.13 135);
+  --fill-brand: linear-gradient(oklch(55% 0.17 135), oklch(55% 0.17 135));
+}

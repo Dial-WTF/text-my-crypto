@@ -142,6 +142,12 @@ const publicSchema = z.object({
     .regex(/^\+[1-9]\d{7,14}$/)
     .default(DEFAULT_OPERATOR_NUMBER),
   ...publicSettings,
+  /** The @handle whose pay link the judge pages show as a demo Blink. Someone who agreed to be shown; unset shows none. */
+  DEMO_HANDLE: z
+    .string()
+    .regex(/^@?[A-Za-z0-9_]{1,32}$/)
+    .transform((h) => h.replace(/^@/, "").toLowerCase())
+    .optional(),
 });
 
 /** The few settings public pages need: URL, phone number, network, chains and limits. Never includes secrets. */

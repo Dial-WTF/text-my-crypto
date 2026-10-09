@@ -1,0 +1,27 @@
+.body {
+  display: grid;
+  gap: var(--space-3xs);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--color-on-card-muted);
+}
+
+.state {
+  color: var(--color-on-card);
+}
+
+.empty {
+  margin: 0;
+  color: var(--color-on-card-muted);
+}
+
+.note {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-on-card-muted);
+}
