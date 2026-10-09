@@ -11,6 +11,7 @@ export type MoneyCommand = {
   chain?: Chain;
 };
 
+/** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
 
 export type Command =
@@ -62,7 +63,8 @@ const PATTERNS: Pattern[] = [
   p("invoice", String.raw`${INVOICE}\s+(${WHO})\s+${AMT}`, 1, 2, 3, 4),
 ];
 
-const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,})`;
+// An EVM, Solana or Zcash address, or an ENS name / Basename ("vitalik.eth", "jesse.base.eth").
+const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,}|(?:[a-z0-9_-]+\.)+eth)`;
 const WITHDRAW = new RegExp(
   String.raw`^(?:withdraw|cash out|send|move)\s+(all|everything|\$?\d{1,7}(?:\.\d+)?)\s*(?:usdc?|dollars?|bucks)?\s+to\s+${ADDRESS}${ON}${END}`,
   "i",

@@ -78,7 +78,14 @@ export const toolInputs = {
   create_invoice: z.object({ to: person, amountUsd, note, chain }),
   withdraw: z.object({
     amountUsd: z.union([z.literal("all"), amountUsd]).describe('Dollar amount, or "all" for the whole balance.'),
-    address: z.string().trim().min(20).max(128).describe("A wallet address the owner controls on that chain."),
+    address: z
+      .string()
+      .trim()
+      .min(3)
+      .max(128)
+      .describe(
+        "A wallet address the owner controls on that chain, or an ENS name (name.eth) or Basename (name.base.eth; name.basetest.eth on testnet). A name is resolved once, now; the payment keeps that address. A Basename picks Base and any other .eth name Ethereum, unless chain is set.",
+      ),
     chain,
   }),
   get_payment: z.object({ intentId }),
@@ -187,6 +194,7 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     amountUsd: usd(i.amount),
     asset: assetOf(i.chain, deps.network),
     chain: i.chain,
+    ...(i.kind === "withdraw" ? { toAddress: i.recipientAddress, toName: i.recipientName } : {}),
     message: payerIsOwner && !ownerTexted
       ? paused
       : payerIsOwner
@@ -433,7 +441,7 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   withdraw: {
     title: "Withdraw",
     description:
-      "Move the owner's USDC to an outside address on the same chain. Texts the owner to approve, like send_payment.",
+      "Move the owner's USDC to an outside address, ENS name or Basename on the same chain. Texts the owner to approve, like send_payment. Returns toAddress, the address the payment will go to.",
   },
   get_payment: {
     title: "Get payment",

@@ -24,6 +24,7 @@ import {
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { open } from "@/lib/secretbox";
 import {
   EscrowClosedError,
@@ -111,7 +112,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
       );
       return { ok: false, reason: "failed", error };
     }
-    const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
+    const target = intent.kind === "withdraw" ? withdrawTarget(intent) : describe(recipient);
     if (!resume) {
       await notify(deps, sender.phone, replies.sending(money(intent.amount, intent.chain, deps.network), target, chainLabel(intent.chain)));
     }
@@ -156,8 +157,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
 
   await markSettled(deps.db, intent.id, result, deps.now());
   if (intent.kind === "withdraw") {
-    const short = `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}`;
-    await notify(deps, sender.phone, replies.withdrew(amount, short, result.explorerUrl));
+    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), result.explorerUrl));
     return { ok: true, status: "settled", ...result };
   }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));

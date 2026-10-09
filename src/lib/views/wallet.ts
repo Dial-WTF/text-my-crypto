@@ -72,7 +72,7 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
       id: i.id,
       kind: i.kind,
       direction,
-      other: i.kind === "withdraw" ? "an outside wallet" : await nameOf(otherId ?? ""),
+      other: i.kind === "withdraw" ? (i.recipientName ?? "an outside wallet") : await nameOf(otherId ?? ""),
       amount: i.amount,
       status: i.status,
       network: profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain,
