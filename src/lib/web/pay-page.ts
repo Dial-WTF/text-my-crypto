@@ -6,21 +6,9 @@ import { cleanAsk, type PayAsk, type PayProfile, payProfile } from "@/lib/views/
 
 type Query = { amount?: string | null; note?: string | null };
 
-/** "@Alex" or "alex" → "alex"; null when it can't be a handle (including undecodable input). */
-function handleFrom(raw: string): string | null {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    return null;
-  }
-  const handle = decoded.replace(/^@/, "").toLowerCase();
-  return /^[a-z0-9_]{1,32}$/.test(handle) ? handle : null;
-}
-
 /** The claimed user behind a handle. Cached per request: metadata, the page and the card all ask. */
 const payee = cache(async (rawHandle: string): Promise<User | null> => {
-  const handle = handleFrom(rawHandle);
+  const handle = handleFromParam(rawHandle);
   if (!handle) return null;
   const user = await findUserByHandle(botDeps().db, handle);
   return user && isClaimed(user) && user.handle ? user : null;
@@ -33,6 +21,21 @@ export async function loadPayHeader(rawHandle: string, query: Query): Promise<Pa
   const user = await payee(rawHandle);
   if (!user?.handle) return null;
   return { handle: user.handle, name: user.name ?? `@${user.handle}`, ...cleanAsk(botDeps(), query) };
+}
+
+/**
+ * The handle in a /@handle route param, lowercased and without the @, or null if it can't be one.
+ * Next has already decoded the param once; a stray `%` left in it (from /@%25E0) is not a handle.
+ */
+export function handleFromParam(raw: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  const handle = decoded.replace(/^@/, "").toLowerCase();
+  return /^[a-z0-9_]{1,32}$/.test(handle) ? handle : null;
 }
 
 /** The pay profile behind /@handle and /@handle.json, or null for unknown or unclaimed handles. */

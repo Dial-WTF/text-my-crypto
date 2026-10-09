@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
 
 const schema = z.object({
   APP_URL: z.url(),
@@ -68,10 +69,22 @@ const schema = z.object({
 
 export type Env = z.infer<typeof schema>;
 
+/**
+ * Drops variables set to "" (or only spaces). Dashboards and dotenv files leave blanks behind, and a
+ * blank NETWORK or ALLOW_MAINNET has to mean "unset", not fail the enum or count as a value.
+ */
+function withoutBlanks(source: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value.trim() !== "") out[key] = value;
+  }
+  return out;
+}
+
 let cached: Env | undefined;
 
 export function env(): Env {
-  cached ??= schema.parse(process.env);
+  cached ??= schema.parse(withoutBlanks(process.env));
   return cached;
 }
 
@@ -79,13 +92,15 @@ export function resetEnvForTests(): void {
   cached = undefined;
 }
 
-const rpcOverrideKey = /^RPC_[A-Z0-9_]+$/;
-
-/** RPC_<NETWORK ID> secrets (e.g. RPC_SOLANA_DEVNET), each pointing one network at a keyed RPC. */
+/**
+ * RPC_<NETWORK ID> secrets (e.g. RPC_SOLANA_DEVNET), each pointing one network at a keyed RPC. Only
+ * names the registry knows are read, so an unrelated RPC_* variable is ignored; blanks count as unset.
+ */
 export function rpcOverrides(source: Record<string, string | undefined> = process.env): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (rpcOverrideKey.test(key) && value) out[key] = z.url().parse(value);
+  for (const key of RPC_OVERRIDE_KEYS) {
+    const value = source[key]?.trim();
+    if (value) out[key] = z.url().parse(value);
   }
   return out;
 }
@@ -100,5 +115,5 @@ const publicSchema = z.object({
 
 /** The few settings public pages need. Never includes secrets. */
 export function publicEnv(): z.infer<typeof publicSchema> {
-  return publicSchema.parse(process.env);
+  return publicSchema.parse(withoutBlanks(process.env));
 }

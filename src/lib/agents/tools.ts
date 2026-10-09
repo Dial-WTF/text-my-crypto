@@ -141,7 +141,7 @@ function approverOf(i: Intent, owner: User, payer: User | null): string {
 
 async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record<string, unknown>> {
   const now = deps.now();
-  const view = await buildPaymentView(deps.db, i, now);
+  const view = await buildPaymentView(deps.db, i, now, { network: deps.network, audience: "party" });
   const payer = i.senderId === owner.id ? owner : await getUserById(deps.db, i.senderId);
   const status = machineStatus(i, now);
   return {

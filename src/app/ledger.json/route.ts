@@ -1,20 +1,27 @@
 import { getDb } from "@/lib/db/client";
-import { env } from "@/lib/env";
-import { chainProofs, networkName } from "@/lib/ledger";
-import { publicStats, recentPayments } from "@/lib/stats";
+import { chainProofs, runningNetwork, safeNetworkName } from "@/lib/ledger";
+import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { quietly } from "../ledger-data";
 
 export const dynamic = "force-dynamic";
 
 const usd = (baseUnits: bigint) => (Number(baseUnits) / 1_000_000).toString();
 
-/** The public ledger for agents and judges: settled payments with their transactions, and the treasuries behind them. */
+/**
+ * The public ledger for agents and judges: settled payments with their transactions, and the
+ * treasuries behind them. Each part is loaded on its own; one that is down comes back empty (stats
+ * and network as null) instead of failing the whole response.
+ */
 export async function GET(): Promise<Response> {
-  const db = getDb();
-  const [stats, rows, proofs] = await Promise.all([publicStats(db), recentPayments(db, 100), chainProofs()]);
+  const [stats, rows, proofs] = await Promise.all([
+    quietly<PublicStats | null>("ledger stats unavailable", () => publicStats(getDb()), null),
+    quietly("ledger payments unavailable", () => recentPayments(getDb(), 100), []),
+    quietly("chain proofs unavailable", () => chainProofs(), []),
+  ]);
   return Response.json(
     {
-      network: env().NETWORK,
-      stats: { payments: stats.payments, movedUsd: usd(stats.movedUsd), people: stats.people },
+      network: runningNetwork(),
+      stats: stats && { payments: stats.payments, movedUsd: usd(stats.movedUsd), people: stats.people },
       treasuries: proofs.map(({ chain, network, treasury, treasuryUrl }) => ({ chain, network, address: treasury, explorer: treasuryUrl })),
       payments: rows.map((r) => ({
         id: r.id,
@@ -22,7 +29,7 @@ export async function GET(): Promise<Response> {
         to: r.to,
         amountUsd: usd(r.amount),
         chain: r.chain,
-        network: networkName(r.chain),
+        network: safeNetworkName(r.chain),
         status: r.status,
         tx: r.txHash,
         explorer: r.explorerUrl,

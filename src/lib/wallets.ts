@@ -4,16 +4,25 @@ import type { Db } from "@/lib/db/client";
 import { type Wallet, wallets } from "@/lib/db/schema";
 import { open, seal } from "@/lib/secretbox";
 
+/**
+ * Stores a new wallet. If the person already has one on this chain (two first visits at once), the
+ * existing one wins and this returns false; read it back with getWallet.
+ */
 export async function addWallet(
   db: Db,
   input: { userId: string; chain: Chain; address: string; secret: Uint8Array<ArrayBuffer>; keyB64: string },
-): Promise<void> {
-  await db.insert(wallets).values({
-    userId: input.userId,
-    chain: input.chain,
-    address: input.address,
-    secretEnc: await seal(input.secret, input.keyB64),
-  });
+): Promise<boolean> {
+  const rows = await db
+    .insert(wallets)
+    .values({
+      userId: input.userId,
+      chain: input.chain,
+      address: input.address,
+      secretEnc: await seal(input.secret, input.keyB64),
+    })
+    .onConflictDoNothing({ target: [wallets.userId, wallets.chain] })
+    .returning({ userId: wallets.userId });
+  return rows.length > 0;
 }
 
 export async function getWallet(db: Db, userId: string, chain: Chain): Promise<Wallet | null> {

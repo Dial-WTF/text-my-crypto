@@ -29,11 +29,20 @@ export type PayProfile = {
 
 export type PayAsk = { amountUsd?: string; note?: string };
 
-/** Cleans what a pay link asks for: a valid dollar amount within the cap, a short one-line note. */
+/**
+ * Cleans what a pay link asks for: a valid dollar amount within the cap, a short one-line note. The
+ * note loses control and format characters (bidi overrides, zero-width spaces), which could make a
+ * shared link read differently from what it asks for.
+ */
 export function cleanAsk(deps: Pick<BotDeps, "perTxCap">, raw: { amount?: string | null; note?: string | null }): PayAsk {
   const amount = raw.amount?.trim().replace(/^\$/, "");
   const okAmount = amount && isUsdAmount(amount) && usdToBaseUnits(amount) > 0n && usdToBaseUnits(amount) <= deps.perTxCap;
-  const note = raw.note?.replace(/\s+/g, " ").trim().slice(0, 60);
+  const note = raw.note
+    ?.replace(/\s+/g, " ")
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replace(/ {2,}/g, " ")
+    .trim()
+    .slice(0, 60);
   return { ...(okAmount ? { amountUsd: amount } : {}), ...(note ? { note } : {}) };
 }
 

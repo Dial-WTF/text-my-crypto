@@ -5,6 +5,7 @@
 // With --env staging it reads .env.staging.local and pushes to the staging Worker.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { parseDotenv } from "./dotenv.mjs";
 
 const envIndex = process.argv.indexOf("--env");
 const ENV = envIndex === -1 ? null : process.argv[envIndex + 1];
@@ -28,17 +29,7 @@ const SECRETS = new Set([
 ]);
 const isSecret = (key) => SECRETS.has(key) || /^RPC_[A-Z0-9_]+$/.test(key);
 
-function parse(text) {
-  const out = {};
-  for (const line of text.split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (!m) continue;
-    out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
-  }
-  return out;
-}
-
-const all = parse(readFileSync(FILE, "utf8"));
+const all = parseDotenv(readFileSync(FILE, "utf8"));
 const secrets = Object.fromEntries(Object.entries(all).filter(([k, v]) => isSecret(k) && v !== ""));
 const skipped = Object.keys(all).filter((k) => !(k in secrets));
 
