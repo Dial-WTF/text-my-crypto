@@ -10,9 +10,12 @@ import { spawnSync } from "node:child_process";
 const stagingOnly = process.argv.includes("--staging-only");
 
 const steps = [
+  // Fast gates first: type-aware lint, types, dead code, then every test with the money-path coverage floors
+  // (property tests and the migration check included). `pnpm rust:check` is separate: it's slower.
   ["lint", "pnpm", ["lint"]],
   ["typecheck", "pnpm", ["typecheck"]],
-  ["test", "pnpm", ["test"]],
+  ["deadcode", "pnpm", ["deadcode"]],
+  ["test + coverage floors", "pnpm", ["test:coverage"]],
   ["build", "pnpm", ["exec", "opennextjs-cloudflare", "build"]],
   ["scrub baked env", "node", ["scripts/scrub-build-env.mjs"]],
   ["staging: migrate D1", "pnpm", ["exec", "wrangler", "d1", "migrations", "apply", "text-my-crypto-staging", "--env", "staging", "--remote"]],
