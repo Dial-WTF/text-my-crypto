@@ -4,6 +4,8 @@ import type { Db } from "@/lib/db/client";
 import { type Intent, intents, users } from "@/lib/db/schema";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
+/** What the public ledger counts as a payment: withdrawals are people moving their own money out. */
+const PAYMENT_KINDS: Intent["kind"][] = ["send", "request", "invoice", "hypercore"];
 
 export type PublicStats = { payments: number; movedUsd: bigint; people: number };
 
@@ -11,7 +13,7 @@ export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
     .select({ payments: count(), moved: sql<number | null>`sum(${intents.amount})` })
     .from(intents)
-    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
+    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, PAYMENT_KINDS)));
   const [people] = await db.select({ n: count() }).from(users).where(isNotNull(users.claimedAt));
   return { payments: money?.payments ?? 0, movedUsd: BigInt(money?.moved ?? 0), people: people?.n ?? 0 };
 }
@@ -31,6 +33,7 @@ export async function movedByChain(db: Db): Promise<Partial<Record<Chain, number
 
 export type FeedItem = {
   id: string;
+  kind: Intent["kind"];
   from: string;
   to: string;
   amount: bigint;
@@ -45,7 +48,7 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
   const rows = await db
     .select()
     .from(intents)
-    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])))
+    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, PAYMENT_KINDS)))
     .orderBy(desc(intents.createdAt))
     .limit(limit);
   const ids = [...new Set(rows.flatMap((r) => [r.senderId, r.recipientId]))];
@@ -57,8 +60,9 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
   };
   return rows.map((r) => ({
     id: r.id,
+    kind: r.kind,
     from: who(r.senderId),
-    to: who(r.recipientId),
+    to: r.kind === "hypercore" ? `${who(r.recipientId)} on Hyperliquid` : who(r.recipientId),
     amount: r.amount,
     chain: r.chain,
     status: r.status,

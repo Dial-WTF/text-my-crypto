@@ -17,6 +17,7 @@
     "program:build": "node scripts/build-program.mjs",
     "contracts:deploy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deploy-test-usd.mjs",
     "chains:status": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/chains-status.mjs",
+    "hypercore": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/hypercore.mjs",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",

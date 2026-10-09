@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db/client";
-import { chainProofs, runningNetwork, safeNetworkName } from "@/lib/ledger";
+import { chainProofs, runningNetwork, safePaymentNetwork } from "@/lib/ledger";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import { quietly } from "../ledger-data";
 
@@ -31,8 +31,9 @@ export async function GET(): Promise<Response> {
         from: r.from,
         to: r.to,
         amountUsd: usd(r.amount),
+        kind: r.kind,
         chain: r.chain,
-        network: safeNetworkName(r.chain),
+        network: safePaymentNetwork(r),
         status: r.status,
         tx: r.txHash,
         explorer: r.explorerUrl,

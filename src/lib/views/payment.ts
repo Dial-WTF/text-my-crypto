@@ -2,7 +2,7 @@ import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
-import { networkName } from "@/lib/ledger";
+import { paymentNetwork } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import type { Network } from "@/lib/settlement/registry";
 
@@ -31,6 +31,7 @@ const KIND_LABEL: Record<Intent["kind"], string> = {
   request: "Request",
   invoice: "Invoice",
   withdraw: "Withdrawal",
+  hypercore: "Hyperliquid deposit",
 };
 
 function statusOf(i: Intent, now: Date): PaymentView["status"] {
@@ -86,7 +87,7 @@ export async function buildPaymentView(
     amount: i.amount,
     from: name(sender),
     to,
-    network: networkName(i.chain, opts.network),
+    network: paymentNetwork(i, opts.network),
     note: full ? i.note : null,
     status: statusOf(i, now),
     deadline: open

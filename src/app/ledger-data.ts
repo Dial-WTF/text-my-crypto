@@ -3,7 +3,7 @@ import { type ChainStatus, chainStatuses } from "@/lib/chain-status";
 import type { Chain } from "@/lib/chains";
 import { getDb } from "@/lib/db/client";
 import { env, publicEnv } from "@/lib/env";
-import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
+import { type ChainProof, chainProofs, safePaymentNetwork } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { errorText } from "@/lib/settlement/types";
 import { movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
@@ -44,7 +44,7 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     from: r.from,
     to: r.to,
     amount: r.amount,
-    network: safeNetworkName(r.chain),
+    network: safePaymentNetwork(r),
     // The public ledger lists money that moved, so there is no deadline to apply.
     state: stateLabel(r.status, null, now),
     txHash: r.txHash,

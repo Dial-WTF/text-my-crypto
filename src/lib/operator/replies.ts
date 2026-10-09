@@ -185,6 +185,24 @@ export const replies = {
   withdrew: (amount: string, address: string, explorerUrl: string) =>
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
+  /** Hyperliquid: HyperEVM wallet to a HyperCore spot balance. `who` null means the sender's own. */
+  confirmHyperCore: (amount: string, who: string | null, code: string | null, link: string) =>
+    who
+      ? `Send ${amount} USDC to ${who}'s Hyperliquid spot balance? ${approveWith(code, link)}`
+      : `Move ${amount} USDC from HyperEVM to your Hyperliquid spot balance? ${approveWith(code, link)}`,
+  movedToHyperCore: (amount: string, explorerUrl: string) => `Moved ${amount} to your Hyperliquid spot balance. Receipt: ${explorerUrl}`,
+  receivedOnHyperCore: (who: string, amount: string, from: string, note: string | null, explorerUrl: string) =>
+    `${who}, ${from} sent ${amount}${forNote(note)} to your Hyperliquid spot balance. Text "hl balance" to see it. Receipt: ${explorerUrl}`,
+  hyperCoreUnconfirmed: (amount: string) =>
+    `Your ${amount} to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
+  hyperCoreWho: (raw: string) => `Which "${raw}"? Use their Dial @handle, like "send @alex $5 to hyperliquid".`,
+  hyperCoreOff: () => `Hyperliquid transfers aren't switched on yet. Nothing moved.`,
+  hyperCoreNotOnDial: (who: string) =>
+    `${who} isn't on Dial yet, so there's no Hyperliquid balance to send to. Send it to them normally instead.`,
+  hlBalance: (amount: string, network: string) => `You have ${amount} USDC in your Hyperliquid spot balance (${network}).`,
+  hlNoAccount: () => `You don't have a Hyperliquid balance yet. Text "move $5 to hyperliquid" to start one.`,
+  price: (coin: string, price: string) => `${coin} is ${price}, the Hyperliquid mainnet mid. A quote, not advice.`,
+  priceUnknown: (coin: string) => `Hyperliquid has no ${coin} market. Try "price BTC" or "price HYPE".`,
   /** `chains` are words people can type back, like "ethereum". */
   whichChain: (chains: string[]) => `Which chain: ${chains.join(", ")}?`,
   /** `elsewhere` lists balances on other chains ("$5 on Base"); `example` is a chain word to add. */

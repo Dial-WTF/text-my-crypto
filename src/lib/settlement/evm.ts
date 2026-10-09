@@ -16,7 +16,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
 import type { EvmNetwork } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { SettlementAdapter, SettleResult } from "./types";
+import type { HyperCoreBridge, SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
 
 const ERC20_3009 = parseAbi([
@@ -27,16 +27,21 @@ const ERC20_3009 = parseAbi([
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
 ]);
 
-const AUTH_TYPES = {
-  TransferWithAuthorization: [
-    { name: "from", type: "address" },
-    { name: "to", type: "address" },
-    { name: "value", type: "uint256" },
-    { name: "validAfter", type: "uint256" },
-    { name: "validBefore", type: "uint256" },
-    { name: "nonce", type: "bytes32" },
-  ],
-} as const;
+const AUTH_FIELDS = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" },
+] as const;
+
+/** Transfer: anyone may submit it. Receive: only `to` may, which is how a contract like DialCoreDeposit pulls. */
+const AUTH_TYPES = { TransferWithAuthorization: AUTH_FIELDS, ReceiveWithAuthorization: AUTH_FIELDS } as const;
+
+const CORE_DEPOSIT = parseAbi([
+  "function deposit(address from, address recipient, uint256 amount, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+]);
 
 /** The EIP-3009 nonce ties every on-chain transfer to its payment: keccak256 of the intent id. */
 export function authorizationNonce(memo: string): Hex {
@@ -54,13 +59,16 @@ export async function signTransferAuthorization(args: {
   value: bigint;
   memo: string;
   validBefore: bigint;
+  /** Default "TransferWithAuthorization". */
+  primaryType?: keyof typeof AUTH_TYPES;
 }): Promise<{ from: Address; nonce: Hex; signature: Hex }> {
   const account = privateKeyToAccount(bytesToHex(args.secret));
   const nonce = authorizationNonce(args.memo);
+  const primaryType = args.primaryType ?? "TransferWithAuthorization";
   const signature = await account.signTypedData({
     domain: { name: args.domainName, version: args.domainVersion, chainId: args.chainId, verifyingContract: args.token },
     types: AUTH_TYPES,
-    primaryType: "TransferWithAuthorization",
+    primaryType,
     message: { from: account.address, to: args.to, value: args.value, validAfter: 0n, validBefore: args.validBefore, nonce },
   });
   return { from: account.address, nonce, signature };
@@ -71,7 +79,7 @@ export async function signTransferAuthorization(args: {
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "hyperCore"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
 ): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
@@ -99,7 +107,43 @@ export function createEvmAdapter(
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
 
+  /** The user signs, the treasury submits, DialCoreDeposit pulls the USDC and deposits it on HyperCore: one transaction. */
+  const hyperCoreBridge = (network: string, contract: Address): HyperCoreBridge => {
+    return {
+      network,
+      async deposit({ fromSecret, to, amount, memo }) {
+        const { name, version } = await tokenDomain();
+        const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const { from, nonce, signature } = await signTransferAuthorization({
+          secret: fromSecret,
+          token,
+          chainId: cfg.viem.id,
+          domainName: name,
+          domainVersion: version,
+          to: contract,
+          value: amount,
+          memo,
+          validBefore,
+          primaryType: "ReceiveWithAuthorization",
+        });
+        const { r, s, v, yParity } = parseSignature(signature);
+        const hash = await rl(() =>
+          wallet.writeContract({
+            address: contract,
+            abi: CORE_DEPOSIT,
+            functionName: "deposit",
+            args: [from, to as Address, amount, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
+          }),
+        );
+        // Sent: a missing receipt from here on doesn't mean nothing moved.
+        return confirm(hash, { unconfirmedIsTyped: true });
+      },
+    };
+  };
+  const core = cfg.hyperCore;
+
   return {
+    ...(core?.depositContract ? { hyperCore: hyperCoreBridge(core.network, core.depositContract) } : {}),
     chain: cfg.chain,
     tokenId: token,
     isValidAddress: (a) => isAddress(a, { strict: false }),

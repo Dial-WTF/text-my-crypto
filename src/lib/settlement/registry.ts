@@ -39,7 +39,20 @@ export type TempoNetwork = Common & {
   token: Address | null;
   faucet: boolean;
 };
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null };
+/**
+ * HyperCore, Hyperliquid's own chain, reached from HyperEVM. USDC goes in through Circle's CoreDepositWallet
+ * (the contract HyperCore's spot metadata links to USDC); `depositContract` is DialCoreDeposit
+ * (contracts/src/DialCoreDeposit.sol), which lets the treasury submit a user's signed deposit. Null until it is
+ * deployed: deposits stay off, balances and prices still read.
+ */
+export type HyperCoreNetwork = {
+  network: string;
+  infoUrl: string;
+  coreDepositWallet: Address;
+  depositContract: Address | null;
+  explorerAddress: (address: string) => string;
+};
+export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; hyperCore?: HyperCoreNetwork };
 export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
 
 /** Explorer links for an Etherscan-style explorer. */
@@ -176,6 +189,13 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
       ...scan("testnet.purrsec.com"),
+      hyperCore: {
+        network: "HyperCore testnet",
+        infoUrl: "https://api.hyperliquid-testnet.xyz/info",
+        coreDepositWallet: "0x0B80659a4076E9E93C7DbE0f10675A16a3e5C206",
+        depositContract: null, // pnpm hypercore deploy, then put the address here
+        explorerAddress: (a) => `https://app.hyperliquid-testnet.xyz/explorer/address/${a}`,
+      },
     },
     mainnet: {
       kind: "evm",
@@ -186,6 +206,13 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-mainnet",
       token: null, // confirm the USDC address before enabling
       ...scan("hyperevmscan.io"),
+      hyperCore: {
+        network: "HyperCore",
+        infoUrl: "https://api.hyperliquid.xyz/info",
+        coreDepositWallet: "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24",
+        depositContract: null,
+        explorerAddress: (a) => `https://app.hyperliquid.xyz/explorer/address/${a}`,
+      },
     },
   },
   robinhood: {

@@ -1,0 +1,287 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runTool } from "@/lib/agents/tools";
+import type { Agent } from "@/lib/agents/keys";
+import { handleInbound } from "@/lib/bot/handle-inbound";
+import type { BotDeps } from "@/lib/bot/types";
+import type { Db } from "@/lib/db/client";
+import { findUserByPhone } from "@/lib/identity";
+import { getIntent } from "@/lib/intents";
+import { publicStats, recentPayments } from "@/lib/stats";
+import type { HyperCoreBridge } from "@/lib/settlement/types";
+import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import type { InboundSms } from "@/lib/sms/inbound";
+import { buildPaymentView } from "@/lib/views/payment";
+import { getWallet } from "@/lib/wallets";
+import { createTestDb } from "../helpers/db";
+import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
+
+const ALEX = "+15550000010";
+const JEREMY = "+15550000011";
+const NEWBIE = "+15550000099";
+
+type Deposit = { to: string; amount: bigint; memo: string };
+type FakeHyperCore = HyperCoreBridge & { deposits: Deposit[]; fail: { next: Error | null } };
+
+function fakeHyperCore(): FakeHyperCore {
+  const deposits: Deposit[] = [];
+  const fail: FakeHyperCore["fail"] = { next: null };
+  return {
+    network: "HyperCore testnet",
+    deposits,
+    fail,
+    deposit: async ({ to, amount, memo }) => {
+      if (fail.next) {
+        const e = fail.next;
+        fail.next = null;
+        throw e;
+      }
+      deposits.push({ to, amount, memo });
+      return { txHash: `0xdep_${memo}`, explorerUrl: `https://testnet.purrsec.com/tx/0xdep_${memo}` };
+    },
+  };
+}
+
+/** Hyperliquid's info API: spot balances per address, and mainnet mids. */
+function stubInfoApi(spot: Record<string, string>, mids: Record<string, string> = {}) {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      calls.push({ url, body });
+      if (body.type === "allMids") return Response.json(mids);
+      const total = spot[String(body.user)];
+      return Response.json({ balances: total ? [{ coin: "USDC", token: 0, total, hold: "0.0", entryNtl: "0.0" }] : [] });
+    }),
+  );
+  return calls;
+}
+
+let db: Db;
+let deps: BotDeps;
+let sms: ReturnType<typeof smsSink>;
+let sol: FakeAdapter;
+let hl: FakeAdapter;
+let core: FakeHyperCore;
+let k = 0;
+
+const msg = (from: string, body: string): InboundSms => ({ to: "+18066071387", from, body, dedupeKey: `hl${++k}` });
+const say = async (from: string, body: string) => {
+  await handleInbound(deps, msg(from, body));
+  return sms.last(from);
+};
+const codeIn = (s: string) => /\b(\d{6})\b/.exec(s)?.[1] ?? "";
+const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
+
+async function signUp(phone: string, name: string) {
+  await say(phone, "hi");
+  return say(phone, name);
+}
+
+async function hyperevmAddress(phone: string): Promise<string> {
+  const u = await findUserByPhone(db, phone);
+  return (await getWallet(db, u!.id, "hyperevm"))!.address;
+}
+
+beforeEach(async () => {
+  db = await createTestDb();
+  sms = smsSink();
+  sol = fakeAdapter({ defaultBalance: 100_000_000n });
+  core = fakeHyperCore();
+  hl = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 100_000_000n }), { hyperCore: core });
+  deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: sol, hyperevm: hl } });
+  await signUp(ALEX, "alex");
+  await signUp(JEREMY, "jeremy");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("move $5 to hyperliquid", () => {
+  it("asks for the code, then deposits into the sender's own HyperCore balance", async () => {
+    const confirm = await say(ALEX, "move $5 to hyperliquid");
+    expect(confirm).toMatch(/^Move \$5 USDC from HyperEVM to your Hyperliquid spot balance\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
+    expect(core.deposits).toHaveLength(0);
+
+    await say(ALEX, codeIn(confirm));
+    const mine = await hyperevmAddress(ALEX);
+    const id = intentIdIn(confirm);
+    expect(core.deposits).toEqual([{ to: mine, amount: 5_000_000n, memo: id }]);
+    expect(hl.settled).toHaveLength(0);
+    expect(sms.to(ALEX).slice(-2)).toEqual([
+      "Sending $5 to your spot balance on Hyperliquid…",
+      `Moved $5 to your Hyperliquid spot balance. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`,
+    ]);
+    expect(await getIntent(db, id)).toMatchObject({ kind: "hypercore", status: "settled", chain: "hyperevm", recipientAddress: mine });
+  });
+
+  it("asking twice re-sends the same confirmation instead of a second deposit", async () => {
+    const first = await say(ALEX, "move $5 to hyperliquid");
+    const again = await say(ALEX, "move $5 to hyperliquid");
+    expect(intentIdIn(again)).toBe(intentIdIn(first));
+    await say(ALEX, codeIn(again));
+    expect(core.deposits).toHaveLength(1);
+  });
+
+  it("checks the HyperEVM balance first", async () => {
+    const short = Object.assign(fakeAdapter({ chain: "hyperevm", defaultBalance: 2_000_000n }), { hyperCore: core });
+    deps = { ...deps, adapters: { solana: sol, hyperevm: short } };
+    expect(await say(ALEX, "move $5 to hyperliquid")).toBe(
+      "You have $2 in test USDC, not enough for that one. Add more: https://tmc.test/@alex Free test USDC: faucet.circle.com",
+    );
+  });
+
+  it("says so when deposits are off, and moves nothing", async () => {
+    deps = { ...deps, adapters: { solana: sol, hyperevm: fakeAdapter({ chain: "hyperevm" }) } };
+    expect(await say(ALEX, "move $5 to hyperliquid")).toBe("Hyperliquid transfers aren't switched on yet. Nothing moved.");
+  });
+
+  it("doesn't call an unconfirmed deposit failed", async () => {
+    const confirm = await say(ALEX, "move $5 to hyperliquid");
+    core.fail.next = new TransferUnconfirmedError("hyperevm", "0xslow", new Error("timeout"));
+    await say(ALEX, codeIn(confirm));
+    expect(sms.last(ALEX)).toBe(
+      `Your $5 to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
+    );
+    expect((await getIntent(db, intentIdIn(confirm)))?.status).toBe("settling");
+  });
+
+  it("marks a deposit that reverted as failed", async () => {
+    const confirm = await say(ALEX, "move $5 to hyperliquid");
+    core.fail.next = new Error("hyperevm tx 0xbad reverted");
+    await say(ALEX, codeIn(confirm));
+    expect(sms.last(ALEX)).toBe("That payment didn't go through. No funds moved.");
+    expect((await getIntent(db, intentIdIn(confirm)))?.status).toBe("failed");
+  });
+});
+
+describe("send @jeremy $5 to hyperliquid", () => {
+  it("deposits into the recipient's HyperCore account, their Dial HyperEVM address, and tells them", async () => {
+    const confirm = await say(ALEX, "send @jeremy $5 to hyperliquid");
+    expect(confirm).toMatch(/^Send \$5 USDC to @jeremy's Hyperliquid spot balance\? Reply \d{6}/);
+    await say(ALEX, codeIn(confirm));
+    const id = intentIdIn(confirm);
+    expect(core.deposits).toEqual([{ to: await hyperevmAddress(JEREMY), amount: 5_000_000n, memo: id }]);
+    expect(sms.last(ALEX)).toBe(`Sent $5 to jeremy on Hyperliquid. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`);
+    expect(sms.last(JEREMY)).toBe(
+      `jeremy, alex sent $5 to your Hyperliquid spot balance. Text "hl balance" to see it. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`,
+    );
+  });
+
+  it("won't send to someone who isn't on Dial, and creates nothing", async () => {
+    expect(await say(ALEX, "send +1 555 000 0099 $5 to hyperliquid")).toBe(
+      "+•••••••0099 isn't on Dial yet, so there's no Hyperliquid balance to send to. Send it to them normally instead.",
+    );
+    expect(core.deposits).toHaveLength(0);
+    expect(sms.to(NEWBIE)).toHaveLength(0);
+  });
+
+  it("asks for an @handle when the name is unknown", async () => {
+    expect(await say(ALEX, "send sam $5 to hyperliquid")).toBe(
+      `Which "sam"? Use their Dial @handle, like "send @alex $5 to hyperliquid".`,
+    );
+  });
+
+  it("shows on the public ledger as a Hyperliquid payment with its receipt", async () => {
+    const confirm = await say(ALEX, "send @jeremy $5 to hyperliquid");
+    await say(ALEX, codeIn(confirm));
+    const id = intentIdIn(confirm);
+    const [row] = await recentPayments(db, 10);
+    expect(row).toMatchObject({
+      id,
+      kind: "hypercore",
+      from: "@alex",
+      to: "@jeremy on Hyperliquid",
+      explorerUrl: `https://testnet.purrsec.com/tx/0xdep_${id}`,
+    });
+    expect((await publicStats(db)).payments).toBe(1);
+    const view = await buildPaymentView(db, (await getIntent(db, id))!, deps.now(), { network: "testnet", audience: "public" });
+    expect(view).toMatchObject({ kindLabel: "Hyperliquid deposit", network: "HyperEVM testnet → HyperCore testnet" });
+  });
+});
+
+describe("hl balance and price", () => {
+  it("reads the HyperCore spot balance of the user's HyperEVM address", async () => {
+    await say(ALEX, "move $5 to hyperliquid");
+    const calls = stubInfoApi({ [await hyperevmAddress(ALEX)]: "5.00000000" });
+    expect(await say(ALEX, "hl balance")).toBe("You have $5 USDC in your Hyperliquid spot balance (HyperCore testnet).");
+    expect(calls[0]).toEqual({
+      url: "https://api.hyperliquid-testnet.xyz/info",
+      body: { type: "spotClearinghouseState", user: await hyperevmAddress(ALEX) },
+    });
+  });
+
+  it("says how to start when there's no HyperEVM wallet yet", async () => {
+    stubInfoApi({});
+    expect(await say(JEREMY, "hl balance")).toBe(`You don't have a Hyperliquid balance yet. Text "move $5 to hyperliquid" to start one.`);
+  });
+
+  it("quotes the Hyperliquid mainnet mid, labelled, and works with HyperEVM off", async () => {
+    deps = { ...deps, adapters: { solana: sol } };
+    const calls = stubInfoApi({}, { BTC: "82355.5", HYPE: "85.2835" });
+    expect(await say(ALEX, "price BTC")).toBe("BTC is $82,355.50, the Hyperliquid mainnet mid. A quote, not advice.");
+    expect(await say(ALEX, "price hype")).toBe("HYPE is $85.28, the Hyperliquid mainnet mid. A quote, not advice.");
+    expect(await say(ALEX, "price nope")).toBe(`Hyperliquid has no NOPE market. Try "price BTC" or "price HYPE".`);
+    expect(calls.every((c) => c.url === "https://api.hyperliquid.xyz/info")).toBe(true);
+  });
+
+  it("says Hyperliquid isn't answering when the info API is down", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+    expect(await say(ALEX, "price BTC")).toBe("The HyperEVM network isn't answering right now. Nothing moved. Try again in a minute.");
+  });
+});
+
+describe("MCP tools", () => {
+  async function agentFor(phone: string): Promise<Agent> {
+    const user = (await findUserByPhone(db, phone))!;
+    return {
+      user,
+      key: { id: "ak_test", userId: user.id, keyHash: "h", label: "claude", createdAt: deps.now(), lastUsedAt: null, revokedAt: null },
+    };
+  }
+
+  it("send_to_hyperliquid starts a deposit the owner approves by text, never handing the agent a code", async () => {
+    const agent = await agentFor(ALEX);
+    const r = await runTool(deps, agent, "send_to_hyperliquid", { amountUsd: "5", to: "@jeremy" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data).toMatchObject({ status: "awaiting_approval", kind: "hypercore", amountUsd: "5", chain: "hyperevm", approver: "you" });
+    expect(JSON.stringify(r.data)).not.toMatch(/\b\d{6}\b/);
+    expect(sms.last(ALEX)).toMatch(/^From your agent "claude": Send \$5 USDC to @jeremy's Hyperliquid spot balance\? Reply \d{6}/);
+
+    const again = await runTool(deps, agent, "send_to_hyperliquid", { amountUsd: "5", to: "@jeremy" });
+    expect(again).toMatchObject({ ok: false, error: { error: "duplicate" } });
+
+    await say(ALEX, codeIn(sms.to(ALEX).find((b) => b.startsWith("From your agent"))!));
+    expect(core.deposits).toHaveLength(1);
+    const got = await runTool(deps, agent, "get_payment", { intentId: String(r.data.intentId) });
+    expect(got).toMatchObject({ ok: true, data: { status: "settled", kind: "hypercore", network: "HyperEVM testnet → HyperCore testnet" } });
+  });
+
+  it("send_to_hyperliquid with no recipient is the owner's own balance", async () => {
+    const r = await runTool(deps, await agentFor(ALEX), "send_to_hyperliquid", { amountUsd: "2" });
+    expect(r).toMatchObject({ ok: true, data: { kind: "hypercore", approver: "you" } });
+    expect(sms.last(ALEX)).toMatch(/Move \$2 USDC from HyperEVM to your Hyperliquid spot balance\?/);
+  });
+
+  it("refuses people who aren't on Dial", async () => {
+    const r = await runTool(deps, await agentFor(ALEX), "send_to_hyperliquid", { amountUsd: "2", to: NEWBIE });
+    expect(r).toMatchObject({ ok: false, error: { error: "unknown_recipient" } });
+  });
+
+  it("get_hyperliquid_balance and get_price read Hyperliquid's info API", async () => {
+    await say(ALEX, "move $1 to hyperliquid");
+    const agent = await agentFor(ALEX);
+    stubInfoApi({ [await hyperevmAddress(ALEX)]: "1.5" }, { HYPE: "85.2835" });
+    expect(await runTool(deps, agent, "get_hyperliquid_balance", {})).toEqual({
+      ok: true,
+      data: { account: await hyperevmAddress(ALEX), network: "HyperCore testnet", amountUsd: "1.50", asset: "USDC", balance: "HyperCore spot" },
+    });
+    expect(await runTool(deps, agent, "get_price", { coin: "hype" })).toMatchObject({
+      ok: true,
+      data: { coin: "HYPE", mid: "85.2835", source: "Hyperliquid mainnet mid (info API allMids)" },
+    });
+    expect(await runTool(deps, agent, "get_price", { coin: "NOPE" })).toMatchObject({ ok: false, error: { error: "not_found" } });
+  });
+});

@@ -46,6 +46,7 @@ import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { hlBalanceReply, prepareHyperCore, priceReply } from "./hyperliquid";
 import { latestRecent, needsMention, statusReply } from "./status";
 import { text } from "./text";
 import type { BotDeps } from "./types";
@@ -248,6 +249,12 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await prepareMoney(deps, user, cmd));
     case "withdraw":
       return reply(await prepareWithdraw(deps, user, cmd));
+    case "hypercore":
+      return reply(await prepareHyperCore(deps, user, cmd));
+    case "hl_balance":
+      return reply(await hlBalanceReply(deps, user));
+    case "price":
+      return reply(await priceReply(cmd.coin));
   }
 }
 

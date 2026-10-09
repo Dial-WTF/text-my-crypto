@@ -13,9 +13,15 @@ export type MoneyCommand = {
 
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
 
+/** USDC from HyperEVM into a HyperCore spot balance: someone's, or with no counterparty, the sender's own. */
+export type HyperCoreCommand = { kind: "hypercore"; amountUsd: string; counterparty?: string };
+
 export type Command =
   | MoneyCommand
   | WithdrawCommand
+  | HyperCoreCommand
+  | { kind: "hl_balance" }
+  | { kind: "price"; coin: string }
   | { kind: "balance" }
   | { kind: "receive" }
   | { kind: "reclaim" }
@@ -68,6 +74,20 @@ const WITHDRAW = new RegExp(
   "i",
 );
 
+// "to hyperliquid" means HyperCore; "on hyperliquid" stays a HyperEVM send (the chain alias).
+const HL = String.raw`(?:hyperliquid|hypercore|hl)(?:\s+(?:spot|account|balance))?`;
+const HL_SELF = new RegExp(
+  String.raw`^(?:move|send|transfer|deposit|bridge|put)\s+${AMT}\s+(?:to|into|onto)\s+(?:my\s+)?${HL}${END}`,
+  "i",
+);
+const TO_HL = String.raw`(?:(?:to|into)\s+(?:their\s+)?${HL}|on\s+hypercore)`;
+const HL_SEND = [
+  new RegExp(String.raw`^${SEND}\s+(?:to\s+)?(${WHO})\s+${AMT}\s+${TO_HL}${END}`, "i"),
+  new RegExp(String.raw`^${SEND}\s+${AMT}\s+to\s+(${WHO})\s+${TO_HL}${END}`, "i"),
+];
+const HL_BALANCE = /^(?:(?:hl|hyperliquid|hypercore)\s+(?:balance|bal)|(?:balance|bal)\s+(?:on\s+)?(?:hl|hyperliquid|hypercore))\??$/i;
+const PRICE = /^(?:price|px|quote)\s+(?:of\s+|for\s+)?\$?([a-z][a-z0-9]{0,9})\??$|^\$?([a-z][a-z0-9]{0,9})\s+price\??$/i;
+
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
 const RECEIVE = /^(?:receive|my address|address|deposit|pay link|my pay link)\??$/i;
 const WALLET = /^(?:wallet|my wallet|open wallet|log ?in|sign ?in)\??$/i;
@@ -101,9 +121,28 @@ function build(pat: Pattern, m: RegExpExecArray): Command | null {
   return chain ? { ...cmd, chain } : { kind: "chat" };
 }
 
+/** "move $5 to hyperliquid", "send @alex $5 to hyperliquid". Checked before plain sends, which would read "hyperliquid" as a name. */
+function parseHyperCore(t: string): Command | null {
+  const self = HL_SELF.exec(t);
+  if (self?.[1]) return isUsdAmount(self[1]) ? { kind: "hypercore", amountUsd: self[1] } : { kind: "chat" };
+  for (const [i, re] of HL_SEND.entries()) {
+    const m = re.exec(t);
+    const [who, amount] = i === 0 ? [m?.[1], m?.[2]] : [m?.[2], m?.[1]];
+    if (!who || !amount) continue;
+    if (!isUsdAmount(amount)) return { kind: "chat" };
+    return { kind: "hypercore", amountUsd: amount, counterparty: normalizeCounterparty(who) };
+  }
+  return null;
+}
+
 export function parseCommand(text: string): Command {
   const t = text.trim().replace(/\s+/g, " ");
   if (BALANCE.test(t)) return { kind: "balance" };
+  if (HL_BALANCE.test(t)) return { kind: "hl_balance" };
+  const price = PRICE.exec(t);
+  if (price) return { kind: "price", coin: (price[1] ?? price[2] ?? "").toUpperCase() };
+  const hl = parseHyperCore(t);
+  if (hl) return hl;
   if (RECEIVE.test(t)) return { kind: "receive" };
   if (WALLET.test(t)) return { kind: "wallet" };
   if (HELP.test(t)) return { kind: "help" };

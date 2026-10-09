@@ -51,7 +51,7 @@ export const withdrawCommandSchema = z.object({
 });
 
 /** Testnets where Circle's faucet hands out test USDC. Tempo and Robinhood use other test tokens. */
-const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum"]);
+const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum", "hyperevm"]);
 const CIRCLE_FAUCET = "faucet.circle.com";
 
 /** Why a payment wasn't created. `message` is the plain-English reply the operator texts. */
@@ -137,7 +137,7 @@ async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAda
 }
 
 /** Not enough money: where to add more (their pay page lists deposit options) and, on testnet, a faucet. */
-function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
+export function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
   const testnet = deps.network === "testnet";
   const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
   const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
@@ -161,7 +161,7 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
   return { ok: true, chain, adapter, amount };
 }
 
-async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
+export async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
 }
@@ -394,6 +394,8 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
       return replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
+    case "hypercore":
+      return replies.confirmHyperCore(amount, intent.recipientId === intent.senderId ? null : other, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
       await text(

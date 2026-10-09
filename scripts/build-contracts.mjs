@@ -8,7 +8,7 @@ const forge = process.env.FORGE ?? `${homedir()}/.foundry/bin/forge`;
 const built = spawnSync(forge, ["build"], { cwd: "contracts", stdio: "inherit" });
 if (built.status !== 0) process.exit(built.status ?? 1);
 
-for (const name of ["DialTestUSD"]) {
+for (const name of ["DialTestUSD", "DialCoreDeposit"]) {
   const out = JSON.parse(readFileSync(`contracts/out/${name}.sol/${name}.json`, "utf8"));
   const artifact = { contractName: name, abi: out.abi, bytecode: out.bytecode.object };
   writeFileSync(`contracts/artifacts/${name}.json`, `${JSON.stringify(artifact, null, 2)}\n`);

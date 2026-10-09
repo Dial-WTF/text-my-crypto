@@ -27,8 +27,11 @@ import {
   type EscrowProgram,
   EscrowUnconfirmedError,
   errorText,
+  type HyperCoreBridge,
+  type SettlementAdapter,
   type SettleResult,
 } from "@/lib/settlement/types";
+import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
@@ -74,14 +77,29 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
       await notify(deps, sender.phone, replies.insufficientNow(formatUsd(balance)));
       return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
     }
-    const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
-    await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, chainLabel(intent.chain)));
+    const target =
+      intent.kind === "withdraw"
+        ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}`
+        : isHyperCoreMove(intent)
+          ? "your spot balance"
+          : describe(recipient);
+    await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, paymentChain(intent)));
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
-    result = intent.escrowProgram
-      ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
-      : await adapter.settle({ fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id });
+    const move = { fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id };
+    result =
+      intent.kind === "hypercore"
+        ? await hyperCoreBridge(adapter).deposit(move)
+        : intent.escrowProgram
+          ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
+          : await adapter.settle(move);
   } catch (e) {
     const error = errorText(e);
+    if (intent.kind === "hypercore" && e instanceof TransferUnconfirmedError) {
+      // Sent, but the receipt didn't come back: it may still land, so it is not called failed.
+      await markFundingUnconfirmed(deps.db, intent.id, error);
+      await notify(deps, sender.phone, replies.hyperCoreUnconfirmed(formatUsd(intent.amount)));
+      return { ok: false, reason: "unconfirmed", error };
+    }
     if (e instanceof EscrowUnconfirmedError) {
       // It may still land. Leave it settling; reconcileEscrows settles it from the chain.
       await markFundingUnconfirmed(deps.db, intent.id, error);
@@ -94,7 +112,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   }
 
   const amount = formatUsd(intent.amount);
-  const chain = chainLabel(intent.chain);
+  const chain = paymentChain(intent);
 
   if (intent.escrowSecretEnc || intent.escrowProgram) {
     await markEscrowed(deps.db, intent.id, result, escrowExpiresAt);
@@ -108,8 +126,18 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     await notify(deps, sender.phone, replies.withdrew(amount, short, result.explorerUrl));
     return { ok: true, status: "settled", ...result };
   }
+  if (isHyperCoreMove(intent)) {
+    await notify(deps, sender.phone, replies.movedToHyperCore(amount, result.explorerUrl));
+    return { ok: true, status: "settled", ...result };
+  }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
-  if (intent.kind === "send") {
+  if (intent.kind === "hypercore") {
+    await notify(
+      deps,
+      recipient.phone,
+      replies.receivedOnHyperCore(displayName(recipient), amount, displayName(sender), intent.note, result.explorerUrl),
+    );
+  } else if (intent.kind === "send") {
     await notify(
       deps,
       recipient.phone,
@@ -119,6 +147,21 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, result.explorerUrl));
   }
   return { ok: true, status: "settled", ...result };
+}
+
+/** A HyperCore deposit into the sender's own spot balance. */
+function isHyperCoreMove(intent: Intent): boolean {
+  return intent.kind === "hypercore" && intent.recipientId === intent.senderId;
+}
+
+/** The chain people hear about: "Hyperliquid" for HyperCore deposits, else the intent's chain. */
+function paymentChain(intent: Intent): string {
+  return intent.kind === "hypercore" ? "Hyperliquid" : chainLabel(intent.chain);
+}
+
+function hyperCoreBridge(adapter: SettlementAdapter): HyperCoreBridge {
+  if (!adapter.hyperCore) throw new Error(`HyperCore deposits are not available on ${adapter.chain}`);
+  return adapter.hyperCore;
 }
 
 /** The money is in escrow: the sender hears how long the recipient has, the recipient how to claim it. */
