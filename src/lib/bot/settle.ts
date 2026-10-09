@@ -20,6 +20,7 @@ import {
 } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { open } from "@/lib/secretbox";
 import {
   EscrowClosedError,
@@ -74,7 +75,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
       await notify(deps, sender.phone, replies.insufficientNow(formatUsd(balance)));
       return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
     }
-    const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
+    const target = intent.kind === "withdraw" ? withdrawTarget(intent) : describe(recipient);
     await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, chainLabel(intent.chain)));
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
     result = intent.escrowProgram
@@ -104,8 +105,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
 
   await markSettled(deps.db, intent.id, result, deps.now());
   if (intent.kind === "withdraw") {
-    const short = `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}`;
-    await notify(deps, sender.phone, replies.withdrew(amount, short, result.explorerUrl));
+    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), result.explorerUrl));
     return { ok: true, status: "settled", ...result };
   }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));

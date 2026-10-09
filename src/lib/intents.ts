@@ -19,6 +19,8 @@ export type NewIntent = {
   chain: Chain;
   token: string;
   recipientAddress: string;
+  /** The name recipientAddress was resolved from, when the person gave a name instead of an address. */
+  recipientName?: string | null;
   amount: bigint;
   note: string | null;
   escrowSecretEnc?: string | null;

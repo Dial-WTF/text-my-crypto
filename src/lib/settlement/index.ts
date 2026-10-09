@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 import { enabledChains } from "@/lib/chain-status";
 import type { Chain } from "@/lib/chains";
 import { type Env, env, rpcOverrides } from "@/lib/env";
+import { evmNameService } from "@/lib/evm-names";
 import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
 import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc, type SolanaNetwork } from "./registry";
@@ -50,9 +51,12 @@ function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | 
         explorerTx: entry.explorerTx,
         faucet: entry.faucet,
       });
-    case "evm":
+    case "evm": {
       if (!e.EVM_TREASURY_KEY) return null;
-      return createEvmAdapter({ ...entry, chain, rpcUrl: rpc.url, treasuryKey: e.EVM_TREASURY_KEY as Hex });
+      const adapter = createEvmAdapter({ ...entry, chain, rpcUrl: rpc.url, treasuryKey: e.EVM_TREASURY_KEY as Hex });
+      const names = evmNameService(chain, e.NETWORK, { viem: entry.viem, rpcUrl: rpc.url });
+      return names ? { ...adapter, names } : adapter;
+    }
   }
 }
 
