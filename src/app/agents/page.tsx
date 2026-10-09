@@ -36,6 +36,8 @@ const ARGS: Record<string, string> = {
   get_pay_link: "handle?, amountUsd?, note?",
   get_wallet: "none",
   list_chain_features: "none",
+  send_stock: "to, shares, symbol, note?",
+  get_stocks: "none",
   send_to_hyperliquid: "amountUsd, to?",
   get_hyperliquid_balance: "none",
   get_price: "coin",

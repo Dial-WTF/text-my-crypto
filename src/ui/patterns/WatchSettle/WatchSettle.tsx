@@ -10,7 +10,7 @@ export type LatestPayment = {
   id: string;
   from: string;
   to: string;
-  /** "$2.50". */
+  /** "$2.50", "0.1 TSLA" for a stock token, or "shielded" for a private send. */
   amount: string;
   network: string;
   state: string;

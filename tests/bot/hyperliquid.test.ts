@@ -3,6 +3,7 @@ import { runTool } from "@/lib/agents/tools";
 import type { Agent } from "@/lib/agents/keys";
 import { handleInbound } from "@/lib/bot/handle-inbound";
 import { venueNamed } from "@/lib/bot/hyperliquid";
+import { reconcileTransfers } from "@/lib/bot/settle";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
@@ -167,14 +168,21 @@ describe("move $5 to hyperliquid", () => {
     expect(await say(ALEX, "move $5 to hyperliquid")).toBe("Hyperliquid transfers aren't switched on yet.");
   });
 
-  it("doesn't call an unconfirmed deposit failed", async () => {
+  it("doesn't call an unconfirmed deposit failed, and the reconciler sends the receipt once it lands", async () => {
     const confirm = await say(ALEX, "move $5 to hyperliquid");
+    const id = intentIdIn(confirm);
     core.fail.next = new TransferUnconfirmedError("hyperevm", "0xslow", new Error("timeout"));
     await say(ALEX, codeIn(confirm));
     expect(sms.last(ALEX)).toBe(
-      `Your $5 to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
+      "Your $5 to your Hyperliquid balance is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.",
     );
-    expect((await getIntent(db, intentIdIn(confirm)))?.status).toBe("settling");
+    expect((await getIntent(db, id))?.status).toBe("settling");
+
+    // The chain says it landed; HyperEVM testnet has no explorer, so the receipt is Dial's own page.
+    hl.transferOutcome = async (txHash) => ({ state: "landed", result: { txHash, explorerUrl: null } });
+    expect(await reconcileTransfers(deps)).toEqual({ settled: 1, failed: 0 });
+    expect(sms.last(ALEX)).toBe(`Moved $5 to your Hyperliquid spot balance. Receipt: https://tmc.test/a/${id}`);
+    expect(await getIntent(db, id)).toMatchObject({ status: "settled", txHash: "0xslow" });
   });
 
   it("marks a deposit that reverted as failed", async () => {

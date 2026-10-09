@@ -91,7 +91,7 @@ export default async function ChainPage({ params }: PageProps<"/chains/[chain]">
 
   return (
     <SiteShell operatorNumber={number} colophon={<Colophon />}>
-      <ThemeScope brand={chain} backdrop="off">
+      <ThemeScope brand={chain} extent="page" backdrop="off">
         <ChainHero
           name={copy.name}
           logo={copy.logo}

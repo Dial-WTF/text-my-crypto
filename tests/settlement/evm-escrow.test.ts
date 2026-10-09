@@ -264,6 +264,28 @@ describe("evm escrow", () => {
     await expect(fund()).rejects.toThrow("AlreadyFunded");
   });
 
+  it("an escrow opened in our sender's name with another token is not ours: not funded, not claimed, not refunded", async () => {
+    // The contract takes any token, and a token the attacker wrote can accept a funding without the
+    // sender's signature. Everything else about it matches this payment.
+    const FAKE: Address = "0x000000000000000000000000000000000000fa4e";
+    chain.escrows.set(escrowId("pi_one"), {
+      status: "open",
+      sender: SENDER,
+      token: FAKE,
+      amount: 5_000_000n,
+      expiry: BigInt(EXPIRES.getTime() / 1000),
+      fundedBlock: 1n,
+      closedBlock: 0n,
+    });
+    await expect(fund()).rejects.toThrow("AlreadyFunded");
+    await expect(escrow.lookup("pi_one")).rejects.toThrow("holds another token");
+    await expect(escrow.claim({ intentId: "pi_one", to: RECIPIENT })).rejects.toThrow("holds another token");
+    chain.state.time = EXPIRES.getTime();
+    await expect(escrow.refund({ intentId: "pi_one", senderSecret: SENDER_SECRET })).rejects.toThrow("holds another token");
+    // Nothing was sent: no claim of the fake token, and no refund recorded as if it were ours.
+    expect(chain.sent).toEqual([]);
+  });
+
   it("claims from the attestor to the recipient", async () => {
     await fund();
     const result = await escrow.claim({ intentId: "pi_one", to: RECIPIENT });

@@ -27,7 +27,7 @@ const firstContact = (appUrl: string, intro: string, short: string) => {
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
 /** Ends every text to someone who never texted the operator. */
-const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
+export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
 
 export const replies = {
   welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
@@ -129,6 +129,13 @@ export const replies = {
   dripped: (amount: string) =>
     `Dial is on testnet for now, so I put ${testFunds(amount, "of")} in your wallet to try it. It's play money, not real dollars.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
+  /** A shielded Zcash send: says what stays private, since that's why they asked. */
+  confirmPrivateSend: (amount: string, who: string, chain: string, pool: string, note: string | null, code: string | null, link: string) =>
+    `Send ${usdc(amount)} to ${who}${forNote(note)} privately? It goes shielded on ${chain} (${pool} pool): the amount and who paid whom stay off the public chain, and the payment id rides in the encrypted memo. ${approveWith(code, link)}`,
+  privateUnavailable: () =>
+    `Private sends need a chain with a shielded pool, and none is switched on yet. Send without "privately" to use your usual chain.`,
+  privateOnlyShielded: (chain: string, shielded: string) =>
+    `${chain} can't shield a payment. Leave out "on ${chain.toLowerCase()}" and I'll send it privately on ${shielded}.`,
   confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
     `Send ${usdc(amount)} to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,
   requestSent: (amount: string, who: string) => `Asked ${who} for ${amount}. I'll text you when they pay.`,
@@ -179,7 +186,8 @@ export const replies = {
   refunded: (total: string, count: number) => `Got back ${total} from ${plural(count, "unclaimed payment")}.`,
   nothingToReclaim: (days: number) =>
     `Nothing to reclaim right now. Unclaimed payments can come back after ${plural(days, "day")}.`,
-  upgrade: (link: string) => `Add a passkey for one-tap approvals and higher limits: ${link}`,
+  upgrade: (link: string, code: string) =>
+    `Add a passkey for one-tap approvals and higher limits: open ${link} and enter ${code}. The link works once, for 15 minutes.`,
   connectAgent: (link: string, code: string) =>
     `Connect an AI agent to your Dial account: open ${link} and enter ${code}. The key shows once. You still approve every payment by text.`,
   agentConnected: (label: string) => `Agent "${label}" is connected. Text "revoke agents" anytime to cut it off.`,
@@ -209,8 +217,6 @@ export const replies = {
   movedToHyperCore: (amount: string, explorerUrl: string) => `Moved ${amount} to your Hyperliquid spot balance. Receipt: ${explorerUrl}`,
   receivedOnHyperCore: (who: string, amount: string, from: string, note: string | null, explorerUrl: string) =>
     `${who}, ${from} sent ${amount}${forNote(note)} to your Hyperliquid spot balance. Text "hl balance" to see it. Receipt: ${explorerUrl}`,
-  hyperCoreUnconfirmed: (amount: string) =>
-    `Your ${amount} to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
   hyperCoreWho: (raw: string) => `Which "${raw}"? Use their Dial @handle, like "send @alex $5 to hyperliquid".`,
   /** `who` null: the sender's own account. */
   hyperCoreNotOpen: (who: string | null) =>

@@ -1,0 +1,1 @@
+ALTER TABLE `intents` ADD `private` integer DEFAULT false NOT NULL;

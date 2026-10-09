@@ -44,8 +44,11 @@ export function PaymentReceipt({ view, children }: { view: PaymentView; children
       ) : null}
       <ReceiptRule />
       <ReceiptLine label={view.split ? "Split total" : "Total"} total>
-        <Money amount={view.amount} />
+        {view.amount === null ? "Shielded" : <Money amount={view.amount} stock={view.stock} />}
       </ReceiptLine>
+      {view.shielded ? (
+        <ReceiptLine label="Privacy">Shielded on Zcash: amount and parties stay off the public chain</ReceiptLine>
+      ) : null}
       {children ? (
         <>
           <ReceiptRule />

@@ -11,11 +11,12 @@ import {
   uniqueHandle,
 } from "@/lib/identity";
 import { randomBase32 } from "@/lib/ids";
-import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
+import { escrowedTo, isCodeLocked, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
+import { formatTotals } from "@/lib/stocks";
 import type { SettlementAdapter } from "@/lib/settlement/types";
 import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
@@ -123,25 +124,27 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
 
 /** How much these escrows add up to and who sent them, for a claim text. */
 async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
-  const total = escrows.reduce((sum, i) => sum + i.amount, 0n);
-  // One chain: say it the way that chain reads ("$5 (0.1 TAZ)" on Zcash). Mixed: plain dollars.
-  const [only, ...others] = new Set(escrows.map((i) => i.chain));
+  // Per asset, and the way the chain reads when they share one ("$5 (0.1 TAZ)" on Zcash, "0.5 TSLA").
+  const amount = formatTotals(escrows, deps.network);
   const senders = new Set<string>();
   for (const i of escrows) {
     const s = await getUserById(deps.db, i.senderId);
     if (s) senders.add(displayName(s));
   }
-  const amount = only && others.length === 0 ? money(total, only, deps.network) : formatUsd(total);
   return { amount, from: [...senders].join(", ") || "someone" };
 }
 
-/** Texts the person one code that claims every escrow waiting for them. */
+/**
+ * Texts the person one code that claims every escrow waiting for them. Offered again (START after STOP),
+ * the wrong guesses made so far still count, and one locked by them isn't offered: asking again never buys more tries.
+ */
 export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
-  const waiting = await escrowedTo(deps.db, user.id, deps.now());
+  const waiting = (await escrowedTo(deps.db, user.id, deps.now())).filter((i) => !isCodeLocked(i));
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
     deps.db,
     waiting.map((i) => i.id),
+    { keepAttempts: true },
   );
   const { amount, from } = await claimSummary(deps, waiting);
   await notify(deps, user.phone, replies.claimOffer(amount, from, code));
@@ -163,12 +166,16 @@ export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<
   return replies.claimExpired(amount, from);
 }
 
-/** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */
+/**
+ * Someone asked a new person for money before they joined: show it again with a fresh code once they're in.
+ * Like escrow claims, the tries already used still count, and a request locked by wrong guesses isn't offered.
+ */
 export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
+    if (isCodeLocked(intent)) continue;
     const requester = await getUserById(deps.db, intent.recipientId);
     if (!requester) continue;
-    const code = await issueCode(deps.db, intent.id);
+    const code = await issueCode(deps.db, intent.id, { keepAttempts: true });
     const link = `${deps.appUrl}/a/${intent.id}`;
     const amount = money(intent.amount, intent.chain, deps.network);
     const body =

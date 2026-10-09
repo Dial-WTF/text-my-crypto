@@ -7,6 +7,7 @@ import { paymentNetwork } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import { withdrawTarget } from "@/lib/payment-labels";
 import { type Network, venueOf } from "@/lib/settlement/registry";
+import { stockForToken } from "@/lib/stocks";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
@@ -15,7 +16,12 @@ export type TxRef = { hash: string; url: string | null };
 export type PaymentView = {
   id: string;
   kindLabel: string;
-  amount: bigint;
+  /** Null when the payment is private and this audience isn't a party to it. */
+  amount: bigint | null;
+  /** A private, shielded Zcash send. */
+  shielded: boolean;
+  /** The stock token's ticker when the payment moves one ("TSLA"); null for dollars. */
+  stock: string | null;
   from: string;
   to: string;
   network: string;
@@ -60,8 +66,8 @@ function statusOf(i: Intent, now: Date): PaymentView["status"] {
 
 /**
  * Who sees the view. "public" is the /a/<id> page, which anyone holding the id can open (ids are
- * on the public ledger): once a payment is past pending it names people by @handle only and drops
- * the note. A pending payment keeps names and note, since the payer needs them to approve.
+ * on the public ledger): once a payment can't be approved any more it names people by @handle only and
+ * drops the note. An open payment keeps names and note, since the payer needs them to approve.
  * "party" is for the account owner (their agent), who sees everything. "card" is the link preview for
  * /a/<id>: chat apps fetch and cache it for everyone in the thread, so it is @handles only and no note
  * at every status, pending included.
@@ -88,14 +94,20 @@ export async function buildPaymentView(
 ): Promise<PaymentView> {
   const [sender, recipient] = await Promise.all([getUserById(db, i.senderId), getUserById(db, i.recipientId)]);
   const open = i.status === "pending" && i.expiresAt > now;
-  const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
-  const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
+  // A private send shows anyone but its owner only what the shielded chain does: that it happened, on
+  // which chain, and its transaction id. No amount, names, note or address, at any status.
+  const hidden = i.private && opts.audience !== "party";
+  // Names and note only while the payer still needs them: a payment left to expire doesn't keep showing them.
+  const full = !hidden && (opts.audience === "party" || (opts.audience === "public" && open));
+  const name = (u: User | null) => (hidden ? "someone" : full ? (u ? displayName(u) : "someone") : publicName(u));
   const split = i.splitId ? await splitView(db, i.splitId, name) : null;
   const to = i.kind === "withdraw" ? withdrawTarget(i) : split ? `${split.legs.length} people` : name(recipient);
   return {
     id: i.id,
-    kindLabel: split ? "Split" : kindLabel(i, opts.network),
-    amount: split ? split.legs.reduce((a, l) => a + l.amount, 0n) : i.amount,
+    kindLabel: i.private ? "Shielded payment" : split ? "Split" : kindLabel(i, opts.network),
+    amount: hidden ? null : split ? split.legs.reduce((a, l) => a + l.amount, 0n) : i.amount,
+    shielded: i.private,
+    stock: stockForToken(i.chain, i.token)?.symbol ?? null,
     from: name(sender),
     to,
     network: paymentNetwork(i, opts.network),

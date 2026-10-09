@@ -10,6 +10,7 @@ import {
   type PreparedIntent,
   resolveCounterparty,
 } from "@/lib/bot/money";
+import { stockBalances } from "@/lib/bot/stocks";
 import {
   confirmSplitText,
   createSplit,
@@ -37,6 +38,7 @@ import {
 import { getIntent, intentsFor } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import { assetOf, money } from "@/lib/settlement/amounts";
+import type { Network } from "@/lib/settlement/registry";
 import type { MoneyKind } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
@@ -45,6 +47,7 @@ import { cleanAsk, payProfile } from "@/lib/views/pay";
 import { buildPaymentView } from "@/lib/views/payment";
 import { walletJson, walletView } from "@/lib/views/wallet";
 import { coinSymbol, midPrice } from "@/lib/settlement/hypercore";
+import { formatAmount, formatShares, isShareAmount, stockForToken } from "@/lib/stocks";
 import { getWallet } from "@/lib/wallets";
 import { createVenueIntent, pendingVenueDuplicate, venueBalance, venueNamed, venueRecipient } from "@/lib/bot/hyperliquid";
 import type { Agent } from "./keys";
@@ -79,12 +82,36 @@ const intentId = z
   .regex(/^pi_[A-Za-z0-9_-]{8,32}$/, "Payment ids look like pi_…")
   .describe("The intentId returned by send_payment, request_payment, create_invoice or withdraw.");
 
+const shares = z
+  .string()
+  .trim()
+  .refine(isShareAmount, 'Use a plain share amount like "0.1" or "2" (at most 6 decimals).')
+  .describe('How many shares of the stock token, as a decimal string, e.g. "0.1". Not dollars: testnet stock tokens have no price.');
+
+const symbol = z
+  .string()
+  .trim()
+  .regex(/^\$?[A-Za-z]{1,5}$/, "A ticker like TSLA")
+  .transform((s) => s.replace(/^\$/, "").toUpperCase())
+  .describe("The stock's ticker, e.g. TSLA. get_stocks lists the ones on Robinhood Chain.");
+
 export const toolInputs = {
   whoami: z.object({}),
   get_balance: z.object({}),
   get_receive_address: z.object({}),
   resolve_recipient: z.object({ to: person }),
-  send_payment: z.object({ to: person, amountUsd, note, chain }),
+  send_payment: z.object({
+    to: person,
+    amountUsd,
+    note,
+    chain,
+    private: z
+      .boolean()
+      .optional()
+      .describe(
+        "true: a private send, shielded on Zcash whatever the default chain. The amount and who paid whom stay off the public chain and public receipts. Fails if Zcash isn't switched on.",
+      ),
+  }),
   request_payment: z.object({ from: person, amountUsd, note, chain }),
   create_invoice: z.object({ to: person, amountUsd, note, chain }),
   withdraw: z.object({
@@ -128,6 +155,8 @@ export const toolInputs = {
       .regex(/^\$?[A-Za-z][A-Za-z0-9]{0,9}$/, 'A Hyperliquid coin like "BTC" or "HYPE"')
       .describe('A coin Hyperliquid lists a perp for, e.g. "BTC", "ETH" or "HYPE".'),
   }),
+  send_stock: z.object({ to: person, shares, symbol, note }),
+  get_stocks: z.object({}),
   split_payment: z.object({
     amountUsd,
     people: z
@@ -155,6 +184,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
   "create_invoice",
   "withdraw",
   "split_payment",
+  "send_stock",
   "send_to_hyperliquid",
 ]);
 
@@ -173,6 +203,14 @@ const err = (error: ToolError["error"], message: string): ToolResult => ({ ok: f
 
 /** "$12.50" → "12.50": plain decimals for machines. */
 const usd = (base: bigint) => formatUsd(base).slice(1);
+
+/** A payment's amount for machines: dollars and what the chain settles in, or shares and the stock's ticker (no dollar value). */
+function amountOut(i: Intent, network: Network): { amountUsd: string | null; shares?: string; asset: string } {
+  const stock = stockForToken(i.chain, i.token);
+  return stock
+    ? { amountUsd: null, shares: formatShares(i.amount), asset: stock.symbol }
+    : { amountUsd: usd(i.amount), asset: assetOf(i.chain, network) };
+}
 
 export type AgentPaymentStatus =
   | "awaiting_approval"
@@ -205,8 +243,8 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     kind: i.kind,
     status,
     statusLabel: view.status.label,
-    amountUsd: usd(i.amount),
-    asset: assetOf(i.chain, deps.network),
+    ...amountOut(i, deps.network),
+    shielded: i.private,
     from: view.from,
     // One leg of a split: who this leg pays. The view's "to" names the whole split.
     to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
@@ -240,15 +278,14 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     approver: payerIsOwner ? "you" : describe(p.counterparty),
     approveBy: i.expiresAt.toISOString(),
     kind: i.kind,
-    amountUsd: usd(i.amount),
-    asset: assetOf(i.chain, deps.network),
+    ...amountOut(i, deps.network),
     chain: i.chain,
     ...(i.kind === "withdraw" ? { toAddress: i.recipientAddress, toName: i.recipientName } : {}),
     message: payerIsOwner && !ownerTexted
       ? paused
       : payerIsOwner
-      ? `Texted the owner to approve ${formatUsd(i.amount)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
-      : `Texted ${describe(p.counterparty)} to pay ${formatUsd(i.amount)}. They approve or decline from their phone. Poll get_payment for the result.`,
+      ? `Texted the owner to approve ${formatAmount(i, deps.network)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
+      : `Texted ${describe(p.counterparty)} to pay ${formatAmount(i, deps.network)}. They approve or decline from their phone. Poll get_payment for the result.`,
   });
 }
 
@@ -341,10 +378,11 @@ async function moneyTool(
   deps: BotDeps,
   agent: Agent,
   kind: MoneyKind,
-  input: { counterparty: string; amountUsd: string; note?: string; chain?: (typeof CHAINS)[number] },
+  input: { counterparty: string; amountUsd: string; note?: string; chain?: (typeof CHAINS)[number]; private?: boolean; asset?: string },
 ): Promise<ToolResult> {
   const { user } = agent;
-  const cmd = { kind, ...input };
+  const { private: shielded, ...rest } = input;
+  const cmd = { kind, ...rest, ...(shielded && kind === "send" ? { private: true as const } : {}) };
   const checked = checkMoney(deps, user, cmd);
   if (!checked.ok) return err(checked.error.code, checked.error.message);
   const resolved = await resolveCounterparty(deps, user, input.counterparty);
@@ -353,7 +391,7 @@ async function moneyTool(
   if ("askFor" in resolved) return err("unknown_recipient", notFound(resolved.askFor));
   const other = resolved.user;
   if (other.id === user.id) return err("self", replies.selfSend());
-  const dup = await findDuplicate(deps, user, other, kind, checked.amount, checked.chain);
+  const dup = await findDuplicate(deps, user, other, kind, checked.amount, checked.chain, checked.token);
   if (dup && "pending" in dup) {
     return err(
       "duplicate",
@@ -363,6 +401,16 @@ async function moneyTool(
   if (dup) return err("duplicate", `The same payment to ${describe(other)} went out minutes ago (${dup.justSent.id}). Check get_payment.`);
   const r = await createMoneyIntent(deps, user, cmd, other);
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
+}
+
+async function getStocks(deps: BotDeps, agent: Agent): Promise<ToolResult> {
+  const chains = await stockBalances(deps, agent.user);
+  if (chains.length === 0) return err("chain_unavailable", "No enabled chain carries assets like stock tokens right now.");
+  return ok({
+    chains: chains.map((b) => ({ chain: b.chain, network: b.network, address: b.address, holdings: b.holdings, sendable: b.symbols })),
+    prices: null,
+    note: "Testnet stock tokens have no price feed, so there are no dollar values. Send them by share count with send_stock.",
+  });
 }
 
 async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Promise<ToolResult> {
@@ -534,6 +582,12 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return getHyperliquidBalance(deps, agent);
     case "get_price":
       return withInput(toolInputs.get_price, raw, (i) => getPrice(i));
+    case "send_stock":
+      return withInput(toolInputs.send_stock, raw, ({ to, shares: amount, symbol: asset, note: n }) =>
+        moneyTool(deps, agent, "send", { counterparty: to, amountUsd: amount, asset, ...(n ? { note: n } : {}) }),
+      );
+    case "get_stocks":
+      return getStocks(deps, agent);
     case "split_payment":
       return withInput(toolInputs.split_payment, raw, (i) => splitPayment(deps, agent, i));
     case "list_chain_features":
@@ -559,7 +613,7 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   send_payment: {
     title: "Send payment",
     description:
-      "Start a USDC payment from the owner to someone. Creates a pending payment and texts the owner a one-time code and approval link. Nothing moves until the owner approves; you cannot approve. Returns intentId and approveUrl; poll get_payment.",
+      "Start a USDC payment from the owner to someone, or a private one shielded on Zcash with private: true. Creates a pending payment and texts the owner a one-time code and approval link. Nothing moves until the owner approves; you cannot approve. Returns intentId and approveUrl; poll get_payment.",
   },
   request_payment: {
     title: "Request payment",
@@ -600,6 +654,16 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Price",
     description:
       "The current mid price of a coin on Hyperliquid (mainnet market data), e.g. BTC or HYPE. A quote only, not advice. Read-only.",
+  },
+  send_stock: {
+    title: "Send stock token",
+    description:
+      "Gift tokenized stock (e.g. 0.1 TSLA) from the owner's Robinhood Chain wallet to someone, by share count. Same approval as send_payment: the owner gets a texted code and link, and nothing moves until they approve. Someone not on Dial yet can claim it by text. Dollar amounts aren't supported: testnet stock tokens have no price. Returns intentId; poll get_payment.",
+  },
+  get_stocks: {
+    title: "Stock tokens",
+    description:
+      "The owner's stock token balances on Robinhood Chain (shares, no dollar values on testnet), their Robinhood Chain address, and which tickers can be sent. Read-only.",
   },
   split_payment: {
     title: "Split payment",

@@ -11,7 +11,7 @@ export function networkName(chain: Chain, network: Network = env().NETWORK): str
 }
 
 /** "HyperEVM testnet → HyperCore testnet" for a deposit into the chain's trading venue, else the chain's network. */
-export function paymentNetwork(i: Pick<Intent, "kind" | "chain">, network: Network = env().NETWORK): string {
+export function paymentNetwork(i: { kind?: Intent["kind"]; chain: Chain }, network: Network = env().NETWORK): string {
   const from = networkName(i.chain, network);
   const venue = i.kind === "venue" ? venueOf(i.chain, network) : null;
   return venue ? `${from} → ${venue.network}` : from;
@@ -33,7 +33,7 @@ export function safeNetworkName(chain: Chain): string {
 }
 
 /** paymentNetwork that never throws, for public pages. */
-export function safePaymentNetwork(i: Pick<Intent, "kind" | "chain">): string {
+export function safePaymentNetwork(i: { kind?: Intent["kind"]; chain: Chain }): string {
   const network = runningNetwork();
   return network ? paymentNetwork(i, network) : chainLabel(i.chain);
 }

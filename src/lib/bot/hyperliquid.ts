@@ -72,7 +72,7 @@ export async function pendingVenueDuplicate(
   if (!found) return null;
   return findPendingDuplicate(
     deps.db,
-    { senderId: user.id, recipientId: other.id, kind: "venue", amount, chain: found.chain },
+    { senderId: user.id, recipientId: other.id, kind: "venue", amount, chain: found.chain, token: found.adapter.tokenId },
     deps.now(),
   );
 }

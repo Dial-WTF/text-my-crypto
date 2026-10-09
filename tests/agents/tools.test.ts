@@ -45,6 +45,7 @@ describe("tool input validation", () => {
       "create_invoice",
       "request_payment",
       "send_payment",
+      "send_stock",
       "send_to_hyperliquid",
       "split_payment",
       "withdraw",

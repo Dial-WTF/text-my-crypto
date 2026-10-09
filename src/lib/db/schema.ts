@@ -67,6 +67,9 @@ export const signupTokens = sqliteTable("signup_tokens", {
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
   challenge: text("challenge"),
+  /** The code texted with the link. A link alone can't add a passkey: it has to be opened with the code. */
+  codeHash: text("code_hash"),
+  codeAttempts: integer("code_attempts").notNull().default(0),
 });
 
 export const passkeys = sqliteTable("passkeys", {
@@ -110,6 +113,8 @@ export const intents = sqliteTable("intents", {
   escrowExpiresAt: ts("escrow_expires_at"),
   /** When the approved payment started moving (status "settling"). The reconciler times unconfirmed sends from here. */
   approvedAt: ts("approved_at"),
+  /** "send … privately": a shielded Zcash send. Public pages show it as shielded, with no amount, names or note. */
+  private: integer("private", { mode: "boolean" }).notNull().default(false),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),
   releaseTxHash: text("release_tx_hash"),

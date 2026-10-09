@@ -105,12 +105,14 @@ describe("MCP over Streamable HTTP", () => {
         "get_payment",
         "get_price",
         "get_receive_address",
+        "get_stocks",
         "get_wallet",
         "list_chain_features",
         "list_payments",
         "request_payment",
         "resolve_recipient",
         "send_payment",
+        "send_stock",
         "send_to_hyperliquid",
         "split_payment",
         "whoami",
@@ -313,5 +315,24 @@ describe("MCP over Streamable HTTP", () => {
     });
     // Reads still work.
     expect((await call(key, "whoami")).isError).toBe(false);
+  });
+});
+
+describe("send_payment with private: true", () => {
+  it("starts a shielded Zcash send, whatever the owner's default chain", async () => {
+    deps.adapters.zcash = { ...fakeAdapter({ chain: "zcash", defaultBalance: 5_000_000n }), shielded: { pool: "Ironwood", byDefault: true } };
+    const key = await connectAgent(ALEX);
+    const r = await call(key, "send_payment", { to: "@jeremy", amountUsd: "1", private: true });
+    expect(r.isError).toBe(false);
+    const intent = await getIntent(db, String(r.data.intentId));
+    expect(intent).toMatchObject({ chain: "zcash", private: true });
+    expect(sms.last(ALEX)).toContain("privately? It goes shielded on Zcash");
+  });
+
+  it("says private sends aren't on when Zcash isn't switched on", async () => {
+    const key = await connectAgent(ALEX);
+    const r = await call(key, "send_payment", { to: "@jeremy", amountUsd: "1", private: true });
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r.data)).toContain("Private sends need a chain with a shielded pool");
   });
 });

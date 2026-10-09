@@ -113,6 +113,28 @@ describe("codes", () => {
     expect(await codeCandidates(db, alexId, now)).toEqual([]);
   });
 
+  it("guesses sent in parallel get five tries between them, not one each", async () => {
+    const i = await createIntent(db, base, now);
+    const code = await issueCode(db, i.id);
+    const wrong = code === "000000" ? "111111" : "000000";
+    // Every guess holds the same row read before any of them was counted, as parallel requests do.
+    const [seen] = await codeCandidates(db, alexId, now);
+    const guesses = [...Array<string>(9).fill(wrong), code];
+    const results = await Promise.all(guesses.map((g) => matchCode(db, [seen!], g)));
+    expect(results.flat()).toEqual([]);
+    expect((await getIntent(db, i.id))?.codeAttempts).toBe(5);
+  });
+
+  it("a right code costs no try, on the payment or anything else waiting", async () => {
+    const i = await createIntent(db, base, now);
+    const other = await createIntent(db, { ...base, amount: 2_000_000n }, now);
+    const code = await issueCode(db, i.id);
+    await issueCode(db, other.id);
+    expect((await matchCode(db, await codeCandidates(db, alexId, now), code)).map((c) => c.id)).toEqual([i.id]);
+    expect((await getIntent(db, i.id))?.codeAttempts).toBe(0);
+    expect((await getIntent(db, other.id))?.codeAttempts).toBe(0);
+  });
+
   it("offers escrowed intents to the recipient", async () => {
     const i = await createIntent(db, base, now);
     await claimForSettlement(db, i.id, now);

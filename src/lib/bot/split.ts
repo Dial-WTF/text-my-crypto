@@ -24,7 +24,7 @@ import { errorText, type SettlementAdapter, type SettleResult } from "@/lib/sett
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureSenderWallet, ensureWallet } from "./accounts";
-import { dripQuietly, insufficientReply, type MoneyError, overDailyCap, resolveCounterparty } from "./money";
+import { dripQuietly, insufficientReply, type MoneyError, overDailyCap, overDailyCapAtApproval, resolveCounterparty } from "./money";
 import { receiptUrl, type SettleOutcome } from "./settle";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -253,6 +253,10 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
   if (people.some((p) => !p)) return failAll("Missing recipient");
 
   const pays = legs.reduce((a, l) => a + l.amount, 0n);
+  if (await overDailyCapAtApproval(deps, head.senderId)) {
+    await notify(deps, sender.phone, replies.overDaily(formatUsd(deps.perDayCap)));
+    return failAll("Over the daily limit at approval");
+  }
   const shares = sharesText(legs.map((l, i) => ({ amount: l.amount, person: people[i] as User })));
   let result: SettleResult;
   try {
@@ -325,7 +329,7 @@ export async function splitStatusReply(
       return splitReplies.statusSending(total);
     case "settled":
     case "escrowed":
-      return splitReplies.statusSent(shares, leg.explorerUrl);
+      return splitReplies.statusSent(shares, receiptUrl(deps, leg, leg));
     default:
       return null;
   }

@@ -9,7 +9,7 @@ import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { intents } from "@/lib/db/schema";
 import { findUserByPhone } from "@/lib/identity";
-import { splitLegs } from "@/lib/intents";
+import { matchPageCode, splitLegs } from "@/lib/intents";
 import type { TransferLeg as BatchLeg } from "@/lib/settlement/capabilities";
 import { getWallet } from "@/lib/wallets";
 import { createTestDb } from "../helpers/db";
@@ -258,6 +258,19 @@ describe("split over SMS", () => {
     expect((await approveIntent(deps, legs[1]!.id)).ok).toBe(true);
     expect(await approveIntent(deps, legs[0]!.id)).toEqual({ ok: false, reason: "not_claimable" });
     expect(tempo.batches).toHaveLength(1);
+  });
+
+  it("a wrong code on any leg's page costs every leg a try: five in all, not five per leg", async () => {
+    const confirm = await say(JEREMY, "split $30 between @alex @sam on tempo");
+    const right = codeIn(confirm);
+    const wrong = right === "000000" ? "111111" : "000000";
+    for (let n = 0; n < 5; n++) {
+      const legs = await legsOf(JEREMY);
+      expect(await matchPageCode(db, legs[n % 2]!, wrong)).toBe(false);
+    }
+    expect((await legsOf(JEREMY)).map((l) => l.codeAttempts)).toEqual([5, 5]);
+    expect(await matchPageCode(db, (await legsOf(JEREMY))[1]!, right)).toBe(false);
+    expect(tempo.batches).toHaveLength(0);
   });
 
   it("a send of the same amount isn't mistaken for a share of a pending split", async () => {

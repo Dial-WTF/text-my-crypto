@@ -9,3 +9,10 @@
   font-family: var(--font-body);
   text-shadow: var(--text-glow);
 }
+
+/* A brand page sets text and glow tokens of its own (matrix), so it applies them here rather than inherit
+ * the body's. */
+.page {
+  color: var(--color-on-canvas);
+  text-shadow: var(--text-glow);
+}

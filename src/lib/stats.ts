@@ -2,6 +2,7 @@ import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { actionPayments, type Intent, intents, users } from "@/lib/db/schema";
+import { STOCK_TOKEN_ADDRESSES, stockForToken } from "@/lib/stocks";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
 /** What the public ledger counts as a payment: withdrawals are people moving their own money out. */
@@ -11,7 +12,12 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    .select({ payments: count(), moved: sql<number | null>`sum(${intents.amount})` })
+    // A private send and a stock token payment count as payments but add no dollars: one is hidden, the other
+    // is shares, and testnet has no price for them.
+    .select({
+      payments: count(),
+      moved: sql<number | null>`sum(case when ${intents.private} or ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
+    })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, PAYMENT_KINDS)));
   // Payments from any Solana wallet through a pay link's Blink count once recorded.
@@ -49,10 +55,14 @@ export async function movedByChain(db: Db): Promise<Partial<Record<Chain, number
 
 export type FeedItem = {
   id: string;
-  kind: Intent["kind"];
+  /** Absent for payments that aren't intents (a pay-link Blink). */
+  kind?: Intent["kind"];
   from: string;
   to: string;
-  amount: bigint;
+  /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
+  amount: bigint | null;
+  /** The stock token's ticker when the payment moved one; null for dollars. */
+  stock?: string | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -70,16 +80,18 @@ export function groupSplits(items: FeedItem[]): FeedGroup[] {
   const out: FeedGroup[] = [];
   const bySplit = new Map<string, FeedGroup>();
   for (const item of items) {
-    const legs = [{ to: item.to, amount: item.amount }];
-    const group = item.splitId ? bySplit.get(item.splitId) : undefined;
+    // A private send is never a split leg (splits batch on a chain that can't shield), and its amount is hidden.
+    const splitId = item.amount === null ? null : item.splitId;
+    const legs = [{ to: item.to, amount: item.amount ?? 0n }];
+    const group = splitId ? bySplit.get(splitId) : undefined;
     if (!group) {
-      const entry: FeedGroup = { ...item, legs: item.splitId ? legs : null };
-      if (item.splitId) bySplit.set(item.splitId, entry);
+      const entry: FeedGroup = { ...item, legs: splitId ? legs : null };
+      if (splitId) bySplit.set(splitId, entry);
       out.push(entry);
       continue;
     }
     group.legs?.push(...legs);
-    group.amount += item.amount;
+    group.amount = (group.amount ?? 0n) + (item.amount ?? 0n);
   }
   // Legs come back newest first; list them in the order they were paid.
   for (const g of out) {
@@ -116,9 +128,11 @@ export async function recentPayments(db: Db, limit: number, chain?: Chain): Prom
     (r): FeedItem => ({
       id: r.id,
       kind: r.kind,
-      from: who(r.senderId),
-      to: who(r.recipientId),
-      amount: r.amount,
+      // A private send shows only that it happened, on which chain, and its txid.
+      from: r.private ? "someone" : who(r.senderId),
+      to: r.private ? "someone" : who(r.recipientId),
+      amount: r.private ? null : r.amount,
+      stock: stockForToken(r.chain, r.token)?.symbol ?? null,
       chain: r.chain,
       status: r.status,
       txHash: r.txHash,
@@ -141,10 +155,10 @@ async function blinkPayments(db: Db, limit: number, chain?: Chain): Promise<Feed
     .limit(limit);
   return rows.map(({ p, handle }) => ({
     id: p.id,
-    kind: "send",
     from: `${p.payerAddress.slice(0, 4)}…${p.payerAddress.slice(-4)}`,
     to: handle ? `@${handle}` : "someone new",
     amount: p.received ?? p.amount,
+    stock: null,
     chain: p.chain,
     status: "settled",
     txHash: p.signature,

@@ -85,6 +85,10 @@ export class VenueAccountMissingError extends Error {
 
 export type Asset = { symbol: string; name: string; address: string; decimals: number };
 
+/**
+ * Amounts here are the payment's units, millionths of a token (0.1 TSLA is 100_000), so they fit a payment
+ * row; the module scales to the token's `decimals` on chain.
+ */
 export interface AssetTransfers {
   list(): Asset[];
   balanceOf(address: string, asset: Asset): Promise<bigint>;
