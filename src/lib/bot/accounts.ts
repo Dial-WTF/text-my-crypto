@@ -11,7 +11,7 @@ import {
   uniqueHandle,
 } from "@/lib/identity";
 import { randomBase32 } from "@/lib/ids";
-import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
+import { escrowedTo, isCodeLocked, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
@@ -135,13 +135,17 @@ async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount:
   return { amount, from: [...senders].join(", ") || "someone" };
 }
 
-/** Texts the person one code that claims every escrow waiting for them. */
+/**
+ * Texts the person one code that claims every escrow waiting for them. Offered again (START after STOP),
+ * the wrong guesses made so far still count, and one locked by them isn't offered: asking again never buys more tries.
+ */
 export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
-  const waiting = await escrowedTo(deps.db, user.id, deps.now());
+  const waiting = (await escrowedTo(deps.db, user.id, deps.now())).filter((i) => !isCodeLocked(i));
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
     deps.db,
     waiting.map((i) => i.id),
+    { keepAttempts: true },
   );
   const { amount, from } = await claimSummary(deps, waiting);
   await notify(deps, user.phone, replies.claimOffer(amount, from, code));
@@ -163,12 +167,16 @@ export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<
   return replies.claimExpired(amount, from);
 }
 
-/** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */
+/**
+ * Someone asked a new person for money before they joined: show it again with a fresh code once they're in.
+ * Like escrow claims, the tries already used still count, and a request locked by wrong guesses isn't offered.
+ */
 export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
+    if (isCodeLocked(intent)) continue;
     const requester = await getUserById(deps.db, intent.recipientId);
     if (!requester) continue;
-    const code = await issueCode(deps.db, intent.id);
+    const code = await issueCode(deps.db, intent.id, { keepAttempts: true });
     const link = `${deps.appUrl}/a/${intent.id}`;
     const amount = money(intent.amount, intent.chain, deps.network);
     const body =

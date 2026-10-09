@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { handleInbound } from "@/lib/bot/handle-inbound";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
+import { eq } from "drizzle-orm";
+import { intents } from "@/lib/db/schema";
 import { findUserByPhone } from "@/lib/identity";
+import { getIntent } from "@/lib/intents";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { createSession, sessionUser } from "@/lib/web/sessions";
 import { createTestDb } from "../helpers/db";
@@ -54,6 +57,31 @@ describe("locking an account down by text", () => {
 });
 
 describe("coming back with START", () => {
+  it("doesn't buy more tries: guesses already made still count, and a locked request isn't offered again", async () => {
+    const JEREMY = "+15550000011";
+    const jeremy = async (body: string) => {
+      await handleInbound(deps, { to: "+18066071387", from: JEREMY, body, dedupeKey: `l${++k}` });
+      return sms.last(JEREMY);
+    };
+    await jeremy("hi");
+    await jeremy("Jeremy");
+    await say("request $5 from @jeremy for lunch");
+    await say("request $6 from @jeremy for gas");
+    const [lunch, gas] = await db.select().from(intents).where(eq(intents.kind, "request")).orderBy(intents.amount);
+    // Someone guessing from a forged number: three wrong codes cost both requests three tries.
+    for (let n = 0; n < 3; n++) await jeremy("000000");
+    await db.update(intents).set({ codeAttempts: 5 }).where(eq(intents.id, lunch!.id));
+    await jeremy("STOP");
+    const before = sms.to(JEREMY).length;
+
+    await jeremy("START");
+    const offered = sms.to(JEREMY).slice(before);
+    expect(offered.some((t) => t.includes("$5"))).toBe(false);
+    expect(offered.filter((t) => /\$6.*Reply \d{6} to pay/.test(t))).toHaveLength(1);
+    expect((await getIntent(db, gas!.id))?.codeAttempts).toBe(3);
+    expect((await getIntent(db, lunch!.id))?.codeAttempts).toBe(5);
+  });
+
   it("offers what was asked of them while they were away, with a fresh code", async () => {
     const JEREMY = "+15550000011";
     const from = (phone: string) => async (body: string) => {
