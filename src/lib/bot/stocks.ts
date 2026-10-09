@@ -1,5 +1,5 @@
 import { type Chain, chainLabel } from "@/lib/chains";
-import type { Intent, User } from "@/lib/db/schema";
+import type { User } from "@/lib/db/schema";
 import { isClaimed } from "@/lib/identity";
 import { createIntent, issueCode, newIntentId } from "@/lib/intents";
 import type { MoneyCommand } from "@/lib/operator/grammar";
@@ -9,7 +9,7 @@ import type { Asset, AssetTransfers } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
 import type { SettlementAdapter } from "@/lib/settlement/types";
 import { seal } from "@/lib/secretbox";
-import { formatAmount, formatShares, isShareAmount, sharesToUnits, stockForToken } from "@/lib/stocks";
+import { formatShares, isShareAmount, sharesToUnits } from "@/lib/stocks";
 import { ensureWallet } from "./accounts";
 import type { MoneyError, Prepared } from "./money";
 import type { BotDeps } from "./types";
@@ -109,12 +109,6 @@ export async function createStockSend(deps: BotDeps, user: User, cmd: MoneyComma
   // No price, so no passkey threshold to cross: the texted code approves it.
   const code = await issueCode(deps.db, intent.id);
   return { ok: true, prepared: { intent, counterparty: other, code, approveUrl: `${deps.appUrl}/a/${intent.id}` } };
-}
-
-/** "Send 0.1 TSLA to Alex on Robinhood Chain?" or the dollar version, for whichever this send moves. */
-export function confirmSendReply(i: Intent, who: string, code: string | null, link: string): string {
-  const confirm = stockForToken(i.chain, i.token) ? stockReplies.confirmSend : replies.confirmSend;
-  return confirm(formatAmount(i), who, chainLabel(i.chain), i.note, code, link);
 }
 
 export type StockHolding = { symbol: string; name: string; token: string; shares: string };

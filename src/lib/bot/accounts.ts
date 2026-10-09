@@ -13,12 +13,12 @@ import {
 import { randomBase32 } from "@/lib/ids";
 import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
-import { stockReplies } from "@/lib/operator/stock-replies";
 import { formatTotals } from "@/lib/stocks";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -61,7 +61,8 @@ export async function dripOnce(
     await adapter.fund(wallet.address, deps.dripAmount);
     return true;
   } catch (e) {
-    if (!(e instanceof TransferUnconfirmedError)) await releaseDrip(deps.db, wallet.userId, wallet.chain);
+    const mayHaveMoved = e instanceof TransferUnconfirmedError || e instanceof SettlementUnknownError;
+    if (!mayHaveMoved) await releaseDrip(deps.db, wallet.userId, wallet.chain);
     throw e;
   }
 }
@@ -121,15 +122,16 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
 }
 
-/** How much these escrows add up to and who sent them, for a claim text. `dollarsOnly`: no stock token among them. */
-async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string; dollarsOnly: boolean }> {
-  const total = formatTotals(escrows);
+/** How much these escrows add up to and who sent them, for a claim text. */
+async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
+  // Per asset, and the way the chain reads when they share one ("$5 (0.1 TAZ)" on Zcash, "0.5 TSLA").
+  const amount = formatTotals(escrows, deps.network);
   const senders = new Set<string>();
   for (const i of escrows) {
     const s = await getUserById(deps.db, i.senderId);
     if (s) senders.add(displayName(s));
   }
-  return { amount: total.text, from: [...senders].join(", ") || "someone", dollarsOnly: total.dollarsOnly };
+  return { amount, from: [...senders].join(", ") || "someone" };
 }
 
 /** Texts the person one code that claims every escrow waiting for them. */
@@ -140,8 +142,8 @@ export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void
     deps.db,
     waiting.map((i) => i.id),
   );
-  const { amount, from, dollarsOnly } = await claimSummary(deps, waiting);
-  await notify(deps, user.phone, (dollarsOnly ? replies.claimOffer : stockReplies.claimOffer)(amount, from, code));
+  const { amount, from } = await claimSummary(deps, waiting);
+  await notify(deps, user.phone, replies.claimOffer(amount, from, code));
 }
 
 /** A claim the chain refused or didn't answer: nothing moved, so a fresh code lets them try again. */
@@ -167,7 +169,7 @@ export async function offerPendingRequests(deps: BotDeps, user: User): Promise<v
     if (!requester) continue;
     const code = await issueCode(deps.db, intent.id);
     const link = `${deps.appUrl}/a/${intent.id}`;
-    const amount = formatUsd(intent.amount);
+    const amount = money(intent.amount, intent.chain, deps.network);
     const body =
       intent.kind === "invoice"
         ? replies.payInvoice(displayName(requester), amount, intent.note, code, link)

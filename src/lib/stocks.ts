@@ -1,5 +1,6 @@
 import type { Chain } from "@/lib/chains";
 import { formatUsd } from "@/lib/money";
+import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { NETWORKS, type Network, REGISTRY, type StockToken } from "@/lib/settlement/registry";
 
 /**
@@ -57,10 +58,10 @@ export function stockForToken(chain: Chain, token: string): StockToken | null {
 
 type Amounted = { chain: Chain; token: string; amount: bigint };
 
-/** A payment's amount as people read it: "$5" for the stablecoin, "0.1 TSLA" for a stock. */
-export function formatAmount(i: Amounted): string {
+/** A payment's amount as people read it: "0.1 TSLA" for a stock, else the chain's own way (`money`: "$5"). */
+export function formatAmount(i: Amounted, network: Network): string {
   const stock = stockForToken(i.chain, i.token);
-  return stock ? `${formatShares(i.amount)} ${stock.symbol}` : formatUsd(i.amount);
+  return stock ? `${formatShares(i.amount)} ${stock.symbol}` : money(i.amount, i.chain, network);
 }
 
 /** The dollar amount for caps and passkey thresholds. Null for stocks: testnet has no price for them. */
@@ -69,18 +70,24 @@ export function usdAmount(i: Amounted): bigint | null {
 }
 
 /**
- * Several payments' total, per asset: "$7", or "$5 USDC and 0.1 TSLA" once a stock is in the mix.
- * `dollarsOnly` is false when a stock is in it, so the caller drops any "USDC" it would append.
+ * Several payments' total, per asset: "$7" (as `money` reads it when they share a chain: "$5 (0.1 TAZ)" on
+ * Zcash), or "$5 USDC and 0.1 TSLA" once a stock is in the mix.
  */
-export function formatTotals(items: Amounted[]): { text: string; dollarsOnly: boolean } {
+export function formatTotals(items: Amounted[], network: Network): string {
   let usd = 0n;
+  const chains = new Set<Chain>();
   const shares = new Map<string, bigint>();
   for (const i of items) {
     const stock = stockForToken(i.chain, i.token);
     if (stock) shares.set(stock.symbol, (shares.get(stock.symbol) ?? 0n) + i.amount);
-    else usd += i.amount;
+    else {
+      usd += i.amount;
+      chains.add(i.chain);
+    }
   }
-  if (shares.size === 0) return { text: formatUsd(usd), dollarsOnly: true };
-  const parts = [...(usd > 0n ? [`${formatUsd(usd)} USDC`] : []), ...[...shares].map(([s, n]) => `${formatShares(n)} ${s}`)];
-  return { text: parts.join(" and "), dollarsOnly: false };
+  const [only, ...others] = chains;
+  const dollars = only && others.length === 0 ? money(usd, only, network) : formatUsd(usd);
+  if (shares.size === 0) return dollars;
+  const parts = [...(usd > 0n ? [namesItsCoin(dollars) ? dollars : `${dollars} USDC`] : []), ...[...shares].map(([s, n]) => `${formatShares(n)} ${s}`)];
+  return parts.join(" and ");
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import { setConversation } from "@/lib/conversations";
+import { isEvmName, normalizeName, wrongNetworkBasename } from "@/lib/evm-names";
 import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   createUnclaimedUser,
@@ -23,17 +24,21 @@ import {
   sentSince,
 } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasOutboundSince } from "@/lib/sms/log";
 import { hasPasskey } from "@/lib/passkeys";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
+import { type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
+import { REGISTRY } from "@/lib/settlement/registry";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { formatAmount, usdAmount } from "@/lib/stocks";
 import { getWallet } from "@/lib/wallets";
 import { dripOnce, enabledChains, ensureSenderWallet, ensureWallet } from "./accounts";
-import { checkStock, confirmSendReply, createStockSend } from "./stocks";
+import { checkStock, createStockSend } from "./stocks";
 import { notify, text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -71,6 +76,8 @@ export type MoneyError = {
     | "bad_address"
     | "nothing_to_withdraw"
     | "which_chain"
+    | "unknown_name"
+    | "name_lookup_failed"
     | "duplicate"
     | "unknown_asset";
   message: string;
@@ -132,7 +139,7 @@ export async function codeFor(
 }
 
 /** dripOnce, but a failure is logged instead of ending the turn. */
-async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
+export async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
   try {
     return await dripOnce(deps, wallet, adapter);
   } catch (e) {
@@ -142,11 +149,11 @@ async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAda
 }
 
 /** Not enough money: where to add more (their pay page lists deposit options) and, on testnet, a faucet. */
-function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
+export function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
   const testnet = deps.network === "testnet";
   const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
   const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
-  return replies.insufficient(formatUsd(balance), payUrl, testnet, faucet);
+  return replies.insufficient(money(balance, chain, deps.network), payUrl, testnet, faucet);
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -169,7 +176,7 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
   return { ok: true, chain, adapter, amount, token: adapter.tokenId };
 }
 
-async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
+export async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
 }
@@ -215,9 +222,9 @@ async function repeatReply(
 ): Promise<{ text: string; askNew: boolean } | null> {
   if (!dup) return null;
   const otherName = describe(other);
-  if ("justSent" in dup) return { text: replies.justSent(formatAmount(dup.justSent), otherName), askNew: true };
+  if ("justSent" in dup) return { text: replies.justSent(formatAmount(dup.justSent, deps.network), otherName), askNew: true };
   const { pending } = dup;
-  if (kind !== "send") return { text: replies.alreadyRequested(formatAmount(pending), otherName), askNew: false };
+  if (kind !== "send") return { text: replies.alreadyRequested(formatAmount(pending, deps.network), otherName), askNew: false };
   // Too many wrong codes on it already: repeating the command must not hand out a fresh one.
   if (isCodeLocked(pending)) return { text: replies.codeMismatch(0), askNew: false };
   const code = await codeFor(deps, user.id, pending.id, usdAmount(pending), { keepAttempts: true });
@@ -225,9 +232,10 @@ async function repeatReply(
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    return { text: confirmSendReply(pending, otherName, code, link), askNew: false };
+    const text = replies.confirmSend(formatAmount(pending, deps.network), otherName, chainLabel(pending.chain), pending.note, code, link);
+    return { text, askNew: false };
   }
-  return { text: replies.alreadyPending(formatAmount(pending), otherName, code, link), askNew: true };
+  return { text: replies.alreadyPending(formatAmount(pending, deps.network), otherName, code, link), askNew: true };
 }
 
 /**
@@ -249,13 +257,18 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
 
   if (cmd.kind === "send") {
     let balance = await adapter.getBalance(mine.address);
+    // Zcash payments carry the recipient's next fees on top; other chains carry nothing.
+    const fees = adapter.carriedFees?.(isClaimed(other) ? "dial" : adapter.escrow ? "outside" : "escrow") ?? 0n;
     // Short, and the test drip never landed (say the chain was down at signup): drop it now. A wallet opened
     // this turn already had its try. A drip that fails (empty treasury, rate limit) just means "not enough".
-    if (balance < amount && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
+    if (balance < amount + fees && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
       balance += deps.dripAmount;
-      await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
+      await notify(deps, user.phone, replies.dripped(money(deps.dripAmount, chain, deps.network)));
     }
     if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
+    if (balance < amount + fees) {
+      return fail("insufficient", replies.feeShort(money(balance, chain, deps.network), money(fees, chain, deps.network), chainLabel(chain)));
+    }
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
     const id = newIntentId();
@@ -314,10 +327,6 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   return { ok: true, prepared: { intent, counterparty: other, code, approveUrl: `${deps.appUrl}/a/${intent.id}` } };
 }
 
-function shortAddress(a: string): string {
-  return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
-}
-
 type ChainPick = { ok: true; chain: Chain; adapter: SettlementAdapter } | { ok: false; error: MoneyError };
 
 /**
@@ -356,8 +365,45 @@ async function nothingToWithdrawReply(deps: BotDeps, user: User, chain: Chain): 
   return replies.nothingToWithdraw(chainLabel(chain), lines, elsewhere[0]?.[0]);
 }
 
-/** Moves funds out to an address the user controls. Same code/limit rules as a send. Texts nobody. */
-export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<Prepared> {
+type Destination = { ok: true; cmd: WithdrawCommand; name: string | null } | { ok: false; error: MoneyError };
+
+/**
+ * An ENS name or Basename becomes its address here, once: the intent stores that address, the confirmation
+ * shows it next to the name, and settlement never looks the name up again. The chain whose name service
+ * answers for the ending (Base for Basenames, Ethereum for other .eth names) is the chain, unless they named
+ * one. A chain that's switched off still resolves first, so they hear "isn't switched on yet".
+ */
+async function resolveDestination(deps: BotDeps, cmd: WithdrawCommand): Promise<Destination> {
+  if (!isEvmName(cmd.address)) return { ok: true, cmd, name: null };
+  const name = normalizeName(cmd.address) ?? cmd.address.toLowerCase();
+  // Enabled chains answer with their adapter's module; chains that are off with the one from deps.names.
+  const service = nameServiceFor({ ...nameHolders(deps), ...deps.adapters }, name);
+  let address: string | null = null;
+  try {
+    address = service ? await service.names.resolve(name) : null;
+  } catch (e) {
+    console.error("name lookup failed", name, errorText(e));
+    return { ok: false, error: { code: "name_lookup_failed", message: replies.nameLookupDown(name) } };
+  }
+  if (service && address) return { ok: true, cmd: { ...cmd, address, chain: cmd.chain ?? service.chain }, name };
+  const network = service ? (REGISTRY[service.chain][deps.network]?.network ?? chainLabel(service.chain)) : null;
+  const testBasename = deps.network === "testnet" && wrongNetworkBasename(name, deps.network);
+  const message = replies.unknownName(name, network, testBasename);
+  return { ok: false, error: { code: "unknown_name", message } };
+}
+
+/** deps.names in the shape nameServiceFor reads. */
+function nameHolders(deps: BotDeps): Partial<Record<Chain, { names: NameService }>> {
+  const out: Partial<Record<Chain, { names: NameService }>> = {};
+  for (const [chain, names] of Object.entries(deps.names ?? {}) as Array<[Chain, NameService]>) out[chain] = { names };
+  return out;
+}
+
+/** Moves funds out to an address (or ENS name / Basename) the user controls. Same code/limit rules as a send. Texts nobody. */
+export async function createWithdrawIntent(deps: BotDeps, user: User, asked: WithdrawCommand): Promise<Prepared> {
+  const dest = await resolveDestination(deps, asked);
+  if (!dest.ok) return dest;
+  const { cmd } = dest;
   const picked = withdrawChain(deps, user, cmd);
   if (!picked.ok) return picked;
   const { chain, adapter } = picked;
@@ -380,6 +426,7 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
       chain,
       token: adapter.tokenId,
       recipientAddress: cmd.address,
+      recipientName: dest.name,
       amount,
       note: null,
     },
@@ -395,14 +442,14 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
  */
 export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Promise<string> {
   const { intent, code, approveUrl: link } = p;
-  const amount = formatAmount(intent);
+  const amount = formatAmount(intent, deps.network);
   const chain = chainLabel(intent.chain);
   const other = describe(p.counterparty);
   switch (intent.kind) {
     case "send":
-      return confirmSendReply(intent, other, code, link);
+      return replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
-      return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
+      return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
       await text(

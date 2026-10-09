@@ -11,6 +11,15 @@ import {
   resolveCounterparty,
 } from "@/lib/bot/money";
 import { stockBalances } from "@/lib/bot/stocks";
+import {
+  confirmSplitText,
+  createSplit,
+  MAX_SPLIT_PEOPLE,
+  type PreparedSplit,
+  resolvePeople,
+  splitChain,
+  type SplitErrorCode,
+} from "@/lib/bot/split";
 import { text } from "@/lib/bot/text";
 import { FEATURES, featuresOf } from "@/lib/settlement/capabilities";
 import type { BotDeps } from "@/lib/bot/types";
@@ -28,6 +37,8 @@ import {
 } from "@/lib/identity";
 import { getIntent, intentsFor } from "@/lib/intents";
 import { formatUsd, isUsdAmount } from "@/lib/money";
+import { assetOf, money } from "@/lib/settlement/amounts";
+import type { Network } from "@/lib/settlement/registry";
 import type { MoneyKind } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
@@ -92,7 +103,14 @@ export const toolInputs = {
   create_invoice: z.object({ to: person, amountUsd, note, chain }),
   withdraw: z.object({
     amountUsd: z.union([z.literal("all"), amountUsd]).describe('Dollar amount, or "all" for the whole balance.'),
-    address: z.string().trim().min(20).max(128).describe("A wallet address the owner controls on that chain."),
+    address: z
+      .string()
+      .trim()
+      .min(3)
+      .max(128)
+      .describe(
+        "A wallet address the owner controls on that chain, or an ENS name (name.eth) or Basename (name.base.eth; name.basetest.eth on testnet). A name is resolved once, now; the payment keeps that address. A Basename picks Base and any other .eth name Ethereum, unless chain is set.",
+      ),
     chain,
   }),
   get_payment: z.object({ intentId }),
@@ -112,6 +130,20 @@ export const toolInputs = {
   get_wallet: z.object({}),
   send_stock: z.object({ to: person, shares, symbol, note }),
   get_stocks: z.object({}),
+  split_payment: z.object({
+    amountUsd,
+    people: z
+      .array(person)
+      .min(1)
+      .max(MAX_SPLIT_PEOPLE)
+      .describe("Who shares the amount: phone numbers, Dial @handles or contact names. Each person once."),
+    includeMe: z
+      .boolean()
+      .optional()
+      .describe("True when the owner takes a share too and pays everyone else's (\"split $30 with @a @b\"). Default false."),
+    note,
+    chain: z.enum(CHAINS).optional().describe("Leave out: splits run on a chain that settles them as one transaction (Tempo). A chain that can't is refused."),
+  }),
   list_chain_features: z.object({}),
 } as const;
 
@@ -124,6 +156,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
   "request_payment",
   "create_invoice",
   "withdraw",
+  "split_payment",
   "send_stock",
 ]);
 
@@ -132,7 +165,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
 // ---------------------------------------------------------------------------------------------
 
 export type ToolError = {
-  error: MoneyError["code"] | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
+  error: MoneyError["code"] | SplitErrorCode | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
 export type ToolResult = { ok: true; data: Record<string, unknown> } | { ok: false; error: ToolError };
@@ -143,10 +176,12 @@ const err = (error: ToolError["error"], message: string): ToolResult => ({ ok: f
 /** "$12.50" → "12.50": plain decimals for machines. */
 const usd = (base: bigint) => formatUsd(base).slice(1);
 
-/** A payment's amount for machines: dollars and USDC, or shares and the stock's ticker (with no dollar value). */
-function amountOut(i: Intent): { amountUsd: string | null; shares?: string; asset: string } {
+/** A payment's amount for machines: dollars and what the chain settles in, or shares and the stock's ticker (no dollar value). */
+function amountOut(i: Intent, network: Network): { amountUsd: string | null; shares?: string; asset: string } {
   const stock = stockForToken(i.chain, i.token);
-  return stock ? { amountUsd: null, shares: formatShares(i.amount), asset: stock.symbol } : { amountUsd: usd(i.amount), asset: "USDC" };
+  return stock
+    ? { amountUsd: null, shares: formatShares(i.amount), asset: stock.symbol }
+    : { amountUsd: usd(i.amount), asset: assetOf(i.chain, network) };
 }
 
 export type AgentPaymentStatus =
@@ -180,9 +215,10 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     kind: i.kind,
     status,
     statusLabel: view.status.label,
-    ...amountOut(i),
+    ...amountOut(i, deps.network),
     from: view.from,
-    to: view.to,
+    // One leg of a split: who this leg pays. The view's "to" names the whole split.
+    to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
     chain: i.chain,
     note: i.note,
     approver: approverOf(i, owner, payer),
@@ -194,6 +230,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     explorerUrl: i.explorerUrl,
     releaseTxHash: i.releaseTxHash,
     releaseExplorerUrl: i.releaseExplorerUrl,
+    splitId: i.splitId,
   };
 }
 
@@ -211,13 +248,14 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     approver: payerIsOwner ? "you" : describe(p.counterparty),
     approveBy: i.expiresAt.toISOString(),
     kind: i.kind,
-    ...amountOut(i),
+    ...amountOut(i, deps.network),
     chain: i.chain,
+    ...(i.kind === "withdraw" ? { toAddress: i.recipientAddress, toName: i.recipientName } : {}),
     message: payerIsOwner && !ownerTexted
       ? paused
       : payerIsOwner
-      ? `Texted the owner to approve ${formatAmount(i)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
-      : `Texted ${describe(p.counterparty)} to pay ${formatAmount(i)}. They approve or decline from their phone. Poll get_payment for the result.`,
+      ? `Texted the owner to approve ${formatAmount(i, deps.network)}. Nothing moves until they reply with the code or use their passkey. Poll get_payment for the result.`
+      : `Texted ${describe(p.counterparty)} to pay ${formatAmount(i, deps.network)}. They approve or decline from their phone. Poll get_payment for the result.`,
   });
 }
 
@@ -250,8 +288,10 @@ async function getBalance(deps: BotDeps, agent: Agent): Promise<ToolResult> {
     const w = await getWallet(deps.db, agent.user.id, c);
     if (!w) continue;
     const amount = await adapter.getBalance(w.address);
-    total += amount;
-    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset: "USDC" });
+    const asset = assetOf(c, deps.network);
+    // Testnet ZEC converts at a demo rate, so it's listed but not added to the dollar total.
+    if (asset === "USDC") total += amount;
+    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset, display: money(amount, c, deps.network) });
   }
   return ok({ balances, totalUsd: usd(total) });
 }
@@ -262,7 +302,7 @@ async function getReceiveAddress(deps: BotDeps, agent: Agent): Promise<ToolResul
   const addresses: Array<Record<string, string>> = [];
   for (const [c] of enabledChains(deps)) {
     const w = await getWallet(deps.db, user.id, c);
-    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: "USDC" });
+    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: assetOf(c, deps.network) });
   }
   return ok({ handle, byText: `Anyone can text the Dial operator "send ${handle} $5".`, addresses });
 }
@@ -340,6 +380,51 @@ async function getStocks(deps: BotDeps, agent: Agent): Promise<ToolResult> {
     prices: null,
     note: "Testnet stock tokens have no price feed, so there are no dollar values. Send them by share count with send_stock.",
   });
+}
+
+async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Promise<ToolResult> {
+  const { user } = agent;
+  const ownerTexted = await text(deps, user.phone, replies.fromAgent(agent.key.label, confirmSplitText(s)));
+  const [first] = s.legs;
+  const pays = s.legs.reduce((a, l) => a + l.intent.amount, 0n);
+  return ok({
+    splitId: s.splitId,
+    status: "awaiting_approval",
+    approveUrl: s.approveUrl,
+    approver: "you",
+    approveBy: first?.intent.expiresAt.toISOString() ?? null,
+    amountUsd: usd(s.total),
+    paysUsd: usd(pays),
+    ownShareUsd: s.mine === null ? null : usd(s.mine),
+    asset: "USDC",
+    chain: s.chain,
+    legs: s.legs.map((l) => ({ intentId: l.intent.id, to: describe(l.person), amountUsd: usd(l.intent.amount), onDial: isClaimed(l.person) })),
+    message: ownerTexted
+      ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one transaction, or none do. Poll get_payment on any leg.`
+      : "The owner has paused texts from Dial (STOP), so no code went out: they can approve at approveUrl with their passkey, or text START first.",
+  });
+}
+
+async function splitPayment(deps: BotDeps, agent: Agent, input: ToolInput<"split_payment">): Promise<ToolResult> {
+  const { user } = agent;
+  // Checked before anyone is looked up, so a split that can't run never creates accounts.
+  const picked = splitChain(deps, user, input.chain);
+  if (!picked.ok && picked.error.code === "split_chain" && input.chain) {
+    return err("split_chain", `Splits settle in one transaction, which ${chainLabel(input.chain)} can't do. Leave chain out to use one that can (see list_chain_features).`);
+  }
+  if (!picked.ok) return err(picked.error.code, picked.error.message);
+  const resolved = await resolvePeople(deps, user, input.people);
+  if (!resolved.ok) return err(resolved.error.code, resolved.error.message);
+  const cmd = {
+    kind: "split" as const,
+    amountUsd: input.amountUsd,
+    people: input.people,
+    includeMe: input.includeMe ?? false,
+    note: input.note,
+    chain: picked.chain,
+  };
+  const r = await createSplit(deps, user, cmd, resolved.people);
+  return r.ok ? splitCreated(deps, agent, r.split) : err(r.error.code, r.error.message);
 }
 
 async function withdraw(deps: BotDeps, agent: Agent, input: ToolInput<"withdraw">): Promise<ToolResult> {
@@ -435,6 +520,8 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       );
     case "get_stocks":
       return getStocks(deps, agent);
+    case "split_payment":
+      return withInput(toolInputs.split_payment, raw, (i) => splitPayment(deps, agent, i));
     case "list_chain_features":
       return listChainFeatures(deps);
   }
@@ -473,7 +560,7 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   withdraw: {
     title: "Withdraw",
     description:
-      "Move the owner's USDC to an outside address on the same chain. Texts the owner to approve, like send_payment.",
+      "Move the owner's USDC to an outside address, ENS name or Basename on the same chain. Texts the owner to approve, like send_payment. Returns toAddress, the address the payment will go to.",
   },
   get_payment: {
     title: "Get payment",
@@ -495,6 +582,11 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Stock tokens",
     description:
       "The owner's stock token balances on Robinhood Chain (shares, no dollar values on testnet), their Robinhood Chain address, and which tickers can be sent. Read-only.",
+  },
+  split_payment: {
+    title: "Split payment",
+    description:
+      "Split an amount between people, to the cent (any leftover cent goes to the first person). With includeMe the owner takes a share and pays everyone else's. Up to 10 people. Runs on a chain with batched transactions (Tempo, see list_chain_features): the owner approves once with one texted code, then every share settles in one transaction with each payment id as its memo, or none do. People not on Dial yet get their share held for them to claim. Returns splitId and an intentId per person; poll get_payment.",
   },
   get_wallet: {
     title: "Wallet",

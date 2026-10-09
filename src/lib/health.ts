@@ -50,8 +50,11 @@ export async function dependencyChecks(deps: {
   }
   for (const [chain, adapter] of Object.entries(deps.adapters)) {
     if (!adapter) continue;
-    const address = chain === "solana" ? SOLANA_PROBE : EVM_PROBE;
-    checks[`${chain}Balance`] = await timed(async () => `${await adapter.getBalance(address)}`);
+    checks[`${chain}Balance`] = await timed(async () => {
+      // Zcash can only read wallets its service holds, so it probes the treasury.
+      const address = chain === "solana" ? SOLANA_PROBE : chain === "zcash" ? await adapter.treasuryAddress() : EVM_PROBE;
+      return `${await adapter.getBalance(address)}`;
+    });
   }
   return checks;
 }

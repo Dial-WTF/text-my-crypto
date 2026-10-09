@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { customType, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { CHAINS } from "@/lib/chains";
 
 /** Token amounts in base units. SQLite INTEGER is 64-bit; the app works in bigint. */
@@ -95,6 +95,8 @@ export const intents = sqliteTable("intents", {
   chain: text("chain", { enum: CHAINS }).notNull(),
   token: text("token").notNull(),
   recipientAddress: text("recipient_address").notNull(),
+  /** The ENS name or Basename a withdrawal was addressed to, kept for display. recipientAddress is what was resolved and approved. */
+  recipientName: text("recipient_name"),
   amount: amount("amount").notNull(),
   nonce: text("nonce").notNull(),
   expiresAt: ts("expires_at").notNull(),
@@ -114,7 +116,9 @@ export const intents = sqliteTable("intents", {
   error: text("error"),
   createdAt: ts("created_at").notNull().default(now),
   settledAt: ts("settled_at"),
-});
+  /** Legs of one split share this id: one code approves them all, and they settle in one transaction. */
+  splitId: text("split_id"),
+}, (t) => [index("intents_split").on(t.splitId)]);
 
 /** Numbers that texted STOP. Nothing is sent to them until they text START. */
 export const smsOptOuts = sqliteTable("sms_opt_outs", {

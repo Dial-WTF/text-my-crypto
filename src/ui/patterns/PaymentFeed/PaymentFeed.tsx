@@ -16,6 +16,8 @@ export type FeedEntry = {
   explorerUrl: string | null;
   /** "2h ago". */
   when?: string;
+  /** A split: each person it paid and their share, settled together in the one transaction. */
+  legs?: Array<{ to: string; amount: bigint }>;
   /** Something the viewer can do about this payment now, e.g. approve it. */
   action?: { href: string; label: string };
 };
@@ -37,9 +39,16 @@ export function PaymentFeed({
       ) : (
         entries.map((e) => (
           <div key={e.id} className={styles.item}>
-            <ReceiptLine label={`${e.from} → ${e.to}`}>
+            <ReceiptLine label={e.legs ? `${e.from} split ${e.legs.length} ways` : `${e.from} → ${e.to}`}>
               <Money amount={e.amount} unit={null} stock={e.stock ?? null} />
             </ReceiptLine>
+            {e.legs?.map((leg, i) => (
+              <div key={`${e.id}-${i}`} className={styles.leg}>
+                <ReceiptLine label={`→ ${leg.to}`}>
+                  <Money amount={leg.amount} unit={null} />
+                </ReceiptLine>
+              </div>
+            ))}
             <div className={styles.meta}>
               {e.when ? <span>{e.when}</span> : null}
               <span className={styles.state}>{e.state}</span>

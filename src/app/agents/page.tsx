@@ -30,6 +30,7 @@ const ARGS: Record<string, string> = {
   get_payment: "intentId",
   get_balance: "none",
   withdraw: "amountUsd | \"all\", address, chain?",
+  split_payment: "amountUsd, people[], includeMe?, note?, chain?",
   resolve_recipient: "to",
   list_payments: "limit?",
   get_pay_link: "handle?, amountUsd?, note?",

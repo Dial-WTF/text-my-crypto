@@ -1,5 +1,11 @@
+import { namesItsCoin } from "@/lib/settlement/amounts";
+
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
-export const approveWith = (code: string | null, link: string, verb = "confirm") =>
+/** "$5 USDC", or a Zcash amount as `money` wrote it ("$5 (0.1 TAZ)"), which already names its coin. */
+const usdc = (amount: string) => (namesItsCoin(amount) ? amount : `${amount} USDC`);
+/** Test funds: "$5 of test USDC", or "$5 (0.1 TAZ) of testnet ZEC". */
+const testFunds = (amount: string, of: "of" | "in") => `${amount} ${of} ${namesItsCoin(amount) ? "testnet ZEC" : "test USDC"}`;
+const approveWith = (code: string | null, link: string, verb = "confirm") =>
   code ? `Reply ${code} to ${verb}, or tap: ${link}` : `Approve with your passkey: ${link}`;
 const plural = (n: number, word: string) =>
   `${n} ${n === 1 ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`}`;
@@ -16,7 +22,7 @@ const ASK_NAME = "What name should people use to pay you?";
  * The first text anyone gets: program name, disclosure, then the question. Past two segments, the
  * disclosure leads on a line of its own and the rest shrinks to `short` plus the question.
  */
-export const firstContact = (appUrl: string, intro: string, short: string) => {
+const firstContact = (appUrl: string, intro: string, short: string) => {
   const full = `hi, I'm the ${PROGRAM}. ${intro} ${disclosure(appUrl)}\n${ASK_NAME}`;
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
@@ -26,13 +32,13 @@ export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply
 export const replies = {
   welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
   welcomeWithMoney: (amount: string, from: string, appUrl: string) =>
-    firstContact(appUrl, `${from} sent you ${amount} USDC and it's waiting for you.`, `${from} sent you ${amount} USDC.`),
+    firstContact(appUrl, `${from} sent you ${usdc(amount)} and it's waiting for you.`, `${from} sent you ${usdc(amount)}.`),
   badName: () => `What should I call you? Any name works, like Alex or J. P. Meyer.`,
   nameFirst: () => `First things first: what name should people use to pay you?`,
   joined: (name: string, handle: string, drip: string | null) =>
     `You're in, ${name}. Your Dial name is @${handle}, so people can text me "send @${handle} $5".` +
     (drip
-      ? ` Dial is on testnet for now, so I put ${drip} of test USDC in your wallet to try it. It's play money, not real dollars.`
+      ? ` Dial is on testnet for now, so I put ${testFunds(drip, "of")} in your wallet to try it. It's play money, not real dollars.`
       : ` Dial is on testnet for now: the USDC here is play money.`) +
     ` Text 411 and a name to find anyone. Text HELP anytime.`,
   renamed: (name: string, handle: string) => `Done. You're ${name} now, still @${handle}.`,
@@ -43,7 +49,7 @@ export const replies = {
       : `No one matching "${query}" in the directory yet. Send to their phone number instead.`,
   chooseRecipient: (name: string, options: string[]) =>
     `I found ${options.length} people for "${name}": ${options.map((o, i) => `${i + 1}) ${o}`).join("  ")}. Reply ${options.map((_, i) => i + 1).join(" or ")}, or their number.`,
-  claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${amount} USDC. Reply ${code} to claim it.`,
+  claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${usdc(amount)}. Reply ${code} to claim it.`,
   help: (appUrl: string) =>
     `${PROGRAM}: send and get paid in crypto by text. Help: ${appUrl}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
   /** Sent right after `help`. */
@@ -57,6 +63,9 @@ export const replies = {
   codeHint: () => `To confirm, reply with the 6-digit code from my last text. It keeps anyone else from spending your money.`,
   cancelled: (n: number) => (n > 0 ? `OK, cancelled. Nothing was sent.` : `OK, forgot about it.`),
   sending: (amount: string, who: string, chain: string) => `Sending ${amount} to ${who} on ${chain}…`,
+  /** Enough for the amount, not for the network fees the payment carries (Zcash). */
+  feeShort: (balance: string, fees: string, chain: string) =>
+    `You have ${balance}, but on ${chain} that payment also needs ${fees} for network fees, so I didn't send it. Nothing moved. Try a little less.`,
   insufficientNow: (balance: string) => `You only have ${balance} now, so I didn't send it. Nothing moved.`,
   codeExpired: () => `That code expired, so nothing was sent. Text the payment again for a fresh one.`,
   noCodePending: () => `Nothing is waiting on a code right now.`,
@@ -115,28 +124,28 @@ export const replies = {
   /** `payUrl` is their pay page, which lists deposit options; `faucet` is set on testnet chains Circle's faucet covers. */
   insufficient: (balance: string, payUrl: string, testnet: boolean, faucet: string | null) =>
     testnet
-      ? `You have ${balance} in test USDC, not enough for that one. Add more: ${payUrl}${faucet ? ` Free test USDC: ${faucet}` : ""}`
-      : `You have ${balance} USDC, not enough for that one. Add more: ${payUrl}`,
+      ? `You have ${testFunds(balance, "in")}, not enough for that one. Add more: ${payUrl}${faucet ? ` Free test USDC: ${faucet}` : ""}`
+      : `You have ${usdc(balance)}, not enough for that one. Add more: ${payUrl}`,
   dripped: (amount: string) =>
-    `Dial is on testnet for now, so I put ${amount} of test USDC in your wallet to try it. It's play money, not real dollars.`,
+    `Dial is on testnet for now, so I put ${testFunds(amount, "of")} in your wallet to try it. It's play money, not real dollars.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
   confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
-    `Send ${amount} USDC to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,
+    `Send ${usdc(amount)} to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,
   requestSent: (amount: string, who: string) => `Asked ${who} for ${amount}. I'll text you when they pay.`,
   invoiceSent: (amount: string, who: string, link: string) => `Invoice for ${amount} sent to ${who}. Track it: ${link}`,
   payRequest: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
     code
-      ? `${from} is asking you for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Or tap: ${link}`
-      : `${from} is asking you for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
+      ? `${from} is asking you for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay or NO to decline. Or tap: ${link}`
+      : `${from} is asking you for ${usdc(amount)}${forNote(note)}. Pay with your passkey or decline: ${link}`,
   payInvoice: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
     code
-      ? `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
-      : `${from} sent you an invoice for ${amount} USDC${forNote(note)}. Pay with your passkey or decline: ${link}`,
+      ? `${from} sent you an invoice for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
+      : `${from} sent you an invoice for ${usdc(amount)}${forNote(note)}. Pay with your passkey or decline: ${link}`,
   /** payRequest for someone not on Dial: no code yet. They get one once they sign up (offerWaiting). */
   payRequestNewcomer: (from: string, amount: string, note: string | null) =>
-    `${from} is asking you for ${amount} USDC${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
+    `${from} is asking you for ${usdc(amount)}${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
   payInvoiceNewcomer: (from: string, amount: string, note: string | null) =>
-    `${from} sent you an invoice for ${amount} USDC${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
+    `${from} sent you an invoice for ${usdc(amount)}${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
   codeMismatch: (triesLeft?: number) =>
     triesLeft === undefined
       ? `That code didn't match anything waiting on you. Check my last text.`
@@ -147,7 +156,7 @@ export const replies = {
   walletLink: (link: string, code: string) =>
     `Your wallet: ${link} Enter ${code} there to open it. The link works once, for 15 minutes.`,
   receive: (handle: string, payUrl: string, addresses: string[]) =>
-    `Your pay link: ${payUrl} Anyone can pay you there, or text me "send ${handle} $5". To deposit, send USDC to ${addresses.join(" | ")}`,
+    `Your pay link: ${payUrl} Anyone can pay you there, or text me "send ${handle} $5". To deposit, send ${addresses.some((a) => a.startsWith("Zcash")) ? "USDC (testnet ZEC on Zcash)" : "USDC"} to ${addresses.join(" | ")}`,
   sent: (amount: string, who: string, chain: string, explorerUrl: string) =>
     `Sent ${amount} to ${who} on ${chain}. Receipt: ${explorerUrl}`,
   sentToEscrow: (amount: string, who: string, days: number) =>
@@ -155,7 +164,7 @@ export const replies = {
   received: (who: string, amount: string, from: string, chain: string, note: string | null, explorerUrl: string) =>
     `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Receipt: ${explorerUrl}`,
   receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
-    `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
+    `${from} sent you ${usdc(amount)}${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
   claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
   claimFailed: (amount: string, from: string, code: string) =>
@@ -181,9 +190,16 @@ export const replies = {
     (sessions > 0 ? ` I also signed you out of your wallet on the web.` : ""),
   fromAgent: (label: string, body: string) => `From your agent "${label}": ${body}`,
   confirmWithdraw: (amount: string, address: string, chain: string, code: string | null, link: string) =>
-    `Withdraw ${amount} USDC to ${address} on ${chain}? ${approveWith(code, link)}`,
+    `Withdraw ${usdc(amount)} to ${address} on ${chain}? ${approveWith(code, link)}`,
   withdrew: (amount: string, address: string, explorerUrl: string) =>
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
+  /** `testBasenames`: they gave a base.eth name on testnet, where Basenames end in .basetest.eth. */
+  /** `network` is where the name was looked up, or null when no name service answers for its ending. */
+  unknownName: (name: string, network: string | null, testBasenames = false) =>
+    testBasenames
+      ? `${name} doesn't resolve${network ? ` on ${network}` : ""}. Test Basenames end in .basetest.eth.`
+      : `${name} doesn't point to an address${network ? ` on ${network}` : ""}. Check the name and try again.`,
+  nameLookupDown: (name: string) => `I couldn't look up ${name} right now. Nothing moved. Try again in a minute.`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
   /** `chains` are words people can type back, like "ethereum". */
   whichChain: (chains: string[]) => `Which chain: ${chains.join(", ")}?`,

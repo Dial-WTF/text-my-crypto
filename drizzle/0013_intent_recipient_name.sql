@@ -1,0 +1,1 @@
+ALTER TABLE `intents` ADD `recipient_name` text;

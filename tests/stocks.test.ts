@@ -69,8 +69,8 @@ describe("amounts as people read them", () => {
   const dollars = { chain: "robinhood" as const, token: USD, amount: 5_000_000n };
 
   it("shows shares and the ticker for a stock, dollars otherwise", () => {
-    expect(formatAmount(stock)).toBe("0.1 TSLA");
-    expect(formatAmount(dollars)).toBe("$5");
+    expect(formatAmount(stock, "testnet")).toBe("0.1 TSLA");
+    expect(formatAmount(dollars, "testnet")).toBe("$5");
   });
 
   it("has no dollar amount for a stock: testnet has no price", () => {
@@ -79,9 +79,9 @@ describe("amounts as people read them", () => {
   });
 
   it("totals per asset", () => {
-    expect(formatTotals([dollars, dollars])).toEqual({ text: "$10", dollarsOnly: true });
-    expect(formatTotals([dollars, stock, stock])).toEqual({ text: "$5 USDC and 0.2 TSLA", dollarsOnly: false });
-    expect(formatTotals([stock])).toEqual({ text: "0.1 TSLA", dollarsOnly: false });
+    expect(formatTotals([dollars, dollars], "testnet")).toBe("$10");
+    expect(formatTotals([dollars, stock, stock], "testnet")).toBe("$5 USDC and 0.2 TSLA");
+    expect(formatTotals([stock], "testnet")).toBe("0.1 TSLA");
   });
 });
 
