@@ -129,6 +129,13 @@ export const replies = {
   dripped: (amount: string) =>
     `Dial is on testnet for now, so I put ${testFunds(amount, "of")} in your wallet to try it. It's play money, not real dollars.`,
   chainUnavailable: (chain: string) => `${chain} isn't switched on yet. Try Solana.`,
+  /** A shielded Zcash send: says what stays private, since that's why they asked. */
+  confirmPrivateSend: (amount: string, who: string, chain: string, pool: string, note: string | null, code: string | null, link: string) =>
+    `Send ${usdc(amount)} to ${who}${forNote(note)} privately? It goes shielded on ${chain} (${pool} pool): the amount and who paid whom stay off the public chain, and the payment id rides in the encrypted memo. ${approveWith(code, link)}`,
+  privateUnavailable: () =>
+    `Private sends need a chain with a shielded pool, and none is switched on yet. Send without "privately" to use your usual chain.`,
+  privateOnlyShielded: (chain: string, shielded: string) =>
+    `${chain} can't shield a payment. Leave out "on ${chain.toLowerCase()}" and I'll send it privately on ${shielded}.`,
   confirmSend: (amount: string, who: string, chain: string, note: string | null, code: string | null, link: string) =>
     `Send ${usdc(amount)} to ${who}${forNote(note)} on ${chain}? ${approveWith(code, link)}`,
   requestSent: (amount: string, who: string) => `Asked ${who} for ${amount}. I'll text you when they pay.`,

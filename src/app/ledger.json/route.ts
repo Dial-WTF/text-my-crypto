@@ -31,7 +31,12 @@ export async function GET(): Promise<Response> {
         id: r.id,
         from: r.from,
         to: r.to,
-        ...(r.stock ? { amountUsd: null, shares: formatShares(r.amount), asset: r.stock } : { amountUsd: usd(r.amount) }),
+        ...(r.amount === null
+          ? { amountUsd: null }
+          : r.stock
+            ? { amountUsd: null, shares: formatShares(r.amount), asset: r.stock }
+            : { amountUsd: usd(r.amount) }),
+        shielded: r.amount === null,
         chain: r.chain,
         network: safeNetworkName(r.chain),
         status: r.status,

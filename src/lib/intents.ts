@@ -26,6 +26,8 @@ export type NewIntent = {
   note: string | null;
   escrowSecretEnc?: string | null;
   escrowProgram?: string | null;
+  /** A shielded Zcash send ("send … privately"). */
+  private?: boolean;
   /** Preset when something keyed by the id (an escrow vault) has to be known before the row exists. */
   id?: string;
   /** Groups the legs of one split. */

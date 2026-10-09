@@ -146,7 +146,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
       // The money may have moved: never call it failed. resumeUnknownSettlements asks again with the
       // same arguments, which the adapter's idempotent sends turn into the same transaction.
       await markOutcomeUnknown(deps.db, intent.id, error);
-      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(money(intent.amount, intent.chain, deps.network), describe(recipient)));
+      if (!resume) await notify(deps, sender.phone, replies.sendUnconfirmed(formatAmount(intent, deps.network), describe(recipient)));
       return { ok: false, reason: "unconfirmed", error };
     }
     await markFailed(deps.db, intent.id, error);
@@ -155,7 +155,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   }
 
   const amount = formatAmount(intent, deps.network);
-  const chain = chainLabel(intent.chain);
+  const chain = intent.private ? `${chainLabel(intent.chain)} (shielded)` : chainLabel(intent.chain);
 
   if (intent.escrowSecretEnc || intent.escrowProgram) {
     await markEscrowed(deps.db, intent.id, result, escrowExpiresAt);
@@ -210,7 +210,12 @@ async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "send
   if (intent.escrowProgram) {
     const program = escrowProgramFor(deps, intent);
     // The program only ever refunds to the sender's wallet it recorded, so a refund needs no address.
-    if (to === "sender") return program.refund({ intentId: intent.id });
+    // Some programs take the refund only on the sender's signature, so it gets their key.
+    if (to === "sender") {
+      const wallet = await getWallet(deps.db, intent.senderId, intent.chain);
+      const senderSecret = wallet ? await unsealWallet(wallet, deps.walletKey) : undefined;
+      return program.refund({ intentId: intent.id, senderSecret });
+    }
     const wallet = await ensureWallet(deps, toUserId, intent.chain, adapter);
     return program.claim({ intentId: intent.id, to: wallet.address });
   }

@@ -10,10 +10,11 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    // A stock token payment counts as a payment but adds no dollars: its amount is shares, and testnet has no price.
+    // A private send and a stock token payment count as payments but add no dollars: one is hidden, the other
+    // is shares, and testnet has no price for them.
     .select({
       payments: count(),
-      moved: sql<number | null>`sum(case when ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
+      moved: sql<number | null>`sum(case when ${intents.private} or ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
     })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
@@ -54,9 +55,10 @@ export type FeedItem = {
   id: string;
   from: string;
   to: string;
-  amount: bigint;
+  /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
+  amount: bigint | null;
   /** The stock token's ticker when the payment moved one; null for dollars. */
-  stock: string | null;
+  stock?: string | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -74,16 +76,18 @@ export function groupSplits(items: FeedItem[]): FeedGroup[] {
   const out: FeedGroup[] = [];
   const bySplit = new Map<string, FeedGroup>();
   for (const item of items) {
-    const legs = [{ to: item.to, amount: item.amount }];
-    const group = item.splitId ? bySplit.get(item.splitId) : undefined;
+    // A private send is never a split leg (splits batch on a chain that can't shield), and its amount is hidden.
+    const splitId = item.amount === null ? null : item.splitId;
+    const legs = [{ to: item.to, amount: item.amount ?? 0n }];
+    const group = splitId ? bySplit.get(splitId) : undefined;
     if (!group) {
-      const entry: FeedGroup = { ...item, legs: item.splitId ? legs : null };
-      if (item.splitId) bySplit.set(item.splitId, entry);
+      const entry: FeedGroup = { ...item, legs: splitId ? legs : null };
+      if (splitId) bySplit.set(splitId, entry);
       out.push(entry);
       continue;
     }
     group.legs?.push(...legs);
-    group.amount += item.amount;
+    group.amount = (group.amount ?? 0n) + (item.amount ?? 0n);
   }
   // Legs come back newest first; list them in the order they were paid.
   for (const g of out) {
@@ -94,11 +98,18 @@ export function groupSplits(items: FeedItem[]): FeedGroup[] {
   return out;
 }
 
-export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]> {
+/** The newest payments that moved money (Blink payments included), on every chain or only on `chain`. */
+export async function recentPayments(db: Db, limit: number, chain?: Chain): Promise<FeedItem[]> {
   const rows = await db
     .select()
     .from(intents)
-    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])))
+    .where(
+      and(
+        inArray(intents.status, MOVED),
+        inArray(intents.kind, ["send", "request", "invoice"]),
+        chain ? eq(intents.chain, chain) : undefined,
+      ),
+    )
     // Legs of a split share a timestamp; insertion order keeps them in the order they were listed.
     .orderBy(desc(intents.createdAt), desc(sql`rowid`))
     .limit(limit);
@@ -112,9 +123,10 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
   const fromIntents = rows.map(
     (r): FeedItem => ({
       id: r.id,
-      from: who(r.senderId),
-      to: who(r.recipientId),
-      amount: r.amount,
+      // A private send shows only that it happened, on which chain, and its txid.
+      from: r.private ? "someone" : who(r.senderId),
+      to: r.private ? "someone" : who(r.recipientId),
+      amount: r.private ? null : r.amount,
       stock: stockForToken(r.chain, r.token)?.symbol ?? null,
       chain: r.chain,
       status: r.status,
@@ -124,16 +136,16 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
       splitId: r.splitId,
     }),
   );
-  return [...fromIntents, ...(await blinkPayments(db, limit))].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
+  return [...fromIntents, ...(await blinkPayments(db, limit, chain))].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
 }
 
 /** Recorded pay-link Blink payments: from the paying wallet's address (it isn't on Dial) to a handle. */
-async function blinkPayments(db: Db, limit: number): Promise<FeedItem[]> {
+async function blinkPayments(db: Db, limit: number, chain?: Chain): Promise<FeedItem[]> {
   const rows = await db
     .select({ p: actionPayments, handle: users.handle })
     .from(actionPayments)
     .innerJoin(users, eq(users.id, actionPayments.recipientId))
-    .where(isNotNull(actionPayments.signature))
+    .where(and(isNotNull(actionPayments.signature), chain ? eq(actionPayments.chain, chain) : undefined))
     .orderBy(desc(actionPayments.paidAt))
     .limit(limit);
   return rows.map(({ p, handle }) => ({
@@ -149,4 +161,100 @@ async function blinkPayments(db: Db, limit: number): Promise<FeedItem[]> {
     at: p.paidAt ?? p.createdAt,
     splitId: null,
   }));
+}
+
+export type SplitItem = {
+  splitId: string;
+  /** Who got a share, by handle ("someone new" for a share waiting to be claimed), in the order listed. */
+  legs: Array<{ to: string; amount: bigint }>;
+  total: bigint;
+  /** The one transaction that carried every leg. */
+  txHash: string | null;
+  explorerUrl: string | null;
+  at: Date;
+};
+
+/** The newest split that moved money on `chain`, with all its legs; null when there hasn't been one. */
+export async function latestSplit(db: Db, chain: Chain): Promise<SplitItem | null> {
+  const [newest] = await db
+    .select({ splitId: intents.splitId })
+    .from(intents)
+    .where(and(inArray(intents.status, MOVED), eq(intents.chain, chain), isNotNull(intents.splitId)))
+    .orderBy(desc(intents.createdAt), desc(sql`rowid`))
+    .limit(1);
+  if (!newest?.splitId) return null;
+  const rows = await db
+    .select()
+    .from(intents)
+    .where(and(eq(intents.splitId, newest.splitId), inArray(intents.status, MOVED)))
+    .orderBy(sql`rowid`);
+  const ids = [...new Set(rows.map((r) => r.recipientId))];
+  const people = ids.length ? await db.select().from(users).where(inArray(users.id, ids)) : [];
+  const who = (id: string) => {
+    const handle = people.find((p) => p.id === id)?.handle;
+    return handle ? `@${handle}` : "someone new";
+  };
+  const first = rows[0];
+  if (!first) return null;
+  return {
+    splitId: newest.splitId,
+    legs: rows.map((r) => ({ to: who(r.recipientId), amount: r.amount })),
+    total: rows.reduce((sum, r) => sum + r.amount, 0n),
+    txHash: first.txHash,
+    explorerUrl: first.explorerUrl,
+    at: first.createdAt,
+  };
+}
+
+/** The demo handle (DEMO_HANDLE) if someone has claimed it, else null: the pay-link demo never shows anyone else. */
+export async function demoHandle(db: Db, handle: string | undefined): Promise<string | null> {
+  if (!handle) return null;
+  const [row] = await db
+    .select({ handle: users.handle })
+    .from(users)
+    .where(and(eq(users.handle, handle), isNotNull(users.claimedAt)))
+    .limit(1);
+  return row?.handle ?? null;
+}
+
+export type EscrowItem = {
+  id: string;
+  status: Intent["status"];
+  /** The transaction that funded the vault. */
+  funded: { txHash: string; explorerUrl: string } | null;
+  /** The claim (status settled) or refund (status refunded) that closed it, once one has. */
+  closed: { txHash: string; explorerUrl: string } | null;
+  at: Date;
+};
+
+/** The newest payments that went through an on-chain escrow program on `chain`. Ids and transactions only. */
+export async function recentEscrows(db: Db, chain: Chain, limit: number): Promise<EscrowItem[]> {
+  const rows = await db
+    .select()
+    .from(intents)
+    .where(and(inArray(intents.status, MOVED), eq(intents.chain, chain), isNotNull(intents.escrowProgram)))
+    .orderBy(desc(intents.createdAt))
+    .limit(limit);
+  const tx = (hash: string | null, url: string | null) => (hash && url ? { txHash: hash, explorerUrl: url } : null);
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    funded: tx(r.txHash, r.explorerUrl),
+    closed: tx(r.releaseTxHash, r.releaseExplorerUrl),
+    at: r.createdAt,
+  }));
+}
+
+export type ChainActivity = {
+  /** Everything that moved money on the chain, withdrawals included: the same count that makes it "live". */
+  moved: number;
+  /** The newest payments on it, by handle only. */
+  recent: FeedItem[];
+};
+
+/** One chain's slice of the public ledger, for its chain page. */
+export async function chainActivity(db: Db, chain: Chain, limit: number): Promise<ChainActivity> {
+  // The same count movedByChain gives the live rule, Blink payments included.
+  const [moved, recent] = await Promise.all([movedByChain(db), recentPayments(db, limit, chain)]);
+  return { moved: moved[chain] ?? 0, recent };
 }

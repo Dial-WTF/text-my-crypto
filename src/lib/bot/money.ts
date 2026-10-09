@@ -32,7 +32,7 @@ import { hasPasskey } from "@/lib/passkeys";
 import { withdrawTarget } from "@/lib/payment-labels";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
-import { type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
+import { chainWith, type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { formatAmount, usdAmount } from "@/lib/stocks";
@@ -49,6 +49,7 @@ export const moneyCommandSchema = z.object({
   note: z.string().optional(),
   chain: z.enum(CHAINS).optional(),
   asset: z.string().optional(),
+  private: z.literal(true).optional(),
 });
 
 export const withdrawCommandSchema = z.object({
@@ -66,6 +67,7 @@ const CIRCLE_FAUCET = "faucet.circle.com";
 export type MoneyError = {
   code:
     | "chain_unavailable"
+    | "private_chain"
     | "bad_amount"
     | "over_cap"
     | "over_daily"
@@ -156,6 +158,11 @@ export function insufficientReply(deps: BotDeps, user: User, chain: Chain, balan
   return replies.insufficient(money(balance, chain, deps.network), payUrl, testnet, faucet);
 }
 
+/** The shielded pool a chain's private sends go through, for the confirm text. */
+function shieldedPool(deps: BotDeps, chain: Chain): string {
+  return deps.adapters[chain]?.shielded?.pool ?? "shielded";
+}
+
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
@@ -165,9 +172,23 @@ type Checked =
   | { ok: false; error: MoneyError };
 
 /** The checks that need no lookup: chain switched on, amount well-formed and under the per-payment cap. */
-export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "asset">): Checked {
+export function checkMoney(
+  deps: BotDeps,
+  user: User,
+  cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "private" | "asset">,
+): Checked {
   if (cmd.asset) return checkStock(deps, cmd);
-  const chain = cmd.chain ?? user.defaultChain;
+  let chain = cmd.chain ?? user.defaultChain;
+  // Private sends go to a chain with a shielded pool, whatever the sender's default chain.
+  if (cmd.private) {
+    const shielded = chainWith(deps.adapters, "shielded", cmd.chain);
+    if (!shielded) return { ok: false, error: { code: "chain_unavailable", message: replies.privateUnavailable() } };
+    if (cmd.chain && shielded.chain !== cmd.chain) {
+      const message = replies.privateOnlyShielded(chainLabel(cmd.chain), chainLabel(shielded.chain));
+      return { ok: false, error: { code: "private_chain", message } };
+    }
+    chain = shielded.chain;
+  }
   const adapter = deps.adapters[chain];
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
@@ -232,7 +253,10 @@ async function repeatReply(
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    const text = replies.confirmSend(formatAmount(pending, deps.network), otherName, chainLabel(pending.chain), pending.note, code, link);
+    const amount = formatAmount(pending, deps.network);
+    const text = pending.private
+      ? replies.confirmPrivateSend(amount, otherName, chainLabel(pending.chain), shieldedPool(deps, pending.chain), pending.note, code, link)
+      : replies.confirmSend(amount, otherName, chainLabel(pending.chain), pending.note, code, link);
     return { text, askNew: false };
   }
   return { text: replies.alreadyPending(formatAmount(pending, deps.network), otherName, code, link), askNew: true };
@@ -301,6 +325,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
         note,
         escrowSecretEnc,
         escrowProgram,
+        private: cmd.private === true,
       },
       deps.now(),
     );
@@ -447,7 +472,9 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
   const other = describe(p.counterparty);
   switch (intent.kind) {
     case "send":
-      return replies.confirmSend(amount, other, chain, intent.note, code, link);
+      return intent.private
+        ? replies.confirmPrivateSend(amount, other, chain, shieldedPool(deps, intent.chain), intent.note, code, link)
+        : replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).

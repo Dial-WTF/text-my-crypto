@@ -15,6 +15,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
 import { STOCK_ONCHAIN_SCALE } from "@/lib/stocks";
+import { createEvmEscrow, viemEscrowRpc } from "./evm-escrow";
 import type { EvmNetwork, StockToken } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
 import type { Asset, AssetTransfers } from "./capabilities";
@@ -136,7 +137,13 @@ export async function waitForHead(
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "stocks"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "stocks"> & {
+    chain: Chain;
+    treasuryKey: Hex;
+    rpcUrl?: string;
+    /** The dial_escrow contract and the attestor key that sends claims. Absent: escrow stays server-held. */
+    escrow?: { contract: Address; attestorKey: Hex };
+  },
 ): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
@@ -293,6 +300,17 @@ export function createEvmAdapter(
       // Sent: from here a missing receipt doesn't mean nothing moved.
       return confirm(hash, { unconfirmedIsTyped: true });
     },
+    ...(cfg.escrow
+      ? {
+          escrow: createEvmEscrow({
+            contract: cfg.escrow.contract,
+            token,
+            chainId: cfg.viem.id,
+            explorerTx: cfg.explorerTx,
+            rpc: viemEscrowRpc({ viem: cfg.viem, rpcUrl: cfg.rpcUrl, contract: cfg.escrow.contract, treasuryKey: cfg.treasuryKey, attestorKey: cfg.escrow.attestorKey, token, tokenDomain }),
+          }),
+        }
+      : {}),
   };
 }
 

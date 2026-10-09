@@ -47,8 +47,18 @@ export type TempoNetwork = Common & {
  * Robinhood Chain). Sent beside the stablecoin, never instead of it.
  */
 export type StockToken = { symbol: string; name: string; address: Address };
-/** `stocks`: tokenized stocks people can send on this network, besides the stablecoin. */
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; stocks?: readonly StockToken[] };
+/**
+ * `stocks`: tokenized stocks people can send on this network, besides the stablecoin.
+ * `escrowContract`: production's dial_escrow contract on this network (contracts/arbitrum-escrow), null until
+ * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
+ */
+export type EvmNetwork = Common & {
+  kind: "evm";
+  viem: ViemChain;
+  token: Address | null;
+  escrowContract?: Address | null;
+  stocks?: readonly StockToken[];
+};
 /**
  * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
  * (services/zcash-wallet). `publicRpc` is the lightwalletd that service scans; the Worker never
@@ -178,6 +188,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://sepolia-rollup.arbitrum.io/rpc",
       alchemy: "arb-sepolia",
       token: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      escrowContract: null, // Stylus activations are paused on Arbitrum since 2 Oct 2026 (contracts/arbitrum-escrow/README.md)
       ...scan("sepolia.arbiscan.io"),
     },
     mainnet: {
@@ -261,6 +272,11 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
     mainnet: null, // custody and a real ZEC price come first
   },
 };
+
+/** Every escrow contract override name: ESCROW_CONTRACT_<id> for each network that can carry one. */
+export const ESCROW_CONTRACT_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>
+  Object.values(byNetwork).flatMap((entry) => (entry?.kind === "evm" && entry.escrowContract !== undefined ? [`ESCROW_CONTRACT_${entry.id}`] : [])),
+);
 
 /** Every RPC override secret name, for the env schema and the secrets push script. */
 export const RPC_OVERRIDE_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>
