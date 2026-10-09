@@ -32,7 +32,7 @@ import { hasPasskey } from "@/lib/passkeys";
 import { withdrawTarget } from "@/lib/payment-labels";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
-import { type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
+import { chainWith, type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { getWallet } from "@/lib/wallets";
@@ -153,6 +153,11 @@ function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: big
   return replies.insufficient(money(balance, chain, deps.network), payUrl, testnet, faucet);
 }
 
+/** The shielded pool a chain's private sends go through, for the confirm text. */
+function shieldedPool(deps: BotDeps, chain: Chain): string {
+  return deps.adapters[chain]?.shielded?.pool ?? "shielded";
+}
+
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
@@ -161,15 +166,18 @@ type Checked = { ok: true; chain: Chain; adapter: SettlementAdapter; amount: big
 
 /** The checks that need no lookup: chain switched on, amount well-formed and under the per-payment cap. */
 export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "private">): Checked {
-  // Private sends are shielded Zcash sends, whatever the sender's default chain.
-  if (cmd.private && cmd.chain && cmd.chain !== "zcash") {
-    return { ok: false, error: { code: "private_chain", message: replies.privateOnlyZcash(chainLabel(cmd.chain)) } };
+  let chain = cmd.chain ?? user.defaultChain;
+  // Private sends go to a chain with a shielded pool, whatever the sender's default chain.
+  if (cmd.private) {
+    const shielded = chainWith(deps.adapters, "shielded", cmd.chain);
+    if (!shielded) return { ok: false, error: { code: "chain_unavailable", message: replies.privateUnavailable() } };
+    if (cmd.chain && shielded.chain !== cmd.chain) {
+      const message = replies.privateOnlyShielded(chainLabel(cmd.chain), chainLabel(shielded.chain));
+      return { ok: false, error: { code: "private_chain", message } };
+    }
+    chain = shielded.chain;
   }
-  const chain = cmd.private ? "zcash" : (cmd.chain ?? user.defaultChain);
   const adapter = deps.adapters[chain];
-  if (!adapter && cmd.private) {
-    return { ok: false, error: { code: "chain_unavailable", message: replies.privateUnavailable() } };
-  }
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
   if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.badAmount(formatUsd(deps.perTxCap)) } };
@@ -234,7 +242,7 @@ async function repeatReply(
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
     const amount = money(pending.amount, pending.chain, deps.network);
     const text = pending.private
-      ? replies.confirmPrivateSend(amount, otherName, pending.note, code, link)
+      ? replies.confirmPrivateSend(amount, otherName, chainLabel(pending.chain), shieldedPool(deps, pending.chain), pending.note, code, link)
       : replies.confirmSend(amount, otherName, chainLabel(pending.chain), pending.note, code, link);
     return { text, askNew: false };
   }
@@ -451,7 +459,7 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
   switch (intent.kind) {
     case "send":
       return intent.private
-        ? replies.confirmPrivateSend(amount, other, intent.note, code, link)
+        ? replies.confirmPrivateSend(amount, other, chain, shieldedPool(deps, intent.chain), intent.note, code, link)
         : replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);

@@ -33,7 +33,7 @@ beforeEach(async () => {
   db = await createTestDb();
   sms = smsSink();
   sol = fakeAdapter({ defaultBalance: 100_000_000n });
-  zec = fakeAdapter({ chain: "zcash", defaultBalance: 5_000_000n });
+  zec = { ...fakeAdapter({ chain: "zcash", defaultBalance: 5_000_000n }), shielded: { pool: "Ironwood", byDefault: true } };
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: sol, zcash: zec } });
   for (const [phone, name] of [
     [ALEX, "Alex"],
@@ -83,7 +83,7 @@ describe("parsing a private send", () => {
 describe("sending privately by text", () => {
   it("goes shielded over Zcash whatever the default chain, and says so", async () => {
     const confirm = await say(ALEX, "send @jeremy $1 privately");
-    expect(confirm).toMatch(/^Send \$1 \(0\.02 TAZ\) to @jeremy privately\? It goes shielded on Zcash/);
+    expect(confirm).toMatch(/^Send \$1 \(0\.02 TAZ\) to @jeremy privately\? It goes shielded on Zcash \(Ironwood pool\)/);
     expect(confirm).toContain("encrypted memo");
     const id = intentIdIn(confirm);
     expect(await getIntent(db, id)).toMatchObject({ chain: "zcash", private: true });
@@ -95,17 +95,26 @@ describe("sending privately by text", () => {
     expect(sms.to(ALEX).some((t) => /^Sent \$1 \(0\.02 TAZ\) to Jeremy on Zcash \(shielded\)/.test(t))).toBe(true);
   });
 
-  it("says private sends aren't on when Zcash isn't switched on", async () => {
+  it("says private sends aren't on when no switched-on chain can shield", async () => {
     deps = { ...deps, adapters: { solana: sol } };
     expect(await say(ALEX, "send @jeremy $1 privately")).toBe(
-      `Private sends go shielded over Zcash, which isn't switched on yet. Send without "privately" to use your usual chain.`,
+      `Private sends need a chain with a shielded pool, and none is switched on yet. Send without "privately" to use your usual chain.`,
     );
   });
 
   it("won't send privately on a chain that can't", async () => {
     expect(await say(ALEX, "send @jeremy $1 privately on solana")).toBe(
-      `Private sends only go shielded over Zcash, not Solana. Leave out "on solana" and I'll send it privately on Zcash.`,
+      `Solana can't shield a payment. Leave out "on solana" and I'll send it privately on Zcash.`,
     );
+  });
+
+  it("finds the chain by its shielded module, never by name", async () => {
+    // A made-up shielded chain: no Zcash at all, and the private send still finds where to go.
+    const tempo = { ...fakeAdapter({ chain: "tempo", defaultBalance: 5_000_000n }), shielded: { pool: "Test", byDefault: false } };
+    deps = { ...deps, adapters: { solana: sol, tempo } };
+    const confirm = await say(ALEX, "send @jeremy $1 privately");
+    expect(confirm).toContain("privately? It goes shielded on Tempo (Test pool)");
+    expect(await getIntent(db, intentIdIn(confirm))).toMatchObject({ chain: "tempo", private: true });
   });
 });
 

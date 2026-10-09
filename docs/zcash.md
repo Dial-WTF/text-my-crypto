@@ -92,8 +92,9 @@ Zcash balances are listed per chain and left out of the USDC total. People still
 ## Sending privately
 
 "send @alex $5 privately" (also "privately send …", "send privately …", "send … private") is a
-shielded Zcash send whatever the sender's default chain; agents pass `private: true` to
-`send_payment`. The confirm text says it goes shielded on Zcash. The payment carries the
+shielded send whatever the sender's default chain; agents pass `private: true` to `send_payment`.
+The operator picks the chain with `chainWith(adapters, "shielded")` (see docs/CAPABILITIES.md),
+never by name; today only Zcash carries that module. The confirm text names the chain and its pool. The payment carries the
 `private` flag (migration 0013), and every public surface treats it accordingly:
 
 - The /a/<id> receipt and its share card show "Shielded payment", no amount, names or note. The
@@ -102,8 +103,8 @@ shielded Zcash send whatever the sender's default chain; agents pass `private: t
 - The public ledger and /ledger.json list it as shielded with no amount or handles, and the dollars-moved
   total leaves it out.
 - Requests and invoices can't be private. "privately" on one goes to the plain-English reader.
-- With Zcash switched off, the reply says private sends aren't on yet. "privately on solana" is
-  refused: only Zcash can shield.
+- With no shielded chain switched on, the reply says private sends aren't on yet. "privately on
+  solana" is refused: Solana carries no shielded module.
 
 ## The service API
 
