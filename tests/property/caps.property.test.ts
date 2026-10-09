@@ -55,7 +55,7 @@ describe("the per-payment cap", () => {
   });
 });
 
-type Past = { status: (typeof intents.$inferInsert)["status"]; cents: bigint; minutesAgo: number };
+type Past = { status: NonNullable<(typeof intents.$inferInsert)["status"]>; cents: bigint; minutesAgo: number };
 
 const past: fc.Arbitrary<Past> = fc.record({
   status: fc.constantFrom("pending", "settling", "escrowed", "settled", "refunded", "failed", "declined"),
