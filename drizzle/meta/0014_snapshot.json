@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e433df45-e5e4-4195-bd8b-5894140be138",
+  "id": "bd24267d-af71-47f6-9d9d-462d1c6b3460",
   "prevId": "9818bdc9-dcce-4771-a508-1a2168854b38",
   "tables": {
     "agent_keys": {
@@ -466,14 +466,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "private": {
-          "name": "private",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
         "tx_hash": {
           "name": "tx_hash",
           "type": "text",
@@ -523,9 +515,24 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "split_id": {
+          "name": "split_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "intents_split": {
+          "name": "intents_split",
+          "columns": [
+            "split_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "intents_created_by_users_id_fk": {
           "name": "intents_created_by_users_id_fk",

@@ -43,6 +43,7 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `request_payment` | `{ from, amountUsd, note?, chain? }` Ask someone to pay the owner |
 | `create_invoice` | `{ to, amountUsd, note?, chain? }` Bill someone; the link renders as an invoice |
 | `withdraw` | `{ amountUsd \| "all", address, chain? }` Move the owner's USDC to an outside address, ENS name (`name.eth`, on Ethereum) or Basename (`name.base.eth`, on Base; `name.basetest.eth` on testnet) |
+| `split_payment` | `{ amountUsd, people, includeMe?, note?, chain? }` Split an amount between up to 10 people (the owner too with `includeMe`). One approval; every share settles in one Tempo transaction, or none do |
 | `get_payment` | `{ intentId }` Current status and receipt |
 | `list_payments` | `{ limit? }` Recent payments, newest first |
 | `get_pay_link` | `{ handle?, amountUsd?, note? }` A pay page (crypto Zelle) for the owner or any @handle: URL, text to send the operator, and a wallet link per chain. Share the owner's to get paid; read someone else's to pay them. Read-only |

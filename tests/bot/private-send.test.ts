@@ -6,7 +6,7 @@ import { getIntent } from "@/lib/intents";
 import { interpret, type LlmInterpreter } from "@/lib/operator/brain";
 import { parseCommand } from "@/lib/operator/grammar";
 import type { InboundSms } from "@/lib/sms/inbound";
-import { publicStats, recentPayments } from "@/lib/stats";
+import { type FeedItem, groupSplits, publicStats, recentPayments } from "@/lib/stats";
 import { buildPaymentView } from "@/lib/views/payment";
 import { createTestDb } from "../helpers/db";
 import { type FakeAdapter, fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
@@ -145,5 +145,18 @@ describe("what the public sees of a private send", () => {
     const after = await publicStats(db);
     expect(after.payments).toBe(before.payments + 1);
     expect(after.movedUsd).toBe(before.movedUsd);
+  });
+
+  it("sits next to a split in the feed without mixing: the split folds its legs, the private send stays hidden", () => {
+    const at = new Date("2026-10-09T12:00:00Z");
+    const base = { chain: "tempo" as const, status: "settled" as const, txHash: "0xabc", explorerUrl: null, at };
+    const items: FeedItem[] = [
+      { ...base, id: "pi_leg2", from: "@alex", to: "@sam", amount: 2_000_000n, splitId: "sp_1" },
+      { ...base, id: "pi_priv", chain: "zcash", from: "someone", to: "someone", amount: null, splitId: null },
+      { ...base, id: "pi_leg1", from: "@alex", to: "@jeremy", amount: 3_000_000n, splitId: "sp_1" },
+    ];
+    const [split, shielded] = groupSplits(items);
+    expect(split).toMatchObject({ amount: 5_000_000n, to: "@jeremy, @sam", legs: [{ to: "@jeremy" }, { to: "@sam" }] });
+    expect(shielded).toMatchObject({ id: "pi_priv", amount: null, legs: null, from: "someone", to: "someone" });
   });
 });
