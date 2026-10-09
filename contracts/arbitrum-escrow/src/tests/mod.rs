@@ -13,6 +13,8 @@ const SENDER: Address = address!("0000000000000000000000000000000000005e4d");
 const RECIPIENT: Address = address!("000000000000000000000000000000000000beef");
 const RELAYER: Address = address!("0000000000000000000000000000000000000e1a");
 const STRANGER: Address = address!("0000000000000000000000000000000000000bad");
+/// A token someone else deployed, which does whatever its author wants.
+const FAKE_TOKEN: Address = address!("00000000000000000000000000000000000fa4e0");
 const ID: B256 = b256!("94f7a868a972292409e93a5940cfab67927a26a03f4336345a35dc65082f59f8"); // keccak256("pi_test")
 const AMOUNT: U256 = U256::from_limbs([5_000_000, 0, 0, 0]);
 const NOW: u64 = 1_000;
@@ -24,6 +26,7 @@ fn name(r: Result<(), EscrowError>) -> &'static str {
         Err(e) => match e {
             EscrowError::ZeroAmount(_) => "ZeroAmount",
             EscrowError::ZeroAddress(_) => "ZeroAddress",
+            EscrowError::WrongToken(_) => "WrongToken",
             EscrowError::ExpiryInPast(_) => "ExpiryInPast",
             EscrowError::AlreadyFunded(_) => "AlreadyFunded",
             EscrowError::NotOpen(_) => "NotOpen",
@@ -80,7 +83,7 @@ fn setup() -> (MockChain, DialEscrow) {
     vm.set_code(TOKEN, vec![0xfe]);
     arb_block(&vm, 7);
     let mut contract = DialEscrow::from(&vm);
-    assert_eq!(tx(&vm, || contract.constructor(ATTESTOR)), "ok");
+    assert_eq!(tx(&vm, || contract.constructor(ATTESTOR, TOKEN)), "ok");
     (vm, contract)
 }
 
@@ -102,13 +105,27 @@ fn topics_of(vm: &MockChain, signature: B256) -> Vec<Vec<B256>> {
 }
 
 #[test]
-fn constructor_fixes_the_attestor_and_refuses_zero() {
+fn constructor_fixes_the_attestor_and_token_and_refuses_zero() {
     let (_, contract) = setup();
     assert_eq!(contract.attestor(), ATTESTOR);
+    assert_eq!(contract.token(), TOKEN);
 
     let vm = MockChain::new();
+    vm.set_code(TOKEN, vec![0xfe]);
     let mut empty = DialEscrow::from(&vm);
-    assert_eq!(name(empty.constructor(Address::ZERO)), "ZeroAddress");
+    assert_eq!(
+        tx(&vm, || empty.constructor(Address::ZERO, TOKEN)),
+        "ZeroAddress"
+    );
+    assert_eq!(
+        tx(&vm, || empty.constructor(ATTESTOR, Address::ZERO)),
+        "ZeroAddress"
+    );
+    // A token address without code can't be fixed in: it would never move anything.
+    assert_eq!(
+        tx(&vm, || empty.constructor(ATTESTOR, FAKE_TOKEN)),
+        "NoCode"
+    );
 }
 
 #[test]
@@ -136,7 +153,7 @@ fn fund_refuses_bad_input() {
     );
     assert_eq!(
         tx(&vm, || contract.fund(ID, Address::ZERO, AMOUNT, EXPIRY)),
-        "ZeroAddress"
+        "WrongToken"
     );
     assert_eq!(
         tx(&vm, || contract.fund(ID, TOKEN, AMOUNT, NOW)),
@@ -196,18 +213,102 @@ fn fund_checks_the_token_call() {
         "ok"
     );
 
-    // An address without code "succeeds" without moving anything, so it is refused.
-    let empty = address!("00000000000000000000000000000000000c0de0");
-    vm.mock_call(empty, pull(SENDER, AMOUNT), U256::ZERO, Ok(TRUE()));
+    // An address without code "succeeds" without moving anything, so it is refused, even if the token
+    // somehow lost its code after deploy.
+    vm.set_code(TOKEN, vec![]);
+    token_returns(&vm, pull(SENDER, AMOUNT), Ok(TRUE()));
     assert_eq!(
         tx(&vm, || contract.fund(
             B256::repeat_byte(4),
-            empty,
+            TOKEN,
             AMOUNT,
             EXPIRY
         )),
         "NoCode"
     );
+}
+
+#[test]
+fn escrows_hold_only_the_token_fixed_at_deploy() {
+    let (vm, mut contract) = setup();
+    vm.set_code(FAKE_TOKEN, vec![0xfe]);
+    vm.mock_call(
+        FAKE_TOKEN,
+        IERC20::transferFromCall {
+            from: SENDER,
+            to: ESCROW,
+            value: AMOUNT,
+        }
+        .abi_encode(),
+        U256::ZERO,
+        Ok(TRUE()),
+    );
+    vm.set_sender(SENDER);
+    assert_eq!(
+        tx(&vm, || contract.fund(ID, FAKE_TOKEN, AMOUNT, EXPIRY)),
+        "WrongToken"
+    );
+    assert_eq!(
+        contract.escrow(ID),
+        (Address::ZERO, Address::ZERO, U256::ZERO, 0, NONE, 0, 0)
+    );
+}
+
+#[test]
+fn a_stranger_cant_open_an_escrow_in_the_senders_name_with_a_fake_token() {
+    let (vm, mut contract) = setup();
+    // The stranger's token "accepts" any authorization: it checks no signature and moves nothing.
+    let far = EXPIRY * 1_000;
+    let junk = (27u8, B256::repeat_byte(0x33), B256::repeat_byte(0x44));
+    let valid_before = U256::from(5_000);
+    let fake_receive = IERC3009::receiveWithAuthorizationCall {
+        from: SENDER,
+        to: ESCROW,
+        value: AMOUNT,
+        validAfter: U256::ZERO,
+        validBefore: valid_before,
+        nonce: contract.funding_nonce(ID, far),
+        v: junk.0,
+        r: junk.1,
+        s: junk.2,
+    };
+    vm.set_code(FAKE_TOKEN, vec![0xfe]);
+    vm.mock_call(
+        FAKE_TOKEN,
+        fake_receive.abi_encode(),
+        U256::ZERO,
+        Ok(vec![]),
+    );
+
+    vm.set_sender(STRANGER);
+    assert_eq!(
+        tx(&vm, || contract.fund_with_authorization(
+            ID,
+            FAKE_TOKEN,
+            SENDER,
+            AMOUNT,
+            far,
+            valid_before,
+            junk.0,
+            junk.1,
+            junk.2
+        )),
+        "WrongToken"
+    );
+    assert_eq!(contract.escrow(ID).4, NONE);
+    assert!(topics_of(&vm, Funded::SIGNATURE_HASH).is_empty());
+
+    // The id is still free, so the sender's real funding goes through and the claim pays the real token.
+    token_returns(&vm, pull(SENDER, AMOUNT), Ok(TRUE()));
+    vm.set_sender(SENDER);
+    assert_eq!(tx(&vm, || contract.fund(ID, TOKEN, AMOUNT, EXPIRY)), "ok");
+    assert_eq!(
+        contract.escrow(ID),
+        (SENDER, TOKEN, AMOUNT, EXPIRY, OPEN, 7, 0)
+    );
+    token_returns(&vm, pay(RECIPIENT, AMOUNT), Ok(TRUE()));
+    vm.set_sender(ATTESTOR);
+    assert_eq!(tx(&vm, || contract.claim(ID, RECIPIENT)), "ok");
 }
 
 #[test]

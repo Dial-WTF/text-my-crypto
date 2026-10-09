@@ -29,6 +29,7 @@ import { fundingVerdict } from "./unconfirmed";
 
 export const ESCROW_ABI = parseAbi([
   "function attestor() view returns (address)",
+  "function token() view returns (address)",
   "function escrow(bytes32 id) view returns (address sender, address token, uint256 amount, uint64 expiry, uint8 status, uint64 fundedBlock, uint64 closedBlock)",
   "function fundWithAuthorization(bytes32 id, address token, address from, uint256 amount, uint64 expiry, uint256 validBefore, uint8 v, bytes32 r, bytes32 s)",
   "function claim(bytes32 id, address to)",
@@ -38,6 +39,7 @@ export const ESCROW_ABI = parseAbi([
   "event Refunded(bytes32 indexed id, address indexed sender, uint256 amount)",
   "error ZeroAmount()",
   "error ZeroAddress()",
+  "error WrongToken(address token)",
   "error ExpiryInPast()",
   "error AlreadyFunded(bytes32 id)",
   "error NotOpen(bytes32 id)",
@@ -201,8 +203,9 @@ export function createEvmEscrow(cfg: {
   }
 
   /**
-   * The escrow at `id`. The contract keeps escrows in any token, and anyone can open one in a sender's name
-   * with a token that skips the sender's signature, so only one holding our token can be this payment's.
+   * The escrow at `id`. The contract holds only the token it was deployed with and refuses any other
+   * (WrongToken), but a contract deployed with a different token than ours would still answer, so only an
+   * escrow holding our token can be this payment's.
    */
   async function read(id: Hex, intentId: string): Promise<OnChainEscrow> {
     const e = await rl(() => rpc.escrow(id));

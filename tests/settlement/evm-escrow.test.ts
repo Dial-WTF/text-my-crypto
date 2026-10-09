@@ -8,6 +8,7 @@ import {
   hashTypedData,
   recoverAddress,
   recoverTypedDataAddress,
+  zeroAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -56,6 +57,8 @@ function fakeChain() {
     attestorWei: ATTESTOR_MIN_WEI,
     fail: null as Error | null,
     landed: false,
+    /** The token the contract was deployed with: it refuses fundings in any other. */
+    contractToken: TOKEN,
     receipt: "success" as "success" | "reverted" | "timeout",
   };
   let n = 0;
@@ -82,7 +85,7 @@ function fakeChain() {
 
   const rpc: EscrowRpc = {
     async escrow(id) {
-      return get(id) ?? { status: "none", sender: "0x0000000000000000000000000000000000000000", token: TOKEN, amount: 0n, expiry: 0n, fundedBlock: 0n, closedBlock: 0n };
+      return get(id) ?? { status: "none", sender: zeroAddress, token: zeroAddress, amount: 0n, expiry: 0n, fundedBlock: 0n, closedBlock: 0n };
     },
     async eventTx(event, id, block) {
       return events.get(`${event}:${id}:${block}`) ?? null;
@@ -91,6 +94,8 @@ function fakeChain() {
       return DOMAIN;
     },
     async fundWithAuthorization({ id, from, amount, expiry, validBefore, v, r, s }) {
+      // The client always sends its configured token (viemEscrowRpc), which here is TOKEN.
+      if (state.contractToken !== TOKEN) throw refuse("WrongToken");
       if (get(id)) throw refuse("AlreadyFunded");
       // The token checks the sender signed exactly this: to the contract, this amount, the contract's nonce.
       const signer = await recoverTypedDataAddress({
@@ -264,9 +269,17 @@ describe("evm escrow", () => {
     await expect(fund()).rejects.toThrow("AlreadyFunded");
   });
 
+  it("a contract deployed with another token refuses our funding: failed, nothing moved", async () => {
+    chain.state.contractToken = "0x000000000000000000000000000000000000fa4e";
+    await expect(fund()).rejects.toThrow("WrongToken");
+    expect(chain.escrows.size).toBe(0);
+    expect(chain.sent).toEqual([]);
+  });
+
   it("an escrow opened in our sender's name with another token is not ours: not funded, not claimed, not refunded", async () => {
-    // The contract takes any token, and a token the attacker wrote can accept a funding without the
-    // sender's signature. Everything else about it matches this payment.
+    // The contract refuses any token but its own, so this is a contract deployed with a token other than
+    // ours. A token the attacker wrote could accept a funding without the sender's signature, and
+    // everything else about the escrow matches this payment.
     const FAKE: Address = "0x000000000000000000000000000000000000fa4e";
     chain.escrows.set(escrowId("pi_one"), {
       status: "open",
