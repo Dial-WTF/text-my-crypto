@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { networkName } from "@/lib/ledger";
-import { cachedFor, overall, publicRows, SLOW_MS, stateOf } from "@/lib/public-status";
+import { cachedFor, overall, problemLabel, publicRows, roughAge, SLOW_MS, stateOf } from "@/lib/public-status";
 
 const name = (chain: Parameters<typeof networkName>[0]) => networkName(chain, "testnet");
 
@@ -66,6 +66,40 @@ describe("overall", () => {
 
   it("calls an empty board down: the checks couldn't run", () => {
     expect(overall([])).toBe("down");
+  });
+
+  it("counts texting and watchdog rows, ignores plain facts, and is down without any service row", () => {
+    const db = { kind: "service", name: "Database", state: "ok" } as const;
+    expect(overall([db, { kind: "texting", name: "Last text answered", state: null, value: "2 min ago" }])).toBe("ok");
+    expect(overall([db, { kind: "texting", name: "Texts waiting for a reply", state: "slow", value: "1" }])).toBe("slow");
+    expect(overall([db, { kind: "watchdog", name: "Last watchdog run", state: "down", value: "never" }])).toBe("down");
+    expect(overall([{ kind: "texting", name: "Texts waiting for a reply", state: "ok", value: "0" }])).toBe("down");
+  });
+});
+
+describe("roughAge", () => {
+  it("never says anything finer than a minute", () => {
+    expect(roughAge(-5)).toBe("under a minute ago");
+    expect(roughAge(59_999)).toBe("under a minute ago");
+    expect(roughAge(60_000)).toBe("1 min ago");
+    expect(roughAge(59 * 60_000 + 59_000)).toBe("59 min ago");
+    expect(roughAge(60 * 60_000)).toBe("1 hour ago");
+    expect(roughAge(47 * 60 * 60_000)).toBe("47 hours ago");
+    expect(roughAge(72 * 60 * 60_000)).toBe("3 days ago");
+  });
+});
+
+describe("problemLabel", () => {
+  it("uses the watchdog's own words, capitalized", () => {
+    expect(problemLabel("undelivered")).toBe("Payphone got a text but never passed it to the bot");
+    expect(problemLabel("app")).toBe("The bot isn't answering at all");
+    expect(problemLabel("robinhoodBalance")).toBe("Robinhood network not answering");
+  });
+
+  it("never shows a key the watchdog doesn't define", () => {
+    expect(problemLabel("lastRun")).toBe("Another check is failing");
+    expect(problemLabel("mysteryBalance")).toBe("Another check is failing");
+    expect(problemLabel("constructor")).toBe("Another check is failing");
   });
 });
 

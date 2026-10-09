@@ -19,7 +19,7 @@
     "ESCROW_PROGRAM": "on",
     "SIGNUP_DRIP_USD": "2",
     // Chains that settle in production. Add one only after `pnpm chains:status` shows its treasury ready.
-    "CHAINS": "solana,tempo,ethereum,robinhood",
+    "CHAINS": "solana,tempo,ethereum,robinhood,base,arbitrum",
     "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
   "d1_databases": [
@@ -68,6 +68,8 @@
         "ESCROW_PROGRAM": "on",
         // Each smoke run signs up a sender and a newcomer; the sender's $1 drop covers its two $0.50 payments.
         "SIGNUP_DRIP_USD": "1",
+        // Same chains as production, so smoke runs exercise what production settles on.
+        "CHAINS": "solana,tempo,ethereum,robinhood,base,arbitrum",
         "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
       },
       "ai": { "binding": "AI" },
