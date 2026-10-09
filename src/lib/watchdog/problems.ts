@@ -3,9 +3,9 @@ import type { Db } from "@/lib/db/client";
 import { watchdogProblems } from "@/lib/db/schema";
 
 /** At most one alert per check per this window, however long it stays broken or however often it flaps. */
-export const REALERT_MS = 30 * 60_000;
+const REALERT_MS = 30 * 60_000;
 /** Passing runs in a row before an open problem counts as resolved. */
-export const RESOLVE_AFTER = 2;
+const RESOLVE_AFTER = 2;
 
 /**
  * One check's outcome in a run. `ok: null` means it could not be evaluated this run (say the Payphone

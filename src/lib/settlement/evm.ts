@@ -4,7 +4,6 @@ import {
   createPublicClient,
   createWalletClient,
   type Hex,
-  hexToBytes,
   http,
   isAddress,
   keccak256,
@@ -189,8 +188,4 @@ export function createEvmAdapter(
         }
       : {}),
   };
-}
-
-export function evmSecretFromHex(hex: Hex): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(hexToBytes(hex));
 }

@@ -10,15 +10,15 @@ import { findUnanswered } from "@/lib/watchdog/checks";
 import { LAST_RUN_KEY } from "@/lib/watchdog/problems";
 
 /** A text waiting longer than this for its reply makes texting down. */
-export const WAITING_DOWN_MS = 5 * 60_000;
+const WAITING_DOWN_MS = 5 * 60_000;
 /** The watchdog runs every minute: a few minutes' gap is a hiccup, longer means it stopped. */
-export const RUN_OK_MS = 3 * 60_000;
-export const RUN_SLOW_MS = 10 * 60_000;
+const RUN_OK_MS = 3 * 60_000;
+const RUN_SLOW_MS = 10 * 60_000;
 /** Incidents shown: the most recent this many, from this far back. */
-export const INCIDENT_LIMIT = 5;
-export const INCIDENT_WINDOW_MS = 24 * 60 * 60_000;
+const INCIDENT_LIMIT = 5;
+const INCIDENT_WINDOW_MS = 24 * 60 * 60_000;
 /** The model takes a second or two on a good day; only well past that is it slow. */
-export const LLM_SLOW_MS = 8_000;
+const LLM_SLOW_MS = 8_000;
 
 export type Incident = { label: string; open: boolean; started: string; resolved: string | null };
 

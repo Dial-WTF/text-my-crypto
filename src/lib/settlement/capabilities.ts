@@ -54,14 +54,14 @@ export interface PaymentActions {
   findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
 }
 
-export interface ShieldedTransfer {
+interface ShieldedTransfer {
   /** The pool payments go through, for receipts: "Orchard". */
   pool: string;
   /** True when this chain's sends are shielded by default; false when shielding is opt-in per payment. */
   byDefault: boolean;
 }
 
-export interface VenueTransfer {
+interface VenueTransfer {
   /** The venue's name for people: "HyperCore". */
   name: string;
   /** Moves `amount` from the wallet behind `fromSecret` into `to`'s balance on the venue. */
@@ -70,9 +70,9 @@ export interface VenueTransfer {
   balance(address: string): Promise<bigint>;
 }
 
-export type Asset = { symbol: string; name: string; address: string; decimals: number };
+type Asset = { symbol: string; name: string; address: string; decimals: number };
 
-export interface AssetTransfers {
+interface AssetTransfers {
   list(): Asset[];
   balanceOf(address: string, asset: Asset): Promise<bigint>;
   transfer(args: { fromSecret: Uint8Array<ArrayBuffer>; to: string; asset: Asset; amount: bigint; memo: string }): Promise<SettleResult>;

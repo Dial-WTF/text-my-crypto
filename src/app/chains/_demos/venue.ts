@@ -2,7 +2,7 @@ import type { Network } from "@/lib/settlement/registry";
 import { memoizer } from "@/lib/web/memo";
 
 /** Hyperliquid's public info API, per network. Read-only; no key. */
-export const HYPERLIQUID_INFO: Record<Network, string> = {
+const HYPERLIQUID_INFO: Record<Network, string> = {
   testnet: "https://api.hyperliquid-testnet.xyz/info",
   mainnet: "https://api.hyperliquid.xyz/info",
 };

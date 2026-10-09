@@ -12,7 +12,7 @@ import type { BotDeps } from "@/lib/bot/types";
 import { type Agent, authenticateAgent, RATE_LIMITS, takeRateLimit } from "./keys";
 import { MONEY_TOOLS, runTool, toolDescriptions, toolInputs, type ToolName, type ToolResult } from "./tools";
 
-export const SERVER_INFO = { name: "dial-operator", version: "1.0.0" } as const;
+const SERVER_INFO = { name: "dial-operator", version: "1.0.0" } as const;
 
 const INSTRUCTIONS = `You act for one Dial account (see whoami). Dial moves USDC between phone numbers.
 Money tools (send_payment, request_payment, create_invoice, withdraw) only create a pending payment and text a person to approve it.
@@ -52,7 +52,7 @@ async function runSafely(deps: BotDeps, agent: Agent, name: ToolName, input: unk
 }
 
 /** One server per request: the tools are bound to the authenticated agent's account. */
-export function buildMcpServer(deps: BotDeps, agent: Agent): McpServer {
+function buildMcpServer(deps: BotDeps, agent: Agent): McpServer {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
   for (const name of Object.keys(toolInputs) as ToolName[]) {
     const money = MONEY_TOOLS.has(name);

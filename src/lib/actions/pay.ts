@@ -15,7 +15,7 @@ import { cleanAsk } from "@/lib/views/pay";
 import type { ActionGetResponse, LinkedAction } from "./spec";
 
 /** How long the cron keeps looking for a payment after its transaction was handed out. */
-export const REFERENCE_TTL_MS = 30 * 60_000;
+const REFERENCE_TTL_MS = 30 * 60_000;
 /** Unpaid transactions one handle may have out at once: each is a row and a lookup every minute. */
 export const MAX_OPEN_PER_HANDLE = 30;
 const PRESETS = ["1", "5", "10"];

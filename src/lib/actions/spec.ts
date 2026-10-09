@@ -5,7 +5,7 @@
  */
 
 /** The spec version these routes follow. Blink clients refuse versions newer than they support. */
-export const ACTION_VERSION = "2.4";
+const ACTION_VERSION = "2.4";
 
 export type LinkedAction = {
   type: "transaction";

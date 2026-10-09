@@ -2,7 +2,7 @@ import styles from "./SmsConsent.module.css";
 import { cx } from "@/ui/cx";
 
 /** The consent sentence, one place. Carriers want it next to every "text us" call to action. */
-export const SMS_CONSENT =
+const SMS_CONSENT =
   "By texting, you agree to get texts from Dial operator. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.";
 
 type SmsConsentProps = {

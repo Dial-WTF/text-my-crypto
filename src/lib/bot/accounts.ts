@@ -136,7 +136,7 @@ async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount:
 }
 
 /** Texts the person one code that claims every escrow waiting for them. */
-export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
+async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
   const waiting = await escrowedTo(deps.db, user.id, deps.now());
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
@@ -164,7 +164,7 @@ export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<
 }
 
 /** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */
-export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
+async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
     const requester = await getUserById(deps.db, intent.recipientId);
     if (!requester) continue;

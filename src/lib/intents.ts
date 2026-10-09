@@ -6,8 +6,8 @@ import { type Intent, intents } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/hash";
 import { newId, randomToken } from "@/lib/ids";
 
-export const SEND_TTL_MS = 10 * 60_000;
-export const REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
+const SEND_TTL_MS = 10 * 60_000;
+const REQUEST_TTL_MS = 7 * 24 * 60 * 60_000;
 
 export type IntentKind = Intent["kind"];
 

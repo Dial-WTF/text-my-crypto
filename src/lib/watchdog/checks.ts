@@ -5,16 +5,16 @@ import { smsLog } from "@/lib/db/schema";
 import { normalizePhone } from "@/lib/phone";
 
 /** How long a text may wait for its first reply before it counts as unanswered. */
-export const UNANSWERED_AFTER_MS = 60_000;
+const UNANSWERED_AFTER_MS = 60_000;
 /** How long Payphone may hold a text before it counts as never delivered to the webhook. */
-export const MISSING_AFTER_MS = 2 * 60_000;
+const MISSING_AFTER_MS = 2 * 60_000;
 /** Both checks alert on this far back. Older items drop out instead of alerting forever. */
 export const LOOKBACK_MS = 60 * 60_000;
 /** How far back the runner looks for items that aged out of the lookback, so it can say so instead of "Cleared". */
 export const AGED_LOOKBACK_MS = 24 * 60 * 60_000;
 
 /** A phone number reduced to its last four digits, the most any alert or log line shows. */
-export const tail = (phone: string) => `…${phone.replace(/\D/g, "").slice(-4)}`;
+const tail = (phone: string) => `…${phone.replace(/\D/g, "").slice(-4)}`;
 
 const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60_000))}m`;
 

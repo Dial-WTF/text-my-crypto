@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/require-await": "off",
       "@typescript-eslint/switch-exhaustiveness-check": ["error", { considerDefaultExhaustiveForUnions: true }],
       "@typescript-eslint/no-unnecessary-condition": "error",
+      // Dead locals fail the gate, like dead exports do in `pnpm deadcode`.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
       // Stricter than recommended: a nullish, boolean or `any` value in a template is how "undefined" ends up in a text.
       "@typescript-eslint/restrict-template-expressions": [
         "error",

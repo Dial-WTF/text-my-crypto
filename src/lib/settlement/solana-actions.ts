@@ -25,7 +25,7 @@ import { withRateLimitRetry as rl } from "./retry";
 const DECIMALS = 6;
 
 /** A token balance row from getTransaction's meta (encoding "json"). */
-export type TokenBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } };
+type TokenBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } };
 
 /** The parts of a confirmed transaction that say who paid whom. */
 export type ConfirmedTx = { err: unknown; feePayer: string; pre: readonly TokenBalance[]; post: readonly TokenBalance[] };

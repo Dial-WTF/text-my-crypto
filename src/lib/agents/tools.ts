@@ -130,7 +130,7 @@ export const toolInputs = {
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
-export type ToolInput<T extends ToolName> = z.infer<(typeof toolInputs)[T]>;
+type ToolInput<T extends ToolName> = z.infer<(typeof toolInputs)[T]>;
 
 /** Tools that create a PaymentIntent and text someone; they share a tighter rate limit. */
 export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set(["send_payment", "request_payment", "create_invoice", "withdraw", "split_payment"]);
@@ -139,7 +139,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set(["send_payment", "requ
 // Outputs
 // ---------------------------------------------------------------------------------------------
 
-export type ToolError = {
+type ToolError = {
   error: MoneyError["code"] | SplitErrorCode | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
@@ -151,7 +151,7 @@ const err = (error: ToolError["error"], message: string): ToolResult => ({ ok: f
 /** "$12.50" → "12.50": plain decimals for machines. */
 const usd = (base: bigint) => formatUsd(base).slice(1);
 
-export type AgentPaymentStatus =
+type AgentPaymentStatus =
   | "awaiting_approval"
   | "expired"
   | "settling"

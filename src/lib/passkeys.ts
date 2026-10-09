@@ -28,7 +28,7 @@ export function relyingParty(appUrl: string): RelyingParty {
 
 const transportsSchema = z.array(z.string());
 
-export async function listPasskeys(db: Db, userId: string): Promise<Passkey[]> {
+async function listPasskeys(db: Db, userId: string): Promise<Passkey[]> {
   return db.select().from(passkeys).where(eq(passkeys.userId, userId));
 }
 

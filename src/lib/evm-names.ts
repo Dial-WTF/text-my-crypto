@@ -43,7 +43,7 @@ export function wrongNetworkBasename(name: string, network: Network): boolean {
  * ENS Universal Resolver (UpgradableUniversalResolverProxy), the same address on Ethereum mainnet and Sepolia:
  * https://docs.ens.domains/learn/deployments
  */
-export const ENS_UNIVERSAL_RESOLVER: Address = "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe";
+const ENS_UNIVERSAL_RESOLVER: Address = "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe";
 
 /**
  * Basenames Registry on Base. It names each name's resolver: the L2Resolver (Base Sepolia
@@ -51,7 +51,7 @@ export const ENS_UNIVERSAL_RESOLVER: Address = "0xeEeEEEeE14D718C2B47D9923Deab13
  * UpgradeableL2Resolver proxy (Base Sepolia 0x85C87e548091f204C2d0350b39ce1874f02197c6, Base
  * 0x426fA03fB86E510d0Dd9F70335Cf102a98b10875). https://github.com/base/basenames#deployments
  */
-export const BASENAMES_REGISTRY: Record<Network, Address> = {
+const BASENAMES_REGISTRY: Record<Network, Address> = {
   testnet: "0x1493b2567056c2181630115660963E13A8E32735",
   mainnet: "0xb94704422c2a1e396835a571837aa5ae53285a95",
 };

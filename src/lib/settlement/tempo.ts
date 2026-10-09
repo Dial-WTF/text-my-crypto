@@ -20,7 +20,7 @@ import type { SettlementAdapter, SettleResult } from "./types";
 
 /** AlphaUSD on Moderato: TIP-20, 6 decimals. Also the fee token, since Tempo has no native gas coin. */
 export const ALPHA_USD: Address = "0x20c0000000000000000000000000000000000001";
-export const TEMPO_EXPLORER = "https://explore.testnet.tempo.xyz";
+const TEMPO_EXPLORER = "https://explore.testnet.tempo.xyz";
 
 /**
  * TIP-20 memos are 32 bytes. Payment ids ("pi_" + 16 chars) fit as plain UTF-8, right-padded so they
@@ -65,7 +65,7 @@ export function batchCalls(token: Address, legs: readonly TransferLeg[]): { to: 
 }
 
 /** Most legs one batch carries. Splits stop at 10 people; this leaves room without inviting huge transactions. */
-export const MAX_BATCH_LEGS = 16;
+const MAX_BATCH_LEGS = 16;
 
 export type TempoConfig = {
   treasuryKey: Hex;

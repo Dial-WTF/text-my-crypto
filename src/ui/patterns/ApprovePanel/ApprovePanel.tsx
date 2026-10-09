@@ -12,7 +12,7 @@ import { formText } from "@/lib/form";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
-export type ApproveActions = {
+type ApproveActions = {
   beginPasskey: (intentId: string) => Promise<PublicKeyCredentialRequestOptionsJSON | null>;
   finishPasskey: (intentId: string, response: AuthenticationResponseJSON) => Promise<ActionResult>;
   approveWithCode: (intentId: string, code: string) => Promise<ActionResult>;

@@ -1,5 +1,5 @@
 /** The theme registry. Adding a theme = one CSS file in ./themes and one entry here. */
-export const THEMES = [
+const THEMES = [
   { id: "matrix", label: "Matrix" },
   { id: "dark", label: "Dark" },
   { id: "light", label: "Light" },

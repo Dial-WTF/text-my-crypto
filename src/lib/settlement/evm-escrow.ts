@@ -72,7 +72,7 @@ function vrs(signature: Hex): Vrs {
 }
 
 /** The sender's EIP-3009 receiveWithAuthorization for funding escrow `id`. Pure: no network. */
-export async function signFunding(args: {
+async function signFunding(args: {
   secret: Uint8Array<ArrayBuffer>;
   token: Address;
   domain: { name: string; version: string };

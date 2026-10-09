@@ -6,7 +6,7 @@ const ZATS_PER_ZEC = 100_000_000n;
 /** Dollar amounts are base units with 6 decimals, like USDC. */
 const BASE_PER_USD = 1_000_000n;
 /** The ZIP 317 fee for a typical shielded payment, which the sender's wallet pays. Matches the service's FEE. */
-export const ZCASH_FEE_ZATS = 10_000n;
+const ZCASH_FEE_ZATS = 10_000n;
 /** How long a send may wait for the wallet's incoming notes to confirm (one testnet block is ~75s). */
 const CONFIRM_WAIT_SECONDS = 180;
 
@@ -63,7 +63,7 @@ function polymod(values: number[]): number {
 }
 
 /** Checks a bech32 (Sapling) or bech32m (unified) string with the expected human-readable part. Unified addresses run past bech32's 90-character limit, so there is none. */
-export function isBech32(address: string, hrp: string, variant: "bech32" | "bech32m"): boolean {
+function isBech32(address: string, hrp: string, variant: "bech32" | "bech32m"): boolean {
   if (address !== address.toLowerCase()) return false;
   const sep = address.lastIndexOf("1");
   if (address.slice(0, sep) !== hrp) return false;

@@ -7,7 +7,7 @@ export { errorText, redactUrls } from "./redact";
 export type SettleResult = { txHash: string; explorerUrl: string };
 
 /** Where a payment goes: another Dial wallet, a per-payment escrow wallet, or an address outside Dial. */
-export type RecipientKind = "dial" | "escrow" | "outside";
+type RecipientKind = "dial" | "escrow" | "outside";
 
 /** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
 export interface SettlementAdapter extends Capabilities {

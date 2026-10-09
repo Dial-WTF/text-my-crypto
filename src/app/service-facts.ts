@@ -8,7 +8,7 @@ import { activeChains, getAdapters } from "@/lib/settlement";
 export type Limits = { perPayment: string; perDay: string; passkeyAbove: string; signupDrop: string; escrowDays: number };
 
 /** Production's settings (wrangler.jsonc and the env defaults), for when the environment can't be read. */
-export const DEFAULT_LIMITS: Limits = { perPayment: "$50", perDay: "$200", passkeyAbove: "$20", signupDrop: "$2", escrowDays: 7 };
+const DEFAULT_LIMITS: Limits = { perPayment: "$50", perDay: "$200", passkeyAbove: "$20", signupDrop: "$2", escrowDays: 7 };
 
 const usd = (v: string) => `$${v}`;
 

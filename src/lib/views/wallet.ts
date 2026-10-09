@@ -7,9 +7,9 @@ import { hasPasskey } from "@/lib/passkeys";
 import { errorText } from "@/lib/settlement/types";
 import { type PayChain, payProfile } from "./pay";
 
-export type WalletChain = PayChain & { balance: bigint | null };
+type WalletChain = PayChain & { balance: bigint | null };
 
-export type WalletActivity = {
+type WalletActivity = {
   id: string;
   kind: Intent["kind"];
   direction: "in" | "out";
@@ -26,7 +26,7 @@ export type WalletActivity = {
   waitingOnYou: boolean;
 };
 
-export type WalletAgent = { id: string; label: string; createdAt: Date; lastUsedAt: Date | null };
+type WalletAgent = { id: string; label: string; createdAt: Date; lastUsedAt: Date | null };
 
 /** The owner's view: balances, where to deposit, their pay link, recent activity and connected agents. */
 export type WalletView = {

@@ -4,8 +4,7 @@ import { signupTokens, type User, users } from "@/lib/db/schema";
 import { newId, randomToken } from "@/lib/ids";
 import { normalizePhone } from "@/lib/phone";
 
-export const HANDLE_RE = /^[a-z][a-z0-9_]{2,19}$/;
-export const SIGNUP_TTL_MS = 15 * 60_000;
+const SIGNUP_TTL_MS = 15 * 60_000;
 
 export async function findUserByPhone(db: Db, phone: string): Promise<User | null> {
   const [u] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);

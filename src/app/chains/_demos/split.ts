@@ -1,9 +1,9 @@
 /** The split preview's maths, kept pure so it is tested and runs in the browser without the network. */
 
-export const MIN_LEGS = 2;
+const MIN_LEGS = 2;
 export const MAX_PREVIEW_LEGS = 5;
 
-export type SplitLeg = { to: string; cents: number };
+type SplitLeg = { to: string; cents: number };
 
 export type SplitPreview = { ok: true; legs: SplitLeg[] } | { ok: false; error: string };
 

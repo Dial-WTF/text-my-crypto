@@ -17,7 +17,7 @@ const BATCH = 100;
 const PURGE_AFTER_MS = 24 * 60 * 60_000;
 
 /** "7xKX...9fQa": three dots, not an ellipsis, so the text stays GSM-7. */
-export function shortWallet(a: string): string {
+function shortWallet(a: string): string {
   return a.length > 12 ? `${a.slice(0, 4)}...${a.slice(-4)}` : a;
 }
 
