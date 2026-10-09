@@ -33,7 +33,7 @@ There is no fully trustless proof of a phone number today: SMS is unsigned, and 
 1. **Carrier network checks** (GSMA Open Gateway / CAMARA, via aggregators): *Number Verification* confirms the device's data session belongs to the number; *SIM Swap* reports the last SIM change, so approvals can be refused right after a swap. Trust moves from Dial to the carrier.
 2. **Carrier attestations verified on-chain:** the escrow program checks a signed verification result instead of Dial's word; several attestors can be required.
 3. **zkTLS** (Reclaim, Opacity, TLSNotary): the user proves their carrier account shows the number, trusting only the carrier's TLS endpoint.
-4. **Keys on the SIM:** a SIM or eSIM applet that holds a signing key. Payphone already provisions eSIMs, so this is a long-term path for numbers Dial issues.
+4. **Keys on the SIM:** a SIM or eSIM applet that holds a signing key, so the phone itself can sign an approval.
 
 ## More chains
 
