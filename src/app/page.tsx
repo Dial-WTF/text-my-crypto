@@ -27,7 +27,7 @@ import { StructuredData } from "./StructuredData";
 export const dynamic = "force-dynamic";
 
 const s = site();
-export const metadata = pageMeta({ path: "/", title: { absolute: `${s.name} by ${s.company} · ${s.title}` }, shareTitle: s.title });
+export const metadata = pageMeta({ path: "/", title: { absolute: `${s.fullName} · ${s.title}` }, shareTitle: s.title });
 
 export default async function Home() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();

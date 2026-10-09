@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it } from "vitest";
 import { pageMeta } from "@/app/seo";
+import { site } from "@/app/site";
+import { Wordmark } from "@/ui/primitives/Wordmark/Wordmark";
 
 describe("pageMeta", () => {
   it("gives a page its own canonical and og:url, never the root", () => {
     const m = pageMeta({ path: "/a/int_1", title: "Payment", index: false });
     expect(m.alternates?.canonical).toBe("/a/int_1");
-    expect(m.openGraph).toMatchObject({ url: "/a/int_1", title: "Payment · Dial operator", siteName: "Dial operator by Dial.Work" });
+    expect(m.openGraph).toMatchObject({ url: "/a/int_1", title: "Payment · Dial operator", siteName: "Dial operator" });
     expect(m.robots).toEqual({ index: false, follow: false });
   });
 
@@ -16,5 +20,26 @@ describe("pageMeta", () => {
 
     const card = { url: "/a/int_1/card", width: 1200, height: 630, alt: "x" };
     expect(pageMeta({ path: "/a/int_1", title: "Payment", image: card }).twitter).toMatchObject({ images: [card] });
+  });
+});
+
+describe("the SHOW_BYLINE flag", () => {
+  afterEach(() => {
+    delete process.env.SHOW_BYLINE;
+  });
+
+  it("leaves the byline off by default: titles, share previews and the wordmark say just the name", () => {
+    expect(site()).toMatchObject({ byline: null, fullName: "Dial operator" });
+    expect(site().shareAlt).toMatch(/^Dial operator\. /);
+    expect(pageMeta({ path: "/x", title: "X" }).openGraph).toMatchObject({ siteName: "Dial operator" });
+    expect(renderToStaticMarkup(createElement(Wordmark))).not.toContain("Dial.Work");
+  });
+
+  it("puts 'by Dial.Work' back everywhere at once when it's yes", () => {
+    process.env.SHOW_BYLINE = "yes";
+    expect(site()).toMatchObject({ byline: "by Dial.Work", fullName: "Dial operator by Dial.Work" });
+    expect(site().shareAlt).toMatch(/^Dial operator by Dial\.Work\. /);
+    expect(pageMeta({ path: "/x", title: "X" }).openGraph).toMatchObject({ siteName: "Dial operator by Dial.Work" });
+    expect(renderToStaticMarkup(createElement(Wordmark, { byline: site().byline }))).toContain("by Dial.Work");
   });
 });

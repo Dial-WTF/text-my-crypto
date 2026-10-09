@@ -11,7 +11,7 @@ export async function GET(): Promise<Response> {
   const a = agentFacts();
   const now = running();
   const chains = await loadChainStatuses();
-  const body = `# ${s.name} by ${s.company}
+  const body = `# ${s.fullName}
 
 > Agentic peer-to-peer crypto payments over SMS. Humans text ${s.phone}; agents use the MCP server. Send, request and invoice USDC to anyone with a phone number.${now.network === "testnet" ? " Testnet." : ""}
 
