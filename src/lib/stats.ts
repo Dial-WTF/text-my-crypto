@@ -5,6 +5,8 @@ import { actionPayments, type Intent, intents, users } from "@/lib/db/schema";
 import { STOCK_TOKEN_ADDRESSES, stockForToken } from "@/lib/stocks";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
+/** What the public ledger counts as a payment: withdrawals are people moving their own money out. */
+const PAYMENT_KINDS: Intent["kind"][] = ["send", "request", "invoice", "venue"];
 
 export type PublicStats = { payments: number; movedUsd: bigint; people: number };
 
@@ -17,7 +19,7 @@ export async function publicStats(db: Db): Promise<PublicStats> {
       moved: sql<number | null>`sum(case when ${intents.private} or ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
     })
     .from(intents)
-    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
+    .where(and(inArray(intents.status, MOVED), inArray(intents.kind, PAYMENT_KINDS)));
   // Payments from any Solana wallet through a pay link's Blink count once recorded.
   const [blinks] = await db
     .select({ payments: count(), moved: sql<number | null>`sum(${actionPayments.received})` })
@@ -53,6 +55,8 @@ export async function movedByChain(db: Db): Promise<Partial<Record<Chain, number
 
 export type FeedItem = {
   id: string;
+  /** Absent for payments that aren't intents (a pay-link Blink). */
+  kind?: Intent["kind"];
   from: string;
   to: string;
   /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
@@ -106,7 +110,7 @@ export async function recentPayments(db: Db, limit: number, chain?: Chain): Prom
     .where(
       and(
         inArray(intents.status, MOVED),
-        inArray(intents.kind, ["send", "request", "invoice"]),
+        inArray(intents.kind, PAYMENT_KINDS),
         chain ? eq(intents.chain, chain) : undefined,
       ),
     )
@@ -123,6 +127,7 @@ export async function recentPayments(db: Db, limit: number, chain?: Chain): Prom
   const fromIntents = rows.map(
     (r): FeedItem => ({
       id: r.id,
+      kind: r.kind,
       // A private send shows only that it happened, on which chain, and its txid.
       from: r.private ? "someone" : who(r.senderId),
       to: r.private ? "someone" : who(r.recipientId),

@@ -10,7 +10,7 @@ import { type FeedEntry, PaymentFeed } from "../PaymentFeed/PaymentFeed";
 import { Split } from "../Section/Section";
 import styles from "./WalletPanel.module.css";
 
-type WalletPanelChain = { network: string; address: string; uri: string; explorer: string; asset: string; balance: string | null };
+type WalletPanelChain = { network: string; address: string; uri: string; explorer: string | null; asset: string; balance: string | null };
 type WalletPanelAgent = { id: string; label: string; lastUsed: string };
 
 type WalletPanelProps = {

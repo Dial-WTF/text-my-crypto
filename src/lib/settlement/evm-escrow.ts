@@ -187,7 +187,7 @@ export function createEvmEscrow(cfg: {
   contract: Address;
   token: Address;
   chainId: number;
-  explorerTx: (hash: string) => string;
+  explorerTx: (hash: string) => string | null;
   rpc: EscrowRpc;
   now?: () => number;
 }): EscrowProgram {

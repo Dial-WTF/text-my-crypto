@@ -100,8 +100,10 @@ describe("MCP over Streamable HTTP", () => {
       [
         "create_invoice",
         "get_balance",
+        "get_hyperliquid_balance",
         "get_pay_link",
         "get_payment",
+        "get_price",
         "get_receive_address",
         "get_stocks",
         "get_wallet",
@@ -111,6 +113,7 @@ describe("MCP over Streamable HTTP", () => {
         "resolve_recipient",
         "send_payment",
         "send_stock",
+        "send_to_hyperliquid",
         "split_payment",
         "whoami",
         "withdraw",

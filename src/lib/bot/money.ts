@@ -60,7 +60,7 @@ export const withdrawCommandSchema = z.object({
 });
 
 /** Testnets where Circle's faucet hands out test USDC. Tempo and Robinhood use other test tokens. */
-const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum"]);
+const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum", "hyperevm"]);
 const CIRCLE_FAUCET = "faucet.circle.com";
 
 /** Why a payment wasn't created. `message` is the plain-English reply the operator texts. */
@@ -78,6 +78,7 @@ export type MoneyError = {
     | "bad_address"
     | "nothing_to_withdraw"
     | "which_chain"
+    | "venue_account_missing"
     | "unknown_name"
     | "name_lookup_failed"
     | "duplicate"
@@ -486,6 +487,8 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
         : replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
+    case "venue":
+      return replies.confirmHyperCore(amount, intent.recipientId === intent.senderId ? null : other, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
       await text(

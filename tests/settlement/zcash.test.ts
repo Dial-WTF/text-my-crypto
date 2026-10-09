@@ -44,6 +44,7 @@ function fakeService(routes: Record<string, (body: unknown) => { status?: number
 const entry = REGISTRY.zcash.testnet;
 if (entry?.kind !== "zcash" || entry.usdPerZec === null) throw new Error("zcash testnet entry missing");
 const RATE = entry.usdPerZec;
+const explorerTx = entry.explorerTx;
 
 function adapter(fetch: typeof globalThis.fetch) {
   return createZcashAdapter({
@@ -53,7 +54,7 @@ function adapter(fetch: typeof globalThis.fetch) {
     usdPerZec: RATE,
     asset: "TAZ",
     addressPrefix: "utest1",
-    explorerTx: entry!.explorerTx,
+    explorerTx,
     fetch,
   });
 }

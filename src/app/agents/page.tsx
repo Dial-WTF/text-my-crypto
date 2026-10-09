@@ -38,6 +38,9 @@ const ARGS: Record<string, string> = {
   list_chain_features: "none",
   send_stock: "to, shares, symbol, note?",
   get_stocks: "none",
+  send_to_hyperliquid: "amountUsd, to?",
+  get_hyperliquid_balance: "none",
+  get_price: "coin",
 };
 
 export default function AgentsPage() {

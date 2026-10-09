@@ -25,6 +25,6 @@ describe.runIf(run)(`evm adapter (${chain} testnet, live)`, () => {
     const res = await adapter.settle({ fromSecret: wallet.secret, to: treasury, amount: 10_000n, memo: `pi_int${Date.now()}` });
     expect(res.explorerUrl).toContain(res.txHash);
     expect(await adapter.getBalance(wallet.address)).toBe(0n);
-    console.info(`${entry.network} drop ${drop.explorerUrl}\n${entry.network} signed transfer back ${res.explorerUrl}`);
+    console.info(`${entry.network} drop ${drop.explorerUrl ?? drop.txHash}\n${entry.network} signed transfer back ${res.explorerUrl ?? res.txHash}`);
   });
 });

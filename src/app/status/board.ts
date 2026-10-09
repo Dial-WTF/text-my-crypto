@@ -41,7 +41,7 @@ export const statusBoard = cachedFor(async (): Promise<Board> => {
       networkName: (chain) => networkName(chain, e.NETWORK),
       llm: async () => (await llmStatus()).value,
       escrow:
-        solana && escrow
+        solana?.entry.kind === "solana" && escrow
           ? {
               address: escrow.programId,
               href: solana.entry.explorerAddress(escrow.programId),

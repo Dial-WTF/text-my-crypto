@@ -28,6 +28,9 @@ export function agentFacts() {
       ["list_chain_features", "what each chain can do beyond sending"],
       ["send_stock", "gift Robinhood Chain stock tokens, like 0.1 TSLA"],
       ["get_stocks", "stock token holdings on Robinhood Chain"],
+      ["send_to_hyperliquid", "move USDC from HyperEVM into a Hyperliquid spot balance"],
+      ["get_hyperliquid_balance", "USDC in the owner's Hyperliquid spot balance"],
+      ["get_price", "Hyperliquid mid price for a coin, quote only"],
     ] as const,
     rule: "Agents start payments. A human approves every one, by a code texted to their phone or a passkey.",
   };

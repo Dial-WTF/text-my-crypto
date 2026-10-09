@@ -3,10 +3,10 @@ import type { Db } from "@/lib/db/client";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { splitLegs } from "@/lib/intents";
-import { networkName } from "@/lib/ledger";
+import { paymentNetwork } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import { withdrawTarget } from "@/lib/payment-labels";
-import type { Network } from "@/lib/settlement/registry";
+import { type Network, venueOf } from "@/lib/settlement/registry";
 import { stockForToken } from "@/lib/stocks";
 
 export type StatusTone = "done" | "waiting" | "bad";
@@ -41,6 +41,7 @@ const KIND_LABEL: Record<Intent["kind"], string> = {
   request: "Request",
   invoice: "Invoice",
   withdraw: "Withdrawal",
+  venue: "Venue deposit",
 };
 
 function statusOf(i: Intent, now: Date): PaymentView["status"] {
@@ -73,6 +74,12 @@ function statusOf(i: Intent, now: Date): PaymentView["status"] {
  */
 export type PaymentAudience = "public" | "party" | "card";
 
+/** "HyperCore deposit" for a venue deposit, named after the venue; else the kind's label. */
+function kindLabel(i: Intent, network: Network): string {
+  const venue = i.kind === "venue" ? venueOf(i.chain, network) : null;
+  return venue ? `${venue.name} deposit` : KIND_LABEL[i.kind];
+}
+
 /** "@handle" for people with one, "someone new" for a number that hasn't signed up. */
 function publicName(u: User | null): string {
   if (!u) return "someone";
@@ -97,13 +104,13 @@ export async function buildPaymentView(
   const to = i.kind === "withdraw" ? withdrawTarget(i) : split ? `${split.legs.length} people` : name(recipient);
   return {
     id: i.id,
-    kindLabel: i.private ? "Shielded payment" : split ? "Split" : KIND_LABEL[i.kind],
+    kindLabel: i.private ? "Shielded payment" : split ? "Split" : kindLabel(i, opts.network),
     amount: hidden ? null : split ? split.legs.reduce((a, l) => a + l.amount, 0n) : i.amount,
     shielded: i.private,
     stock: stockForToken(i.chain, i.token)?.symbol ?? null,
     from: name(sender),
     to,
-    network: networkName(i.chain, opts.network),
+    network: paymentNetwork(i, opts.network),
     note: full ? i.note : null,
     status: statusOf(i, now),
     deadline: open

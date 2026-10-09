@@ -29,7 +29,7 @@ export default async function BlinkPage({ params, searchParams }: PageProps<"/pa
   if (!head) notFound();
   const env = publicEnv();
   const solana = REGISTRY.solana[env.NETWORK];
-  if (!solana) notFound();
+  if (solana?.kind !== "solana") notFound();
   const testnet = env.NETWORK === "testnet";
 
   return (

@@ -20,11 +20,11 @@ describe.runIf(run)("tempo adapter (moderato)", () => {
     const b = await adapter.createWallet();
 
     const funded = await adapter.fund(a.address, 2_000_000n);
-    console.log(`fund: ${funded.explorerUrl}`);
+    console.log(`fund: ${funded.explorerUrl ?? funded.txHash}`);
     expect(await adapter.getBalance(a.address)).toBe(2_000_000n);
 
     const res = await adapter.settle({ fromSecret: a.secret, to: b.address, amount: 2_000_000n, memo: "pi_tempo_int" });
-    console.log(`settle: ${res.explorerUrl}`);
+    console.log(`settle: ${res.explorerUrl ?? res.txHash}`);
     expect(res.explorerUrl).toContain(res.txHash);
     // The treasury paid the fee, so the sender is drained to exactly zero and the recipient gets it all.
     expect(await adapter.getBalance(b.address)).toBe(2_000_000n);

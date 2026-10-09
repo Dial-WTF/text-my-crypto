@@ -5,6 +5,7 @@ import { getUserById } from "@/lib/identity";
 import { intentsFor } from "@/lib/intents";
 import { hasPasskey } from "@/lib/passkeys";
 import { errorText } from "@/lib/settlement/types";
+import { paymentNetwork } from "@/lib/ledger";
 import { formatShares, stockForToken } from "@/lib/stocks";
 import { type PayChain, payProfile } from "./pay";
 
@@ -69,17 +70,25 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
   };
   const activity: WalletActivity[] = [];
   for (const i of await intentsFor(deps.db, user.id, 10)) {
-    const direction = directionFor(i, user.id);
+    // Moving your own money into HyperCore: it leaves the wallet, and the other side is your Hyperliquid balance.
+    const ownVenueMove = i.kind === "venue" && i.recipientId === i.senderId;
+    const direction = ownVenueMove ? "out" : directionFor(i, user.id);
     const otherId = i.kind === "withdraw" ? null : i.senderId === user.id ? i.recipientId : i.senderId;
     activity.push({
       id: i.id,
       kind: i.kind,
       direction,
-      other: i.kind === "withdraw" ? (i.recipientName ?? "an outside wallet") : await nameOf(otherId ?? ""),
+      other:
+        i.kind === "withdraw"
+          ? (i.recipientName ?? "an outside wallet")
+          : ownVenueMove
+            ? "your Hyperliquid balance"
+            : await nameOf(otherId ?? ""),
       amount: i.amount,
       stock: stockForToken(i.chain, i.token)?.symbol ?? null,
       status: i.status,
-      network: profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain,
+      network:
+        i.kind === "venue" ? paymentNetwork(i, deps.network) : (profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain),
       note: i.note,
       txHash: i.txHash,
       explorerUrl: i.explorerUrl,

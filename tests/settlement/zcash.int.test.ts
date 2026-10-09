@@ -37,12 +37,12 @@ describe.runIf(run)("zcash adapter (testnet, live service)", () => {
     const dollar = usdToBaseUnits("1");
 
     const drip = await adapter.fund(alice.address, dollar);
-    console.log(`drip: ${drip.explorerUrl}`);
+    console.log(`drip: ${drip.explorerUrl ?? drip.txHash}`);
     await until("the drip", () => adapter.getBalance(alice.address), (b) => b >= dollar);
 
     // Into escrow: two fees on top, one for the release and one for the recipient's next send.
     const paid = await adapter.settle({ fromSecret: alice.secret, to: escrow.address, amount: dollar, memo: "pi_zcash_int", escrow: true });
-    console.log(`pay: ${paid.explorerUrl}`);
+    console.log(`pay: ${paid.explorerUrl ?? paid.txHash}`);
     // Asking again with the same payment id returns the same transaction instead of paying twice.
     const again = await adapter.settle({ fromSecret: alice.secret, to: escrow.address, amount: dollar, memo: "pi_zcash_int", escrow: true });
     expect(again.txHash).toBe(paid.txHash);
@@ -50,7 +50,7 @@ describe.runIf(run)("zcash adapter (testnet, live service)", () => {
 
     // Out of escrow: the sweep pays its own fee and bob can send the full dollar.
     const released = await adapter.settle({ fromSecret: escrow.secret, to: bob.address, amount: dollar, memo: "pi_zcash_int", closeSource: true });
-    console.log(`release: ${released.explorerUrl}`);
+    console.log(`release: ${released.explorerUrl ?? released.txHash}`);
     await until("the release", () => adapter.getBalance(bob.address), (b) => b >= dollar);
     expect(await adapter.getBalance(escrow.address)).toBe(0n);
   });

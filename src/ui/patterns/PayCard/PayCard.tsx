@@ -13,7 +13,7 @@ type PayCardChain = {
   network: string;
   address: string;
   uri: string;
-  explorer: string;
+  explorer: string | null;
   assetNote: string | null;
   action?: { uri: string; blink: string };
 };

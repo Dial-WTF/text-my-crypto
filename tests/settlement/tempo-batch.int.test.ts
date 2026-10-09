@@ -17,7 +17,7 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
   it("pays three people in one sponsored transaction, one memo per leg", { timeout: 240_000 }, async () => {
     const payer = await adapter.createWallet();
     const people = await Promise.all([adapter.createWallet(), adapter.createWallet(), adapter.createWallet()]);
-    console.log(`fund: ${(await adapter.fund(payer.address, 10_000_000n)).explorerUrl}`);
+    console.log(`fund: ${(await adapter.fund(payer.address, 10_000_000n)).txHash}`);
 
     const legs = [
       { to: people[0].address, amount: 3_340_000n, memo: "pi_split_leg_a" },
@@ -25,7 +25,7 @@ describe.runIf(run)("tempo batched split (moderato)", () => {
       { to: people[2].address, amount: 3_330_000n, memo: "pi_split_leg_c" },
     ];
     const res = await adapter.batch!.settleBatch({ fromSecret: payer.secret, legs });
-    console.log(`split: ${res.explorerUrl}`);
+    console.log(`split: ${res.explorerUrl ?? res.txHash}`);
 
     // The treasury paid the fee: the payer is drained to exactly zero and each person got their share.
     expect(await adapter.getBalance(payer.address)).toBe(0n);

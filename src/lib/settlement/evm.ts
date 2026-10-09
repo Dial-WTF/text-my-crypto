@@ -3,7 +3,9 @@ import {
   bytesToHex,
   createPublicClient,
   createWalletClient,
+  encodeAbiParameters,
   type Hex,
+  hexToBigInt,
   http,
   isAddress,
   keccak256,
@@ -18,7 +20,8 @@ import { STOCK_ONCHAIN_SCALE } from "@/lib/stocks";
 import { createEvmEscrow, viemEscrowRpc } from "./evm-escrow";
 import type { EvmNetwork, StockToken } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { Asset, AssetTransfers } from "./capabilities";
+import { type Asset, type AssetTransfers, type VenueTransfer, VenueAccountMissingError } from "./capabilities";
+import { spotUsdc } from "./hypercore";
 import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
 
@@ -53,16 +56,24 @@ const PERMIT_TYPES = {
   ],
 } as const;
 
-const AUTH_TYPES = {
-  TransferWithAuthorization: [
-    { name: "from", type: "address" },
-    { name: "to", type: "address" },
-    { name: "value", type: "uint256" },
-    { name: "validAfter", type: "uint256" },
-    { name: "validBefore", type: "uint256" },
-    { name: "nonce", type: "bytes32" },
-  ],
-} as const;
+const AUTH_FIELDS = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" },
+] as const;
+
+/** Transfer: anyone may submit it. Receive: only `to` may, which is how a contract like DialCoreDeposit pulls. */
+const AUTH_TYPES = { TransferWithAuthorization: AUTH_FIELDS, ReceiveWithAuthorization: AUTH_FIELDS } as const;
+
+/** HyperEVM's read precompile for "does this address exist on HyperCore?" (coreUserExists, hyper-evm-lib PrecompileLib). */
+export const CORE_USER_EXISTS: Address = "0x0000000000000000000000000000000000000810";
+
+const CORE_DEPOSIT = parseAbi([
+  "function deposit(address from, address recipient, uint256 amount, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+]);
 
 /** The EIP-3009 nonce ties every on-chain transfer to its payment: keccak256 of the intent id. */
 export function authorizationNonce(memo: string): Hex {
@@ -80,13 +91,16 @@ export async function signTransferAuthorization(args: {
   value: bigint;
   memo: string;
   validBefore: bigint;
+  /** Default "TransferWithAuthorization". */
+  primaryType?: keyof typeof AUTH_TYPES;
 }): Promise<{ from: Address; nonce: Hex; signature: Hex }> {
   const account = privateKeyToAccount(bytesToHex(args.secret));
   const nonce = authorizationNonce(args.memo);
+  const primaryType = args.primaryType ?? "TransferWithAuthorization";
   const signature = await account.signTypedData({
     domain: { name: args.domainName, version: args.domainVersion, chainId: args.chainId, verifyingContract: args.token },
     types: AUTH_TYPES,
-    primaryType: "TransferWithAuthorization",
+    primaryType,
     message: { from: account.address, to: args.to, value: args.value, validAfter: 0n, validBefore: args.validBefore, nonce },
   });
   return { from: account.address, nonce, signature };
@@ -141,7 +155,7 @@ export async function waitForHead(
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "stocks"> & {
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "venue" | "stocks"> & {
     chain: Chain;
     treasuryKey: Hex;
     rpcUrl?: string;
@@ -175,6 +189,51 @@ export function createEvmAdapter(
     await waitForHead(() => publicClient.getBlockNumber({ cacheTime: 0 }), receipt.blockNumber);
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
+
+  /** The user signs, the treasury submits, DialCoreDeposit pulls the USDC and deposits it on HyperCore: one transaction. */
+  const hyperCoreVenue = (name: string, infoUrl: string, contract: Address): VenueTransfer => {
+    const accepts = async (address: string): Promise<boolean> => {
+      const { data } = await rl(() =>
+        publicClient.call({ to: CORE_USER_EXISTS, data: encodeAbiParameters([{ type: "address" }], [address as Address]) }),
+      );
+      return data !== undefined && data !== "0x" && hexToBigInt(data) !== 0n;
+    };
+    return {
+      name,
+      balance: (address) => spotUsdc(infoUrl, address),
+      accepts,
+      async deposit({ fromSecret, to, amount, memo }) {
+        // Checked again here, right before money moves: HyperCore keeps deposits to accounts it hasn't seen.
+        if (!(await accepts(to))) throw new VenueAccountMissingError(to);
+        const { name, version } = await tokenDomain();
+        const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const { from, nonce, signature } = await signTransferAuthorization({
+          secret: fromSecret,
+          token,
+          chainId: cfg.viem.id,
+          domainName: name,
+          domainVersion: version,
+          to: contract,
+          value: amount,
+          memo,
+          validBefore,
+          primaryType: "ReceiveWithAuthorization",
+        });
+        const { r, s, v, yParity } = parseSignature(signature);
+        const hash = await rl(() =>
+          wallet.writeContract({
+            address: contract,
+            abi: CORE_DEPOSIT,
+            functionName: "deposit",
+            args: [from, to as Address, amount, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
+          }),
+        );
+        // Sent: a missing receipt from here on doesn't mean nothing moved.
+        return confirm(hash, { unconfirmedIsTyped: true });
+      },
+    };
+  };
+  const venue = cfg.venue;
 
   /**
    * A stock token, moved like the stablecoin without the sender holding gas: the wallet signs a permit for
@@ -256,6 +315,7 @@ export function createEvmAdapter(
   const assets = cfg.stocks?.length ? stockTransfers(cfg.stocks) : undefined;
 
   return {
+    ...(venue?.depositContract ? { venue: hyperCoreVenue(venue.name, venue.infoUrl, venue.depositContract) } : {}),
     chain: cfg.chain,
     tokenId: token,
     ...(assets ? { assets } : {}),

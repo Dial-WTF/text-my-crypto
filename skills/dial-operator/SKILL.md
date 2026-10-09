@@ -50,6 +50,9 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `get_wallet` | Balances and deposit address per chain, pay link, recent activity, connected agents. Read-only |
 | `send_stock` | `{ to, shares, symbol, note? }` Gift Robinhood Chain stock tokens (e.g. 0.1 TSLA) by share count, approved like `send_payment`. No dollar amounts: testnet stock tokens have no price |
 | `get_stocks` | Stock token holdings on Robinhood Chain in shares, the owner's address there, and which tickers can be sent. Read-only |
+| `send_to_hyperliquid` | `{ amountUsd, to? }` Move USDC from the owner's HyperEVM wallet into a Hyperliquid (HyperCore) spot balance: the owner's own, or a Dial user's. The owner approves by text |
+| `get_hyperliquid_balance` | USDC in the owner's HyperCore spot balance. Read-only |
+| `get_price` | `{ coin }` The Hyperliquid mainnet mid for a coin like BTC or HYPE. A quote, not advice. Read-only |
 
 Full arguments, statuses and error codes: [references/tools.md](references/tools.md).
 

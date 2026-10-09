@@ -36,7 +36,7 @@ import {
   searchDirectory,
 } from "@/lib/identity";
 import { getIntent, intentsFor } from "@/lib/intents";
-import { formatUsd, isUsdAmount } from "@/lib/money";
+import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
 import { assetOf, money } from "@/lib/settlement/amounts";
 import type { Network } from "@/lib/settlement/registry";
 import type { MoneyKind } from "@/lib/operator/grammar";
@@ -46,8 +46,10 @@ import { normalizePhone } from "@/lib/phone";
 import { cleanAsk, payProfile } from "@/lib/views/pay";
 import { buildPaymentView } from "@/lib/views/payment";
 import { walletJson, walletView } from "@/lib/views/wallet";
+import { coinSymbol, midPrice } from "@/lib/settlement/hypercore";
 import { formatAmount, formatShares, isShareAmount, stockForToken } from "@/lib/stocks";
 import { getWallet } from "@/lib/wallets";
+import { createVenueIntent, pendingVenueDuplicate, venueBalance, venueNamed, venueRecipient } from "@/lib/bot/hyperliquid";
 import type { Agent } from "./keys";
 
 // ---------------------------------------------------------------------------------------------
@@ -139,6 +141,20 @@ export const toolInputs = {
     note,
   }),
   get_wallet: z.object({}),
+  send_to_hyperliquid: z.object({
+    amountUsd,
+    to: person
+      .optional()
+      .describe("A Dial user (@handle, phone or contact name) whose Hyperliquid spot balance gets it. Leave out for the owner's own."),
+  }),
+  get_hyperliquid_balance: z.object({}),
+  get_price: z.object({
+    coin: z
+      .string()
+      .trim()
+      .regex(/^\$?[A-Za-z][A-Za-z0-9]{0,9}$/, 'A Hyperliquid coin like "BTC" or "HYPE"')
+      .describe('A coin Hyperliquid lists a perp for, e.g. "BTC", "ETH" or "HYPE".'),
+  }),
   send_stock: z.object({ to: person, shares, symbol, note }),
   get_stocks: z.object({}),
   split_payment: z.object({
@@ -169,6 +185,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
   "withdraw",
   "split_payment",
   "send_stock",
+  "send_to_hyperliquid",
 ]);
 
 // ---------------------------------------------------------------------------------------------
@@ -232,6 +249,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     // One leg of a split: who this leg pays. The view's "to" names the whole split.
     to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
     chain: i.chain,
+    network: view.network,
     note: i.note,
     approver: approverOf(i, owner, payer),
     approveUrl: `${deps.appUrl}/a/${i.id}`,
@@ -445,6 +463,37 @@ async function withdraw(deps: BotDeps, agent: Agent, input: ToolInput<"withdraw"
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }
 
+async function sendToHyperliquid(deps: BotDeps, agent: Agent, input: ToolInput<"send_to_hyperliquid">): Promise<ToolResult> {
+  const { user } = agent;
+  const to = await venueRecipient(deps, user, input.to);
+  if (!to.ok) return err(to.code, to.code === "unknown_recipient" && input.to ? notFoundOnDial(input.to) : to.message);
+  const pending = await pendingVenueDuplicate(deps, user, to.user, usdToBaseUnits(input.amountUsd), "hyperliquid");
+  if (pending) {
+    return err("duplicate", `The same Hyperliquid deposit is already waiting for approval as ${pending.id}. Poll get_payment instead of asking again.`);
+  }
+  const r = await createVenueIntent(deps, user, input.amountUsd, to.user, "hyperliquid");
+  return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
+}
+
+const notFoundOnDial = (raw: string) =>
+  `"${raw}" isn't a Dial user who has signed up, so there's no Hyperliquid balance to send to. Pass their Dial @handle, or use send_payment.`;
+
+async function getHyperliquidBalance(deps: BotDeps, agent: Agent): Promise<ToolResult> {
+  if (!venueNamed(deps.adapters, "hyperliquid")) return err("unavailable", replies.hyperCoreOff());
+  const b = await venueBalance(deps, agent.user, "hyperliquid");
+  if (!b) {
+    return ok({ account: null, amountUsd: "0", asset: "USDC", message: "No Hyperliquid account yet: send_to_hyperliquid with no `to` starts one." });
+  }
+  return ok({ account: b.address, network: b.network, amountUsd: usd(b.amount), asset: "USDC", balance: "HyperCore spot" });
+}
+
+async function getPrice(input: ToolInput<"get_price">): Promise<ToolResult> {
+  const coin = coinSymbol(input.coin);
+  const mid = await midPrice(coin);
+  if (!mid) return err("not_found", replies.priceUnknown(coin));
+  return ok({ coin, mid, quote: "USD", source: "Hyperliquid mainnet mid (info API allMids)", note: "A quote only, not advice." });
+}
+
 function canSee(i: Intent, userId: string): boolean {
   return i.senderId === userId || i.recipientId === userId || i.createdBy === userId;
 }
@@ -530,6 +579,12 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return withInput(toolInputs.get_pay_link, raw, (i) => getPayLink(deps, agent, i));
     case "get_wallet":
       return walletTool(deps, agent);
+    case "send_to_hyperliquid":
+      return withInput(toolInputs.send_to_hyperliquid, raw, (i) => sendToHyperliquid(deps, agent, i));
+    case "get_hyperliquid_balance":
+      return getHyperliquidBalance(deps, agent);
+    case "get_price":
+      return withInput(toolInputs.get_price, raw, (i) => getPrice(i));
     case "send_stock":
       return withInput(toolInputs.send_stock, raw, ({ to, shares: amount, symbol: asset, note: n }) =>
         moneyTool(deps, agent, "send", { counterparty: to, amountUsd: amount, asset, ...(n ? { note: n } : {}) }),
@@ -588,6 +643,20 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Pay link",
     description:
       "A shareable pay page (crypto Zelle) for the owner or any Dial @handle, optionally for a set amount and note. Returns the page URL, the text to send the operator, and a wallet link per chain (Solana Pay, EIP-681). Share the owner's link to get paid; read someone else's to pay them. Read-only.",
+  },
+  send_to_hyperliquid: {
+    title: "Send to Hyperliquid",
+    description:
+      "Move USDC from the owner's HyperEVM wallet into a HyperCore spot balance on Hyperliquid: the owner's own, or a Dial user's (their HyperCore account is their Dial HyperEVM address). Texts the owner a code to approve, like send_payment. Returns intentId; poll get_payment.",
+  },
+  get_hyperliquid_balance: {
+    title: "Hyperliquid balance",
+    description: "USDC in the owner's HyperCore spot balance on Hyperliquid, read from Hyperliquid's info API. Read-only.",
+  },
+  get_price: {
+    title: "Price",
+    description:
+      "The current mid price of a coin on Hyperliquid (mainnet market data), e.g. BTC or HYPE. A quote only, not advice. Read-only.",
   },
   send_stock: {
     title: "Send stock token",
