@@ -24,12 +24,20 @@ export function safeNetworkName(chain: Chain): string {
   return network ? networkName(chain, network) : chainLabel(chain);
 }
 
-export type ChainProof = { chain: Chain; network: string; treasury: string; treasuryUrl: string };
+export type ChainProof = {
+  chain: Chain;
+  network: string;
+  treasury: string;
+  treasuryUrl: string;
+  /** The escrow program holding payments to people not on Dial yet, when the chain uses one. */
+  escrowProgram?: { address: string; url: string };
+};
 
 /**
- * One row per live chain: the treasury that funds signups and pays every fee. Its explorer page lists
- * every drop, fee and escrow, so anyone can check the ledger against the chain without trusting us.
- * Each chain is asked on its own: one that is down is left out and the rest still show.
+ * One row per live chain: the treasury that funds signups and pays every fee, and the escrow program
+ * when there is one. Their explorer pages list every drop, fee and escrow, so anyone can check the
+ * ledger against the chain without trusting us. Each chain is asked on its own: one that is down is
+ * left out and the rest still show.
  */
 export async function chainProofs(
   adapters: Adapters = getAdapters(),
@@ -41,7 +49,14 @@ export async function chainProofs(
       if (!adapter) return null;
       try {
         const treasury = await adapter.treasuryAddress();
-        return { chain, network: entry.network, treasury, treasuryUrl: entry.explorerAddress(treasury) };
+        const program = adapter.escrow?.programId;
+        return {
+          chain,
+          network: entry.network,
+          treasury,
+          treasuryUrl: entry.explorerAddress(treasury),
+          ...(program ? { escrowProgram: { address: program, url: entry.explorerAddress(program) } } : {}),
+        };
       } catch (e) {
         console.error("chain proof unavailable", chain, errorText(e));
         return null;

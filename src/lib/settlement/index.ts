@@ -3,7 +3,7 @@ import { type Chain, CHAINS } from "@/lib/chains";
 import { type Env, env, rpcOverrides } from "@/lib/env";
 import { b64ToBytes } from "@/lib/secretbox";
 import { createEvmAdapter } from "./evm";
-import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc } from "./registry";
+import { type NetworkEntry, REGISTRY, type RpcSource, resolveRpc, type SolanaNetwork } from "./registry";
 import { createSolanaAdapter } from "./solana";
 import { createTempoAdapter } from "./tempo";
 import { type Adapters, guardAdapter, type SettlementAdapter } from "./types";
@@ -21,6 +21,15 @@ export function activeChains(e: Env = env(), overrides: Record<string, string> =
   });
 }
 
+/** The escrow program Solana sends use: only with the flag on, a program on this network, and the attestor key. */
+export function solanaEscrow(
+  e: Pick<Env, "ESCROW_PROGRAM" | "SOLANA_ESCROW_ATTESTOR_SEED">,
+  entry: SolanaNetwork,
+): { programId: string; attestorSeed: Uint8Array<ArrayBuffer> } | undefined {
+  if (e.ESCROW_PROGRAM !== "on" || !entry.escrowProgram || !e.SOLANA_ESCROW_ATTESTOR_SEED) return undefined;
+  return { programId: entry.escrowProgram, attestorSeed: b64ToBytes(e.SOLANA_ESCROW_ATTESTOR_SEED) };
+}
+
 function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | null {
   switch (entry.kind) {
     case "solana":
@@ -29,6 +38,7 @@ function build(e: Env, { chain, entry, rpc }: ActiveChain): SettlementAdapter | 
         mint: entry.mint,
         explorerTx: entry.explorerTx,
         treasurySeed: b64ToBytes(e.SOLANA_TREASURY_SEED),
+        escrow: solanaEscrow(e, entry),
       });
     case "tempo":
       if (!e.TEMPO_TREASURY_KEY || !entry.token) return null;

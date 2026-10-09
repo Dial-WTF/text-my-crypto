@@ -1,0 +1,1 @@
+ALTER TABLE `intents` ADD `escrow_program` text;

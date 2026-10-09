@@ -102,6 +102,8 @@ export const intents = sqliteTable("intents", {
   codeHash: text("code_hash"),
   codeAttempts: integer("code_attempts").notNull().default(0),
   escrowSecretEnc: text("escrow_secret_enc"),
+  /** Set when the escrow lives in an on-chain program (this program id) instead of a server-held wallet. */
+  escrowProgram: text("escrow_program"),
   escrowExpiresAt: ts("escrow_expires_at"),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),

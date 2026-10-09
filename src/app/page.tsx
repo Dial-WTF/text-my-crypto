@@ -16,14 +16,14 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "./agent-content";
 import { Colophon } from "./colophon";
 import { runsOn, settlesOn, transcript } from "./landing-content";
-import { loadLedger, PROOF_NOTE } from "./ledger-data";
+import { loadLedger } from "./ledger-data";
 import { StructuredData } from "./StructuredData";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();
-  const { stats, feed, proofs } = await loadLedger(8);
+  const { stats, feed, proofs, note } = await loadLedger(8);
   const stat = (v: string | number | undefined) => (stats ? String(v) : "—");
 
   return (
@@ -70,7 +70,7 @@ export default async function Home() {
           />
           <Split>
             <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
-            <OnchainProof rows={proofs} note={PROOF_NOTE} more={{ href: "/ledger", label: "Full ledger →" }} />
+            <OnchainProof rows={proofs} note={note} more={{ href: "/ledger", label: "Full ledger →" }} />
           </Split>
         </Stack>
       </Section>

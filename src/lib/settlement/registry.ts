@@ -30,7 +30,8 @@ type Common = {
   explorerAddress: (address: string) => string;
 };
 
-export type SolanaNetwork = Common & { kind: "solana"; mint: string };
+/** `escrowProgram`: the dial_escrow program deployed on this network (solana/README.md), when there is one. */
+export type SolanaNetwork = Common & { kind: "solana"; mint: string; escrowProgram?: string };
 /** A null token means the network is wired but has no stablecoin we settle in yet; it stays off. */
 export type TempoNetwork = Common & {
   kind: "tempo";
@@ -60,6 +61,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://api.devnet.solana.com",
       alchemy: "solana-devnet",
       mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      escrowProgram: "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`,
       explorerAddress: (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`,
     },

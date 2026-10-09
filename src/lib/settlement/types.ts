@@ -22,6 +22,22 @@ export interface SettlementAdapter {
   fund(to: string, amount: bigint): Promise<SettleResult>;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
+  /** On-chain escrow for payments to people not on Dial yet. Absent: escrow is a server-held wallet. */
+  escrow?: EscrowProgram;
+}
+
+/**
+ * An escrow program: the money waits in a vault keyed by the intent id. The operator's attestor key can
+ * release it to the recipient before expiry; after expiry it can only go back to the sender.
+ * `claim` and `refund` are idempotent: if the escrow already closed the same way, they return that transaction.
+ */
+export interface EscrowProgram {
+  programId: string;
+  /** Where the money will sit. Known before the escrow exists, so it can go on the intent. */
+  vaultAddress(intentId: string): Promise<string>;
+  create(args: { fromSecret: Uint8Array<ArrayBuffer>; intentId: string; amount: bigint; expiresAt: Date }): Promise<SettleResult>;
+  claim(args: { intentId: string; to: string }): Promise<SettleResult>;
+  refund(args: { intentId: string }): Promise<SettleResult>;
 }
 
 export type Adapters = Partial<Record<Chain, SettlementAdapter>>;

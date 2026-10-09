@@ -25,3 +25,7 @@ CLAUDE.md
 
 # Foundry
 contracts/cache/
+
+# Anchor (the built program and IDL the app uses are copied to solana/artifacts/)
+solana/target/
+solana/.anchor/

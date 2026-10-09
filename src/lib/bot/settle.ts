@@ -17,7 +17,7 @@ import {
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { open } from "@/lib/secretbox";
-import { errorText } from "@/lib/settlement/types";
+import { type EscrowProgram, errorText } from "@/lib/settlement/types";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureWallet } from "./accounts";
@@ -45,6 +45,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   }
 
   let result: { txHash: string; explorerUrl: string };
+  const escrowExpiresAt = new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS);
   try {
     const adapter = deps.adapters[intent.chain];
     if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
@@ -58,12 +59,10 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     }
     const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
     await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, chainLabel(intent.chain)));
-    result = await adapter.settle({
-      fromSecret: await unsealWallet(wallet, deps.walletKey),
-      to: intent.recipientAddress,
-      amount: intent.amount,
-      memo: intent.id,
-    });
+    const fromSecret = await unsealWallet(wallet, deps.walletKey);
+    result = intent.escrowProgram
+      ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
+      : await adapter.settle({ fromSecret, to: intent.recipientAddress, amount: intent.amount, memo: intent.id });
   } catch (e) {
     const error = errorText(e);
     await markFailed(deps.db, intent.id, error);
@@ -74,8 +73,8 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   const amount = formatUsd(intent.amount);
   const chain = chainLabel(intent.chain);
 
-  if (intent.escrowSecretEnc) {
-    await markEscrowed(deps.db, intent.id, result, new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS));
+  if (intent.escrowSecretEnc || intent.escrowProgram) {
+    await markEscrowed(deps.db, intent.id, result, escrowExpiresAt);
     await notify(deps, sender.phone, replies.sentToEscrow(amount, displayName(recipient), deps.escrowTtlDays));
     if (await isOptedOut(deps.db, recipient.phone)) {
       await notify(deps, sender.phone, replies.recipientOptedOut(displayName(recipient), deps.escrowTtlDays));
@@ -104,14 +103,32 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
   return { ok: true, status: "settled", ...result };
 }
 
-async function moveEscrow(deps: BotDeps, intent: Intent, toUserId: string): Promise<{ txHash: string; explorerUrl: string }> {
+/** The escrow program holding this intent. The intent names its program, so a switched-off or changed program fails loudly. */
+function escrowProgramFor(deps: BotDeps, intent: Intent): EscrowProgram {
+  const program = deps.adapters[intent.chain]?.escrow;
+  if (!program || program.programId !== intent.escrowProgram) {
+    throw new Error(`Escrow program ${intent.escrowProgram} is not available on ${intent.chain}`);
+  }
+  return program;
+}
+
+/** Pays an escrow to its recipient (claim) or back to its sender (refund). */
+async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "sender"): Promise<{ txHash: string; explorerUrl: string }> {
   const adapter = deps.adapters[intent.chain];
   if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
+  const toUserId = to === "recipient" ? intent.recipientId : intent.senderId;
+  if (intent.escrowProgram) {
+    const program = escrowProgramFor(deps, intent);
+    // The program only ever refunds to the sender's wallet it recorded, so a refund needs no address.
+    if (to === "sender") return program.refund({ intentId: intent.id });
+    const wallet = await ensureWallet(deps, toUserId, intent.chain, adapter);
+    return program.claim({ intentId: intent.id, to: wallet.address });
+  }
   if (!intent.escrowSecretEnc) throw new Error("Intent has no escrow");
-  const to = await ensureWallet(deps, toUserId, intent.chain, adapter);
+  const wallet = await ensureWallet(deps, toUserId, intent.chain, adapter);
   return adapter.settle({
     fromSecret: await open(intent.escrowSecretEnc, deps.walletKey),
-    to: to.address,
+    to: wallet.address,
     amount: intent.amount,
     memo: intent.id,
     closeSource: true,
@@ -131,7 +148,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     return { ok: false, reason: "failed", error: "Recipient has not claimed their account" };
   }
   try {
-    const result = await moveEscrow(deps, intent, recipient.id);
+    const result = await moveEscrow(deps, intent, "recipient");
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
     const amount = formatUsd(intent.amount);
     await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
@@ -153,7 +170,7 @@ export async function reclaimExpired(deps: BotDeps, senderId: string): Promise<s
     const intent = await claimEscrowForRefund(deps.db, candidate.id, deps.now());
     if (!intent) continue;
     try {
-      const result = await moveEscrow(deps, intent, senderId);
+      const result = await moveEscrow(deps, intent, "sender");
       await markReleased(deps.db, intent.id, "refunded", result, deps.now());
       total += intent.amount;
       count++;

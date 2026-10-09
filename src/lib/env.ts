@@ -37,6 +37,17 @@ const schema = z.object({
   PER_DAY_CAP_USD: z.string().default("200"),
   PASSKEY_THRESHOLD_USD: z.string().default("20"),
   ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /**
+   * "on": escrow for people not on Dial yet goes through the chain's escrow program (Solana's dial_escrow),
+   * where the money can only go to the recipient on the attestor's word or back to the sender after expiry.
+   * Off, or a chain without a program or an attestor key: a server-held escrow wallet, as before.
+   */
+  ESCROW_PROGRAM: z.enum(["on", "off"]).default("off"),
+  /** Base64 32-byte seed of the key that signs escrow claims once the recipient proves their phone. */
+  SOLANA_ESCROW_ATTESTOR_SEED: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   /** Workers AI model, used whenever the "ai" binding exists. Needs JSON mode (structured output). */

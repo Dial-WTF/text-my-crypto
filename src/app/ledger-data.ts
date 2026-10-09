@@ -1,11 +1,12 @@
 import { getDb } from "@/lib/db/client";
+import { env } from "@/lib/env";
 import { type ChainProof, chainProofs, safeNetworkName } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { errorText } from "@/lib/settlement/types";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import type { FeedEntry } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 
-export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[] };
+export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[]; note: string };
 
 /** Runs one part of a public ledger. If it throws, logs the (redacted) error and returns the fallback. */
 export async function quietly<T>(label: string, part: () => Promise<T>, fallback: T): Promise<T> {
@@ -37,8 +38,15 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     explorerUrl: r.explorerUrl,
     when: timeAgo(r.at, now),
   }));
-  return { stats, feed, proofs };
+  return { stats, feed, proofs, note: proofNote(proofs) };
 }
 
-export const PROOF_NOTE =
+const PROOF_NOTE =
   "Every payment carries its id on-chain: the memo on Solana and Tempo, the authorization nonce on EVM chains. Match any row to its transaction, or open a treasury to see every drop, fee and escrow.";
+
+/** The line under the addresses. Mentions the escrow program only where one is switched on. */
+function proofNote(proofs: ChainProof[]): string {
+  if (!proofs.some((p) => p.escrowProgram)) return PROOF_NOTE;
+  const days = env().ESCROW_TTL_DAYS;
+  return `${PROOF_NOTE} Money for someone not on Dial yet waits in the escrow program: it pays them only once they prove their phone, and after ${days} days anyone can send it back to the sender.`;
+}

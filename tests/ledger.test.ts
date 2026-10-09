@@ -45,7 +45,7 @@ describe("/ledger.json", () => {
     const { GET } = await import("@/app/ledger.json/route");
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ network: null, stats: null, treasuries: [], payments: [] });
+    expect(await res.json()).toEqual({ network: null, stats: null, treasuries: [], escrowPrograms: [], payments: [] });
     const logged = JSON.stringify(errors.mock.calls);
     expect(logged).toContain("d1.example/…");
     expect(logged).not.toContain("hunter2");
