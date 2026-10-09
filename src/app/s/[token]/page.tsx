@@ -11,7 +11,7 @@ import { beginPasskeySetup, finishPasskeySetup } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Add a passkey · Dial operator", robots: { index: false } };
+export const metadata: Metadata = { title: "Add a passkey", robots: { index: false } };
 
 export default async function PasskeyPage({ params }: PageProps<"/s/[token]">) {
   const { token } = await params;

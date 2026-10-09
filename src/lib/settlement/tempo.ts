@@ -98,6 +98,9 @@ export function createTempoAdapter(cfg: TempoConfig): SettlementAdapter {
     async settle({ fromSecret, to, amount, memo }) {
       return transfer(Account.fromSecp256k1(bytesToHex(fromSecret)), to as Address, amount, memo);
     },
+    async treasuryAddress() {
+      return treasury.address;
+    },
     async fund(to, amount) {
       await ensureTreasury(amount);
       return transfer(treasury, to as Address, amount, "fund");

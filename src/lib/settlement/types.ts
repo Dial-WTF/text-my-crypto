@@ -17,6 +17,8 @@ export interface SettlementAdapter {
     closeSource?: boolean;
   }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
+  /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
+  treasuryAddress(): Promise<string>;
 }
 
 export type Adapters = Partial<Record<Chain, SettlementAdapter>>;

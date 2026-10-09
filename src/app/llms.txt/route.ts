@@ -30,6 +30,8 @@ ${settlesOn.map((c) => `- ${c.name}: ${c.statusLabel}. ${c.role}`).join("\n")}
 
 ## Links
 - Site: ${s.url}
+- Ledger: ${s.url}/ledger (every settled payment, linked to its transaction)
+- Ledger JSON: ${s.url}/ledger.json (payments, stats and treasury addresses)
 - Source: https://github.com/Dial-WTF/text-my-crypto
 - Company: ${s.companyUrl}
 `;

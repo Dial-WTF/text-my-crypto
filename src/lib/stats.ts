@@ -2,7 +2,6 @@ import { and, count, desc, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents, users } from "@/lib/db/schema";
-import { displayName } from "@/lib/identity";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
 
@@ -38,14 +37,15 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
     .limit(limit);
   const ids = [...new Set(rows.flatMap((r) => [r.senderId, r.recipientId]))];
   const people = ids.length ? await db.select().from(users).where(inArray(users.id, ids)) : [];
-  const name = (id: string) => {
-    const u = people.find((p) => p.id === id);
-    return u ? displayName(u) : "someone";
+  // Public lists show handles, never the names people typed to get paid (and never numbers).
+  const who = (id: string) => {
+    const handle = people.find((p) => p.id === id)?.handle;
+    return handle ? `@${handle}` : "someone new";
   };
   return rows.map((r) => ({
     id: r.id,
-    from: name(r.senderId),
-    to: name(r.recipientId),
+    from: who(r.senderId),
+    to: who(r.recipientId),
     amount: r.amount,
     chain: r.chain,
     status: r.status,

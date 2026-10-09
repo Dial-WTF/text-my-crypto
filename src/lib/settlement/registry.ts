@@ -21,10 +21,13 @@ export type Network = (typeof NETWORKS)[number];
 type Common = {
   /** Names this network's RPC override secret: RPC_<id>. */
   id: string;
+  /** What people see, e.g. "Solana devnet" or "Base Sepolia". */
+  network: string;
   publicRpc: string;
   /** Alchemy's subdomain for this network, when Alchemy serves it. */
   alchemy?: string;
   explorerTx: (hash: string) => string;
+  explorerAddress: (address: string) => string;
 };
 
 export type SolanaNetwork = Common & { kind: "solana"; mint: string };
@@ -38,7 +41,11 @@ export type TempoNetwork = Common & {
 export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null };
 export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
 
-const etherscanLike = (host: string) => (h: string) => `https://${host}/tx/${h}`;
+/** Explorer links for an Etherscan-style explorer. */
+const scan = (host: string) => ({
+  explorerTx: (h: string) => `https://${host}/tx/${h}`,
+  explorerAddress: (a: string) => `https://${host}/address/${a}`,
+});
 
 /**
  * Every chain the operator can settle on, per network. Public facts only: chain ids, token
@@ -49,139 +56,155 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
     testnet: {
       kind: "solana",
       id: "SOLANA_DEVNET",
+      network: "Solana devnet",
       publicRpc: "https://api.devnet.solana.com",
       alchemy: "solana-devnet",
       mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`,
+      explorerAddress: (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`,
     },
     mainnet: {
       kind: "solana",
       id: "SOLANA_MAINNET",
+      network: "Solana",
       publicRpc: "https://api.mainnet-beta.solana.com",
       alchemy: "solana-mainnet",
       mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}`,
+      explorerAddress: (a) => `https://explorer.solana.com/address/${a}`,
     },
   },
   tempo: {
     testnet: {
       kind: "tempo",
       id: "TEMPO_MODERATO",
+      network: "Tempo Moderato",
       viem: tempoModerato,
       publicRpc: "https://rpc.moderato.tempo.xyz",
       alchemy: "tempo-moderato",
       token: "0x20c0000000000000000000000000000000000001", // AlphaUSD
       faucet: true,
-      explorerTx: etherscanLike("explore.testnet.tempo.xyz"),
+      ...scan("explore.testnet.tempo.xyz"),
     },
     mainnet: {
       kind: "tempo",
       id: "TEMPO_MAINNET",
+      network: "Tempo",
       viem: tempo,
       publicRpc: "https://rpc.tempo.xyz",
       alchemy: "tempo-mainnet",
       token: null, // pick the settlement stablecoin before enabling
       faucet: false,
-      explorerTx: etherscanLike("explore.tempo.xyz"),
+      ...scan("explore.tempo.xyz"),
     },
   },
   base: {
     testnet: {
       kind: "evm",
       id: "BASE_SEPOLIA",
+      network: "Base Sepolia",
       viem: baseSepolia,
       publicRpc: "https://sepolia.base.org",
       alchemy: "base-sepolia",
       token: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      explorerTx: etherscanLike("sepolia.basescan.org"),
+      ...scan("sepolia.basescan.org"),
     },
     mainnet: {
       kind: "evm",
       id: "BASE_MAINNET",
+      network: "Base",
       viem: base,
       publicRpc: "https://mainnet.base.org",
       alchemy: "base-mainnet",
       token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      explorerTx: etherscanLike("basescan.org"),
+      ...scan("basescan.org"),
     },
   },
   ethereum: {
     testnet: {
       kind: "evm",
       id: "ETHEREUM_SEPOLIA",
+      network: "Ethereum Sepolia",
       viem: sepolia,
       publicRpc: "https://ethereum-sepolia-rpc.publicnode.com",
       alchemy: "eth-sepolia",
       token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-      explorerTx: etherscanLike("sepolia.etherscan.io"),
+      ...scan("sepolia.etherscan.io"),
     },
     mainnet: {
       kind: "evm",
       id: "ETHEREUM_MAINNET",
+      network: "Ethereum",
       viem: mainnet,
       publicRpc: "https://ethereum-rpc.publicnode.com",
       alchemy: "eth-mainnet",
       token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      explorerTx: etherscanLike("etherscan.io"),
+      ...scan("etherscan.io"),
     },
   },
   arbitrum: {
     testnet: {
       kind: "evm",
       id: "ARBITRUM_SEPOLIA",
+      network: "Arbitrum Sepolia",
       viem: arbitrumSepolia,
       publicRpc: "https://sepolia-rollup.arbitrum.io/rpc",
       alchemy: "arb-sepolia",
       token: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
-      explorerTx: etherscanLike("sepolia.arbiscan.io"),
+      ...scan("sepolia.arbiscan.io"),
     },
     mainnet: {
       kind: "evm",
       id: "ARBITRUM_MAINNET",
+      network: "Arbitrum One",
       viem: arbitrum,
       publicRpc: "https://arb1.arbitrum.io/rpc",
       alchemy: "arb-mainnet",
       token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-      explorerTx: etherscanLike("arbiscan.io"),
+      ...scan("arbiscan.io"),
     },
   },
   hyperevm: {
     testnet: {
       kind: "evm",
       id: "HYPEREVM_TESTNET",
+      network: "HyperEVM testnet",
       viem: hyperliquidEvmTestnet,
       publicRpc: "https://rpc.hyperliquid-testnet.xyz/evm",
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
-      explorerTx: etherscanLike("testnet.purrsec.com"),
+      ...scan("testnet.purrsec.com"),
     },
     mainnet: {
       kind: "evm",
       id: "HYPEREVM_MAINNET",
+      network: "HyperEVM",
       viem: hyperEvm,
       publicRpc: "https://rpc.hyperliquid.xyz/evm",
       alchemy: "hyperliquid-mainnet",
       token: null, // confirm the USDC address before enabling
-      explorerTx: etherscanLike("hyperevmscan.io"),
+      ...scan("hyperevmscan.io"),
     },
   },
   robinhood: {
     testnet: {
       kind: "evm",
       id: "ROBINHOOD_TESTNET",
+      network: "Robinhood Chain testnet",
       viem: robinhoodTestnet,
       publicRpc: robinhoodTestnet.rpcUrls.default.http[0],
       alchemy: "robinhood-testnet",
       token: null, // no test stablecoin yet
-      explorerTx: etherscanLike("explorer.testnet.chain.robinhood.com"),
+      ...scan("explorer.testnet.chain.robinhood.com"),
     },
     mainnet: {
       kind: "evm",
       id: "ROBINHOOD_MAINNET",
+      network: "Robinhood Chain",
       viem: robinhood,
       publicRpc: robinhood.rpcUrls.default.http[0],
       token: null,
-      explorerTx: etherscanLike("robinhoodchain.blockscout.com"),
+      ...scan("robinhoodchain.blockscout.com"),
     },
   },
   zcash: { testnet: null, mainnet: null },

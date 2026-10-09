@@ -1,14 +1,12 @@
-import { chainLabel } from "@/lib/chains";
-import { getDb } from "@/lib/db/client";
 import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
-import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import { AgentPanel } from "@/ui/patterns/AgentPanel/AgentPanel";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { Marquee } from "@/ui/patterns/Marquee/Marquee";
+import { OnchainProof } from "@/ui/patterns/OnchainProof/OnchainProof";
 import { PoweredBy } from "@/ui/patterns/PoweredBy/PoweredBy";
-import { type FeedEntry, PaymentFeed } from "@/ui/patterns/PaymentFeed/PaymentFeed";
+import { PaymentFeed } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 import { QrReceipt } from "@/ui/patterns/QrReceipt/QrReceipt";
 import { Section, Split } from "@/ui/patterns/Section/Section";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
@@ -16,54 +14,20 @@ import { StatStrip } from "@/ui/patterns/StatStrip/StatStrip";
 import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "./agent-content";
+import { Colophon } from "./colophon";
 import { runsOn, settlesOn, transcript } from "./landing-content";
+import { loadLedger, PROOF_NOTE } from "./ledger-data";
 import { StructuredData } from "./StructuredData";
 
 export const dynamic = "force-dynamic";
 
-const STATE_LABEL: Record<string, string> = { settled: "delivered", escrowed: "waiting to be claimed", refunded: "refunded" };
-
-async function loadLedger(): Promise<{ stats: PublicStats | null; feed: FeedEntry[] }> {
-  try {
-    const db = getDb();
-    const [stats, rows] = await Promise.all([publicStats(db), recentPayments(db, 8)]);
-    const feed = rows.map((r) => ({
-      id: r.id,
-      from: r.from,
-      to: r.to,
-      amount: r.amount,
-      network: `${chainLabel(r.chain)} devnet`,
-      state: STATE_LABEL[r.status] ?? r.status,
-      txHash: r.txHash,
-      explorerUrl: r.explorerUrl,
-    }));
-    return { stats, feed };
-  } catch (e) {
-    console.error("ledger unavailable", e);
-    return { stats: null, feed: [] };
-  }
-}
-
 export default async function Home() {
   const { DIAL_OPERATOR_NUMBER: number } = publicEnv();
-  const { stats, feed } = await loadLedger();
+  const { stats, feed, proofs } = await loadLedger(8);
   const stat = (v: string | number | undefined) => (stats ? String(v) : "—");
 
   return (
-    <SiteShell
-      operatorNumber={number}
-      colophon={
-        <>
-          <p>Testnet demo. Payments settle in devnet USDC on Solana; Tempo, Base and Zcash are on the way.</p>
-          <p>
-            Wallets are held by Dial and every movement needs a one-time code texted to your phone, or your passkey. Text
-            “withdraw all to &lt;address&gt;” to take your money anywhere.
-          </p>
-          <p>Texts run on Payphone.</p>
-          <p>© 2026 Dial.Work · dial.work</p>
-        </>
-      }
-    >
+    <SiteShell operatorNumber={number} colophon={<Colophon />}>
       <StructuredData />
       <Marquee
         kicker="Text the Dial operator"
@@ -104,7 +68,10 @@ export default async function Home() {
               { value: stat(stats?.people), label: "people on Dial" },
             ]}
           />
-          <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
+          <Split>
+            <PaymentFeed entries={feed} emptyText="No payments yet. Text “hi” and be the first." />
+            <OnchainProof rows={proofs} note={PROOF_NOTE} more={{ href: "/ledger", label: "Full ledger →" }} />
+          </Split>
         </Stack>
       </Section>
 

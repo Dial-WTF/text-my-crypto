@@ -14,7 +14,7 @@ export type FeedEntry = {
   explorerUrl: string | null;
 };
 
-/** Recent on-chain payments, printed as one long receipt. Names only, never numbers. */
+/** Recent on-chain payments, printed as one long receipt. Handles and payment ids only, never numbers. */
 export function PaymentFeed({ entries, emptyText }: { entries: FeedEntry[]; emptyText: string }) {
   return (
     <Receipt title="Live · recent payments">
@@ -29,6 +29,7 @@ export function PaymentFeed({ entries, emptyText }: { entries: FeedEntry[]; empt
             <div className={styles.meta}>
               <span>{e.network}</span>
               <span>{e.state}</span>
+              <Mono value={e.id} full />
               {e.txHash ? <Mono value={e.txHash} href={e.explorerUrl} /> : null}
             </div>
           </div>

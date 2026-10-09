@@ -1,0 +1,18 @@
+.note {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-on-card-muted);
+}
+
+.more {
+  justify-self: start;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-on-card);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.more:hover {
+  text-decoration-thickness: 2px;
+}

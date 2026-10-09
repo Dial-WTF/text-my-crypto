@@ -130,6 +130,9 @@ export function createEvmAdapter(
       );
       return confirm(hash);
     },
+    async treasuryAddress() {
+      return treasury.address;
+    },
     async fund(to, amount) {
       const hash = await rl(() =>
         wallet.writeContract({ address: token, abi: ERC20_3009, functionName: "transfer", args: [to as Address, amount] }),

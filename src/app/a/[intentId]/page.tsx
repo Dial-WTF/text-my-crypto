@@ -12,7 +12,7 @@ import { approveWithCode, beginPasskeyApproval, finishPasskeyApproval } from "./
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Payment · Dial operator", robots: { index: false } };
+export const metadata: Metadata = { title: "Payment", robots: { index: false } };
 
 export default async function PaymentPage({ params }: PageProps<"/a/[intentId]">) {
   const { intentId } = await params;

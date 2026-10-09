@@ -26,6 +26,7 @@ export function fakeAdapter(opts: { defaultBalance?: bigint; chain?: SettlementA
       settled.push({ to, amount, memo, closeSource: closeSource ?? false });
       return { txHash: `sig_${memo}_${settled.length}`, explorerUrl: `https://explorer.test/sig_${memo}` };
     },
+    treasuryAddress: async () => `${chain}Treasury`,
     fund: async (to, amount) => {
       funded.push(`${to}:${amount}`);
       return { txHash: "sig_fund", explorerUrl: "https://explorer.test/sig_fund" };

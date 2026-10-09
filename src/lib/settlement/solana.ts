@@ -108,6 +108,9 @@ export function createSolanaAdapter(cfg: {
       const from = await createKeyPairSignerFromPrivateKeyBytes(fromSecret);
       return transfer(from, address(to), amount, memo, closeSource);
     },
+    async treasuryAddress() {
+      return (await treasury).address;
+    },
     async fund(to, amount) {
       return transfer(await treasury, address(to), amount, "dial signup drip");
     },

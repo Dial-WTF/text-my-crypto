@@ -8,7 +8,7 @@ describe("public stats", () => {
   it("counts settled money and claimed people, and lists recent payments by handle only", async () => {
     const db = await createTestDb();
     const now = new Date("2026-10-09T12:00:00Z");
-    const a = await createUser(db, { phone: "+15550000010", handle: "alex" }, now);
+    const a = await createUser(db, { phone: "+15550000010", handle: "alex", name: "Alex Rivera" }, now);
     const j = await createUser(db, { phone: "+15550000011", handle: "jeremy" }, now);
     const u = await createUnclaimedUser(db, "+15550000099");
     const base = { kind: "send" as const, createdBy: a.id, senderId: a.id, chain: "solana" as const, token: "M", note: null };
@@ -27,9 +27,10 @@ describe("public stats", () => {
     expect(await publicStats(db)).toEqual({ payments: 2, movedUsd: 15_000_000n, people: 2 });
     const feed = await recentPayments(db, 8);
     expect(feed.map((p) => [p.from, p.to, p.amount, p.status])).toEqual([
-      ["alex", "+•••••••0099", 5_000_000n, "escrowed"],
-      ["alex", "jeremy", 10_000_000n, "settled"],
+      ["@alex", "someone new", 5_000_000n, "escrowed"],
+      ["@alex", "@jeremy", 10_000_000n, "settled"],
     ]);
-    expect(JSON.stringify(feed, (_k, v) => (typeof v === "bigint" ? v.toString() : v))).not.toContain("+1555");
+    // Public: no phone numbers, and no names people typed to get paid.
+    expect(JSON.stringify(feed, (_k, v) => (typeof v === "bigint" ? v.toString() : v))).not.toMatch(/555|Rivera/);
   });
 });
