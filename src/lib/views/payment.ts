@@ -5,6 +5,7 @@ import { displayName, getUserById } from "@/lib/identity";
 import { splitLegs } from "@/lib/intents";
 import { networkName } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
+import { withdrawTarget } from "@/lib/payment-labels";
 import type { Network } from "@/lib/settlement/registry";
 
 export type StatusTone = "done" | "waiting" | "bad";
@@ -83,11 +84,7 @@ export async function buildPaymentView(
   const full = opts.audience === "party" || (opts.audience === "public" && i.status === "pending");
   const name = (u: User | null) => (full ? (u ? displayName(u) : "someone") : publicName(u));
   const split = i.splitId ? await splitView(db, i.splitId, name) : null;
-  const to = i.kind === "withdraw"
-    ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
-    : split
-      ? `${split.legs.length} people`
-      : name(recipient);
+  const to = i.kind === "withdraw" ? withdrawTarget(i) : split ? `${split.legs.length} people` : name(recipient);
   return {
     id: i.id,
     kindLabel: split ? "Split" : KIND_LABEL[i.kind],

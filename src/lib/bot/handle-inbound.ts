@@ -29,7 +29,7 @@ import {
   matchCode,
   matchesExpiredCode,
 } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
+import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName } from "@/lib/names";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
@@ -273,7 +273,7 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
     const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
     const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender), deps.appUrl);
+    if (waiting && sender) return replies.welcomeWithMoney(money(waiting.amount, waiting.chain, deps.network), displayName(sender), deps.appUrl);
   }
   return replies.welcome(deps.appUrl);
 }
@@ -324,7 +324,10 @@ async function balanceReply(deps: BotDeps, user: User): Promise<string> {
   const lines: string[] = [];
   for (const [chain, adapter] of enabledChains(deps)) {
     const w = await getWallet(deps.db, user.id, chain);
-    if (w) lines.push(`${formatUsd(await adapter.getBalance(w.address))} USDC on ${chainLabel(chain)}`);
+    if (w) {
+      const amount = money(await adapter.getBalance(w.address), chain, deps.network);
+      lines.push(`${namesItsCoin(amount) ? amount : `${amount} USDC`} on ${chainLabel(chain)}`);
+    }
   }
   return lines.length ? replies.balance(lines) : replies.chainUnavailable(chainLabel(user.defaultChain));
 }

@@ -3,6 +3,7 @@ import { wallets } from "@/lib/db/schema";
 import { createUser } from "@/lib/identity";
 import { createIntent } from "@/lib/intents";
 import { stateLabel } from "@/lib/payment-labels";
+import { guardAdapter } from "@/lib/settlement/types";
 import { cleanAsk, payProfile } from "@/lib/views/pay";
 import { walletJson, walletView } from "@/lib/views/wallet";
 import { handleFromParam } from "@/lib/web/pay-page";
@@ -28,6 +29,27 @@ describe("pay profile", () => {
     expect(p.chains[0]).toMatchObject({ chain: "solana", network: "Solana devnet", address: "solanaAddr1" });
     expect(p.chains[0]?.uri).toMatch(/^solana:solanaAddr1\?amount=5&spl-token=/);
     expect(JSON.stringify(p)).not.toMatch(/555|balance/i);
+  });
+
+  it("leaves out a chain whose wallet service is down and still shows the rest", async () => {
+    const { deps, user } = await setup();
+    const zec = guardAdapter({
+      ...fakeAdapter({ chain: "zcash" }),
+      createWallet: async () => {
+        throw new Error("wallet service unreachable");
+      },
+    });
+    const p = await payProfile({ ...deps, adapters: { ...deps.adapters, zcash: zec } }, user);
+    expect(p.chains.map((c) => c.chain)).toEqual(["solana"]);
+  });
+
+  it("offers Zcash as TAZ with a ZIP 321 link and says what the demo rate is", async () => {
+    const { deps, user } = await setup();
+    const p = await payProfile({ ...deps, adapters: { ...deps.adapters, zcash: fakeAdapter({ chain: "zcash" }) } }, user, { amountUsd: "5" });
+    const zcash = p.chains.find((c) => c.chain === "zcash");
+    expect(zcash).toMatchObject({ asset: "TAZ", network: "Zcash testnet" });
+    expect(zcash?.uri).toMatch(/^zcash:zcashAddr1\?amount=0\.1&label=/);
+    expect(zcash?.assetNote).toBe("Pays 0.1 TAZ: testnet ZEC at a demo rate of $50 per coin.");
   });
 
   it("opens the wallet once and reuses it", async () => {

@@ -1,8 +1,9 @@
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { codeFor } from "./money";
 import { splitStatusReply } from "./split";
 import type { BotDeps } from "./types";
@@ -54,13 +55,13 @@ export async function statusReply(
   const split = await splitStatusReply(deps, user, i, { freshCode });
   if (split) return split;
   const now = deps.now();
-  const amount = formatUsd(i.amount);
+  const amount = money(i.amount, i.chain, deps.network);
   const outgoing = i.senderId === user.id;
   const otherId = outgoing ? i.recipientId : i.senderId;
   const other = await getUserById(deps.db, otherId);
   const who =
     i.kind === "withdraw"
-      ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
+      ? withdrawTarget(i)
       : other
         ? displayName(other)
         : "them";

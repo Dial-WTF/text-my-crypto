@@ -95,6 +95,8 @@ export const intents = sqliteTable("intents", {
   chain: text("chain", { enum: CHAINS }).notNull(),
   token: text("token").notNull(),
   recipientAddress: text("recipient_address").notNull(),
+  /** The ENS name or Basename a withdrawal was addressed to, kept for display. recipientAddress is what was resolved and approved. */
+  recipientName: text("recipient_name"),
   amount: amount("amount").notNull(),
   nonce: text("nonce").notNull(),
   expiresAt: ts("expires_at").notNull(),

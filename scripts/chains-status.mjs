@@ -39,6 +39,22 @@ async function evmLike(entry, rpcUrl, key, nativeGas) {
   return { treasury, gas: `${Number(formatUnits(wei, 18)).toFixed(4)} ${entry.viem.nativeCurrency.symbol}`, gasOk: wei > 0n, usd };
 }
 
+/** Zcash: ask the wallet service for its treasury and what that treasury can send, in TAZ. */
+async function zcash(entry) {
+  if (!env.ZCASH_SERVICE_URL || !env.ZCASH_SERVICE_TOKEN) return { missing: "ZCASH_SERVICE_URL / ZCASH_SERVICE_TOKEN" };
+  const base = env.ZCASH_SERVICE_URL.replace(/\/+$/, "");
+  const get = async (path) => {
+    const res = await fetch(`${base}${path}`, { headers: { authorization: `Bearer ${env.ZCASH_SERVICE_TOKEN}` } });
+    if (!res.ok) throw new Error(`wallet service ${path}: HTTP ${res.status}`);
+    return res.json();
+  };
+  const { address } = await get("/v1/treasury");
+  const b = await get(`/v1/balance/${encodeURIComponent(address)}`);
+  const coins = b.sendable / 1e8;
+  // Fees come out of the same coin, so there is no separate gas balance.
+  return { treasury: address, gas: `fees paid in ${entry.asset}`, gasOk: b.synced, usd: coins * entry.usdPerZec, coins };
+}
+
 const rows = [];
 for (const [chain, byNetwork] of Object.entries(REGISTRY)) {
   const entry = byNetwork[network];
@@ -47,17 +63,27 @@ for (const [chain, byNetwork] of Object.entries(REGISTRY)) {
     continue;
   }
   const rpc = resolveRpc(entry, { alchemyKey: env.ALCHEMY_API_KEY || undefined, overrides });
-  const via = `${rpc.source} (${new URL(rpc.url).host})`;
+  const via =
+    entry.kind === "zcash"
+      ? `wallet service (${env.ZCASH_SERVICE_URL ? new URL(env.ZCASH_SERVICE_URL).host : "unset"})`
+      : `${rpc.source} (${new URL(rpc.url).host})`;
   try {
     const r =
       entry.kind === "solana"
         ? await solana(entry, rpc.url)
-        : await evmLike(entry, rpc.url, entry.kind === "tempo" ? env.TEMPO_TREASURY_KEY : env.EVM_TREASURY_KEY, entry.kind === "evm");
+        : entry.kind === "zcash"
+          ? await zcash(entry)
+          : await evmLike(entry, rpc.url, entry.kind === "tempo" ? env.TEMPO_TREASURY_KEY : env.EVM_TREASURY_KEY, entry.kind === "evm");
     if (r.missing) {
       rows.push({ chain, network: entry.network, via, status: `no ${r.missing}` });
       continue;
     }
-    const tokenNote = r.usd === null ? "no stablecoin" : `$${r.usd}${entry.faucet ? " (faucet refills)" : ""}`;
+    const tokenNote =
+      r.coins !== undefined
+        ? `${r.coins} ${entry.asset} ($${r.usd.toFixed(2)} at the demo rate)`
+        : r.usd === null
+          ? "no stablecoin"
+          : `$${r.usd}${entry.faucet ? " (faucet refills)" : ""}`;
     // A testnet faucet entry (Tempo Moderato) refills the treasury on demand, so an empty balance is fine.
     const ready = r.gasOk && r.usd !== null && (r.usd >= drip || entry.faucet === true);
     const status = ready ? (enabled.has(chain) ? "LIVE" : "ready, not in CHAINS") : r.usd === null ? "needs a stablecoin" : "needs funding";

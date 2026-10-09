@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5be1af6f-c993-4067-9d02-91b34bb9caaa",
+  "id": "9818bdc9-dcce-4771-a508-1a2168854b38",
   "prevId": "bc53856c-591e-4221-aeef-782ef4ff1f8d",
   "tables": {
     "agent_keys": {
@@ -387,6 +387,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "recipient_name": {
+          "name": "recipient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "amount": {
           "name": "amount",
           "type": "integer",
@@ -508,24 +515,9 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "split_id": {
-          "name": "split_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
-      "indexes": {
-        "intents_split": {
-          "name": "intents_split",
-          "columns": [
-            "split_id"
-          ],
-          "isUnique": false
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "intents_created_by_users_id_fk": {
           "name": "intents_created_by_users_id_fk",

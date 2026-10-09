@@ -50,8 +50,10 @@ describe("chainStatuses", () => {
     expect([s.solana, s.base, s.zcash]).toEqual(["Live · devnet", "Wired · Sepolia", "Building"]);
   });
 
-  it("only switches on chains with a stablecoin on the network, whatever CHAINS says", () => {
-    expect(enabledChains("solana, Tempo ,zcash,dogecoin", "testnet")).toEqual(["solana", "tempo"]);
+  it("only switches on chains with something to settle in on the network, whatever CHAINS says", () => {
+    // Zcash settles its own coin at a demo rate on testnet; there is no Zcash mainnet entry.
+    expect(enabledChains("solana, Tempo ,zcash,dogecoin", "testnet")).toEqual(["solana", "tempo", "zcash"]);
+    expect(enabledChains("solana,zcash", "mainnet")).toEqual(["solana"]);
     // Tempo, HyperEVM and Robinhood mainnet have no settlement token yet.
     const main = labels("solana,tempo,hyperevm,robinhood,base", new Set<Chain>(["solana"]), "mainnet");
     expect(main).toMatchObject({ solana: "Live", base: "Ready", tempo: "Building", hyperevm: "Building", robinhood: "Building", ethereum: "Wired" });
