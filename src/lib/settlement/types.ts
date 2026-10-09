@@ -38,7 +38,15 @@ export interface SettlementAdapter extends Capabilities {
   carriedFees?(to: RecipientKind): bigint;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
+  /**
+   * What became of a transfer that went out without an answer (`settle` threw TransferUnconfirmedError):
+   * it landed, it failed, or it can still land. `sentAt` is about when it went out, for chains where a
+   * transfer stops being able to land after a while. Absent: such transfers wait for a person to look.
+   */
+  transferOutcome?(txHash: string, at: { sentAt: Date; now: Date }): Promise<TransferOutcome>;
 }
+
+export type TransferOutcome = { state: "landed"; result: SettleResult } | { state: "failed" } | { state: "pending" };
 
 /**
  * An escrow program: the money waits in a vault keyed by the intent id. The operator's attestor key can

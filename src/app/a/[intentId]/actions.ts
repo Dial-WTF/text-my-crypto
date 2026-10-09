@@ -4,7 +4,7 @@ import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON 
 import { approveIntent } from "@/lib/bot/settle";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { botDeps } from "@/lib/deps";
-import { getIntent, matchCode } from "@/lib/intents";
+import { getIntent, matchPageCode } from "@/lib/intents";
 import { startApproval, verifyApproval } from "@/lib/passkeys";
 import { rp } from "@/lib/web";
 import type { ActionResult } from "@/ui/patterns/ApprovePanel/ApprovePanel";
@@ -39,6 +39,6 @@ export async function finishPasskeyApproval(intentId: string, response: Authenti
 export async function approveWithCode(intentId: string, code: string): Promise<ActionResult> {
   const intent = await openIntent(intentId);
   if (!intent || !intent.codeHash || intent.codeAttempts >= MAX_CODE_ATTEMPTS) return CLOSED;
-  const [match] = await matchCode(botDeps().db, [intent], code.trim());
+  const match = await matchPageCode(botDeps().db, intent, code.trim());
   return match ? settle(intentId) : { ok: false, message: "That code didn't match. Check the operator's last text." };
 }
