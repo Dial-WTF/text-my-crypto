@@ -24,7 +24,8 @@ export function botDeps(): BotDeps {
     perDayCap: usdToBaseUnits(e.PER_DAY_CAP_USD),
     passkeyThreshold: usdToBaseUnits(e.PASSKEY_THRESHOLD_USD),
     escrowTtlDays: e.ESCROW_TTL_DAYS,
-    dripAmount: usdToBaseUnits(e.SIGNUP_DRIP_USD),
+    // The signup drip is test money. On mainnet it would be real dollars, so there is none.
+    dripAmount: e.NETWORK === "testnet" ? usdToBaseUnits(e.SIGNUP_DRIP_USD) : 0n,
     network: e.NETWORK,
   };
 }

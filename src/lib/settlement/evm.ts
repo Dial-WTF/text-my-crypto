@@ -17,6 +17,7 @@ import type { Chain } from "@/lib/chains";
 import type { EvmNetwork } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
 import type { SettlementAdapter, SettleResult } from "./types";
+import { TransferUnconfirmedError } from "./unconfirmed";
 
 const ERC20_3009 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -86,8 +87,14 @@ export function createEvmAdapter(
       rl(() => publicClient.readContract({ address: token, abi: ERC20_3009, functionName: "version" })),
     ]).then(([name, version]) => ({ name, version })));
 
-  async function confirm(hash: Hex): Promise<SettleResult> {
-    const receipt = await rl(() => publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 }));
+  /** `unconfirmedIsTyped`: a receipt that never came back throws TransferUnconfirmedError instead of the raw error. */
+  async function confirm(hash: Hex, { unconfirmedIsTyped = false } = {}): Promise<SettleResult> {
+    let receipt;
+    try {
+      receipt = await rl(() => publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 }));
+    } catch (e) {
+      throw unconfirmedIsTyped ? new TransferUnconfirmedError(cfg.chain, hash, e) : e;
+    }
     if (receipt.status !== "success") throw new Error(`${cfg.chain} tx ${hash} reverted`);
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
@@ -137,7 +144,8 @@ export function createEvmAdapter(
       const hash = await rl(() =>
         wallet.writeContract({ address: token, abi: ERC20_3009, functionName: "transfer", args: [to as Address, amount] }),
       );
-      return confirm(hash);
+      // Sent: from here a missing receipt doesn't mean nothing moved.
+      return confirm(hash, { unconfirmedIsTyped: true });
     },
   };
 }
