@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_OPERATOR_NUMBER } from "@/lib/operator-line";
-import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
+import { ESCROW_CONTRACT_KEYS, RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
 
 /**
  * Settings that are safe to show on a public page: which network and chains run, and the money limits.
@@ -57,6 +57,14 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v || undefined),
+  /**
+   * Hex key of the address that sends escrow claims on EVM chains with a dial_escrow contract (Arbitrum).
+   * Each deployment has its own, and the contract it names was deployed with it as the attestor.
+   */
+  EVM_ESCROW_ATTESTOR_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   /** Workers AI model, used whenever the "ai" binding exists. Needs JSON mode (structured output). */
@@ -121,6 +129,20 @@ export function rpcOverrides(source: Record<string, string | undefined> = proces
   for (const key of RPC_OVERRIDE_KEYS) {
     const value = source[key]?.trim();
     if (value) out[key] = z.url().parse(value);
+  }
+  return out;
+}
+
+/**
+ * ESCROW_CONTRACT_<NETWORK ID> vars (e.g. ESCROW_CONTRACT_ARBITRUM_SEPOLIA): a deployment's own dial_escrow
+ * contract in place of the registry's. Staging sets one, since a contract only takes claims from the
+ * attestor it was deployed with. Only names the registry knows are read; blanks count as unset.
+ */
+export function escrowContractOverrides(source: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of ESCROW_CONTRACT_KEYS) {
+    const value = source[key]?.trim();
+    if (value) out[key] = z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(value);
   }
   return out;
 }

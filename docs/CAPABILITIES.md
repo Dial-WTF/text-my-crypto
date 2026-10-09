@@ -6,7 +6,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 
 | Module | What it does | Carried by |
 |---|---|---|
-| `escrow` | Money for someone not on Dial waits in an on-chain program: the attestor releases it, and the sender can take a refund after expiry | Solana (`dial_escrow`) |
+| `escrow` | Money for someone not on Dial waits in an on-chain program: the attestor releases it, and the sender can take a refund after expiry | Solana (`dial_escrow`); Arbitrum (`dial_escrow` Stylus contract in `contracts/arbitrum-escrow`, attached once its address is set. Not deployed yet: Stylus activations have been paused on Arbitrum since 2 Oct 2026) |
 | `names` | Pay or withdraw to a name instead of an address | planned: Ethereum (ENS), Base (Basenames) |
 | `batch` | Several transfers in one transaction, all or none | planned: Tempo |
 | `actions` | Anyone can pay a Dial pay link from their own wallet | planned: Solana (Actions / Blinks) |

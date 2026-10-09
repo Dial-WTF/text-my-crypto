@@ -26,6 +26,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { withRateLimitRetry as rl } from "./retry";
+import { fundingVerdict } from "./unconfirmed";
 import {
   decodeEscrowAccount,
   type EscrowAccount,
@@ -62,26 +63,6 @@ const isFailedOnChain = (e: unknown) => e instanceof Error && /^Solana tx \S+ fa
 /** The program refused, the simulation failed, it failed on-chain, or its blockhash expired: it didn't land. */
 const didNotLand = (e: unknown) => escrowErrorCode(e) !== null || e instanceof NotLandedError || isPreflightFailure(e) || isFailedOnChain(e);
 
-/**
- * After a failed escrow funding: did the money move? Funded when the chain holds this sender's escrow
- * for this amount. Failed when the send certainly didn't land, or nothing is there and the transaction
- * can't land any more. Anything else (the RPC broke while it could still land) is unconfirmed.
- */
-export function fundingVerdict(args: {
-  definite: boolean;
-  found: EscrowLookup | null;
-  sender: string;
-  amount: bigint;
-  expired: boolean;
-}): { kind: "funded"; result: SettleResult } | { kind: "failed" } | { kind: "unconfirmed" } {
-  const { found } = args;
-  if (found?.state === "open" && found.funded && found.sender === args.sender && found.amount === args.amount) {
-    return { kind: "funded", result: found.funded };
-  }
-  if (args.definite) return { kind: "failed" };
-  if (found?.state === "none" && args.expired) return { kind: "failed" };
-  return { kind: "unconfirmed" };
-}
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function createSolanaAdapter(cfg: {

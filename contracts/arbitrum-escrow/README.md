@@ -29,6 +29,52 @@ gives every call the return data of the last mock registered and lets unmocked c
 would hide bugs in a contract that makes several calls per transaction. The wrapper answers each call
 with its own mock, reverts unmocked calls, and undoes a failed call's storage writes and logs.
 
+## In the app
+
+`src/lib/settlement/evm-escrow.ts` is the client, attached to the arbitrum adapter as its `escrow` module
+(the same `EscrowProgram` interface as Solana's `dial_escrow`) when all three are set:
+`ESCROW_PROGRAM=on`, `EVM_ESCROW_ATTESTOR_KEY`, and a contract address: `escrowContract` on
+`arbitrum.testnet` in `src/lib/settlement/registry.ts` (production's, null until deployed), or
+`ESCROW_CONTRACT_ARBITRUM_SEPOLIA` for a deployment with its own contract (staging). The bot needs no
+Arbitrum code: approval funds through the contract, the claim code claims, `reclaim` refunds, and the
+reconciler settles fundings it didn't see confirm from `escrow(id)` and the contract's events.
+
+- Funding is one transaction: the sender signs USDC's `receiveWithAuthorization` and the treasury sends
+  `fundWithAuthorization`. The authorization is valid for 10 minutes, so a funding that isn't on-chain
+  by the time the reconciler gives up (15 minutes) never will be. A send whose answer got lost is
+  checked against the contract before it's called failed, as on Solana.
+- Claims come from the attestor's own address, which pays their gas; the treasury tops it up with
+  0.001 ETH when it drops below 0.0002 ETH.
+- Refunds are signed by the sender (the bot hands the program the sender's key) and sent by the treasury.
+
+## Deploy
+
+Each deployment has its own attestor, and so its own contract. Put a fresh key in the deployment's env
+file as `EVM_ESCROW_ATTESTOR_KEY`, then:
+
+```bash
+ARBITRUM_DEPLOYER_KEY=0x… pnpm escrow:deploy:arbitrum                # production (.env.production.local)
+ARBITRUM_DEPLOYER_KEY=0x… pnpm escrow:deploy:arbitrum --env staging  # staging (.env.staging.local)
+```
+
+The deployer key comes from the shell and only pays for the deploy (about 0.001 ETH with the 0.000143 ETH
+activation fee; keep 0.01 ETH on it). The script stops if activations are paused, builds, runs
+`cargo stylus check`, deploys, activates, reads `attestor()` back, and prints the address and where it
+goes. `--dry-run` stops before sending. Then `pnpm secrets:push [--env staging]`.
+
+To run the contract for real without Arbitrum Sepolia, start a local Nitro dev node
+(`docker run -p 8547:8547 offchainlabs/nitro-node:v3.11.1-8512b8c --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug`),
+set it up the way cargo-stylus's devnet does (chain owner, CREATE2 factory, StylusDeployer), deploy with
+`--rpc http://127.0.0.1:8547`, and run the round-trip:
+
+```bash
+ESCROW_INT=1 ESCROW_CONTRACT=0x… ESCROW_TREASURY_KEY=0x… ESCROW_ATTESTOR_KEY=0x… pnpm exec vitest run tests/settlement/arbitrum-escrow.int.test.ts
+```
+
+It funds a fresh wallet, funds an escrow and claims it, funds another, checks an early refund is
+refused, and refunds it after expiry, printing the transactions. Without `ESCROW_TOKEN` it deploys
+`EscrowTestUSD` (contracts/src); on Arbitrum Sepolia set `ESCROW_RPC` and point `ESCROW_TOKEN` at USDC.
+
 ## Status: activations are paused
 
 The Arbitrum Security Council paused new Stylus activations on Arbitrum One, Nova and Arbitrum Sepolia
@@ -39,4 +85,6 @@ is lifted, `cargo stylus check` against Arbitrum Sepolia stops with "Stylus acti
 paused", and the contract can't be deployed there.
 
 Against a local Nitro dev node (`offchainlabs/nitro-node:v3.11.1-8512b8c --dev`, Stylus version 3, the
-same as Arbitrum Sepolia) the check passes: 23.8 KB, wasm data fee 0.000143 ETH.
+same as Arbitrum Sepolia) the check passes (23.8 KB, wasm data fee 0.000143 ETH), the deploy script
+deploys and activates it, and the round-trip above passes: funding by authorization, claim, a refused
+early refund, and a refund by the sender's signature.

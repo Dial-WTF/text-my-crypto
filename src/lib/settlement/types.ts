@@ -37,7 +37,11 @@ export interface EscrowProgram {
   vaultAddress(intentId: string): Promise<string>;
   create(args: { fromSecret: Uint8Array<ArrayBuffer>; intentId: string; amount: bigint; expiresAt: Date }): Promise<SettleResult>;
   claim(args: { intentId: string; to: string }): Promise<SettleResult>;
-  refund(args: { intentId: string }): Promise<SettleResult>;
+  /**
+   * `senderSecret`: the sender's wallet key, for programs that refund only on the sender's signature
+   * (Arbitrum's dial_escrow). Programs anyone can crank (Solana's) ignore it.
+   */
+  refund(args: { intentId: string; senderSecret?: Uint8Array<ArrayBuffer> }): Promise<SettleResult>;
   /** What the chain says about this intent's escrow, for settling payments whose outcome we didn't see. */
   lookup(intentId: string): Promise<EscrowLookup>;
 }
