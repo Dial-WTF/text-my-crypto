@@ -11,7 +11,7 @@ import {
   findUnanswered,
   LOOKBACK_MS,
 } from "./checks";
-import { alertText, type CheckResult, markSent, type Plan, planAlerts } from "./problems";
+import { alertText, type CheckResult, markRun, markSent, type Plan, planAlerts } from "./problems";
 import { mayAlertStateless } from "./slot";
 
 export type WatchdogDeps = {
@@ -100,6 +100,8 @@ export async function runWatchdog(deps: WatchdogDeps): Promise<WatchdogReport> {
     const results = await gather(deps, now);
     for (const r of results) report.checks[r.key] = { ok: r.ok, detail: r.detail };
     report.ok = results.every((r) => r.ok !== false);
+    // For the status page's "last watchdog run". If D1 can't take it, planAlerts below says so.
+    await markRun(deps.db, now).catch(() => {});
 
     let plan: Plan;
     try {
