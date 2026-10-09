@@ -28,4 +28,5 @@ contracts/cache/
 
 # Anchor (the built program and IDL the app uses are copied to solana/artifacts/)
 solana/target/
+contracts/*/target/
 solana/.anchor/
