@@ -134,7 +134,7 @@ export async function codeFor(
 }
 
 /** dripOnce, but a failure is logged instead of ending the turn. */
-async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
+export async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
   try {
     return await dripOnce(deps, wallet, adapter);
   } catch (e) {
@@ -144,7 +144,7 @@ async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAda
 }
 
 /** Not enough money: where to add more (their pay page lists deposit options) and, on testnet, a faucet. */
-function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
+export function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
   const testnet = deps.network === "testnet";
   const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
   const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
@@ -168,7 +168,7 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
   return { ok: true, chain, adapter, amount };
 }
 
-async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
+export async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
 }

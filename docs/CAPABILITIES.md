@@ -8,7 +8,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 |---|---|---|
 | `escrow` | Money for someone not on Dial waits in an on-chain program: the attestor releases it, and the sender can take a refund after expiry | Solana (`dial_escrow`) |
 | `names` | Withdraw to a name instead of an address. The name resolves once, when the payment is created; the payment keeps that address | Ethereum (ENS), Base (Basenames) |
-| `batch` | Several transfers in one transaction, all or none | planned: Tempo |
+| `batch` | Several transfers in one transaction, all or none: "split $30 between @a @b" | Tempo (atomic `calls`, one `transferWithMemo` per person) |
 | `actions` | Anyone can pay a Dial pay link from their own wallet: the link unfurls as a Blink, and the payment is found on-chain by a reference key | Solana (Actions / Blinks) |
 | `shielded` | Amount, parties and memo encrypted on-chain | Zcash (testnet, Ironwood pool, every send) |
 | `venue` | Move money into the chain's own trading venue | planned: Hyperliquid (HyperCore) |

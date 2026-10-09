@@ -1,147 +1,9 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ab2e6eb1-77f8-48a3-96e9-adaefb85956f",
+  "id": "bd24267d-af71-47f6-9d9d-462d1c6b3460",
   "prevId": "9818bdc9-dcce-4771-a508-1a2168854b38",
   "tables": {
-    "action_payments": {
-      "name": "action_payments",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reference": {
-          "name": "reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "chain": {
-          "name": "chain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "recipient_address": {
-          "name": "recipient_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "payer_address": {
-          "name": "payer_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "amount": {
-          "name": "amount",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch('subsec') * 1000)"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "signature": {
-          "name": "signature",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "explorer_url": {
-          "name": "explorer_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "received": {
-          "name": "received",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "paid_at": {
-          "name": "paid_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "action_payments_reference_unique": {
-          "name": "action_payments_reference_unique",
-          "columns": [
-            "reference"
-          ],
-          "isUnique": true
-        },
-        "action_payments_signature_unique": {
-          "name": "action_payments_signature_unique",
-          "columns": [
-            "signature"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "action_payments_recipient_id_users_id_fk": {
-          "name": "action_payments_recipient_id_users_id_fk",
-          "tableFrom": "action_payments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "agent_keys": {
       "name": "agent_keys",
       "columns": {
@@ -653,9 +515,24 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "split_id": {
+          "name": "split_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "intents_split": {
+          "name": "intents_split",
+          "columns": [
+            "split_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "intents_created_by_users_id_fk": {
           "name": "intents_created_by_users_id_fk",
