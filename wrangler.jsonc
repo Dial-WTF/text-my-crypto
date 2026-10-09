@@ -16,6 +16,8 @@
     "SMS_MODE": "payphone",
     "ESCROW_TTL_DAYS": "7",
     "SIGNUP_DRIP_USD": "2",
+    // Chains that settle in production. Add one only after `pnpm chains:status` shows its treasury ready.
+    "CHAINS": "solana,tempo,ethereum,robinhood",
     "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
   "d1_databases": [
