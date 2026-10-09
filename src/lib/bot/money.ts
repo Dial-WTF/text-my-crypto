@@ -241,13 +241,18 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
 
   if (cmd.kind === "send") {
     let balance = await adapter.getBalance(mine.address);
+    // Zcash payments carry the recipient's next fees on top; other chains carry nothing.
+    const fees = adapter.carriedFees?.(isClaimed(other) ? "dial" : adapter.escrow ? "outside" : "escrow") ?? 0n;
     // Short, and the test drip never landed (say the chain was down at signup): drop it now. A wallet opened
     // this turn already had its try. A drip that fails (empty treasury, rate limit) just means "not enough".
-    if (balance < amount && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
+    if (balance < amount + fees && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
       balance += deps.dripAmount;
       await notify(deps, user.phone, replies.dripped(money(deps.dripAmount, chain, deps.network)));
     }
     if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
+    if (balance < amount + fees) {
+      return fail("insufficient", replies.feeShort(money(balance, chain, deps.network), money(fees, chain, deps.network), chainLabel(chain)));
+    }
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
     const id = newIntentId();

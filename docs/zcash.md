@@ -54,8 +54,11 @@ lightwalletd v0.5.4). `lightwalletd.testnet.electriccoin.co:9067` timed out and
   - A payment to another Dial wallet carries one fee on top, so the recipient can spend all of it.
   - A payment into an escrow carries two: one for the release and one for the recipient's next send.
     The release sweeps the escrow, so the recipient gets the full amount plus their one fee.
-  - A drip carries two fees on top of the dollar amount (one from the adapter, one as a Dial
-    recipient), so a new user can send their whole drip to another Dial user.
+  - A drip carries three fees on top of the dollar amount (two from the adapter, one as a Dial
+    recipient). One is held back for the user's own fee, which leaves the two an escrow send carries:
+    a new user can send their whole drip to someone not on Dial yet.
+  - The bot counts the carried fees before it asks for a code. Enough for the amount but not the
+    fees gets "that payment also needs $0.01 (0.0002 TAZ) for network fees… Try a little less."
 - **Accounts come from a pool.** Every account shares the service birthday, and importing one makes
   the wallet rescan from there. So the service makes 100 at a time ahead of signups and hands them out
   one by one: a new wallet is instant and never triggers a rescan, and the pool tops up (one rescan)
@@ -72,7 +75,8 @@ lightwalletd v0.5.4). `lightwalletd.testnet.electriccoin.co:9067` timed out and
   connection, 5xx, rate limit) the adapter asks again twice, then throws `SettlementUnknownError`.
   The bot leaves the payment "settling", texts the sender that it may still go through, and the
   minute watchdog re-drives it with the same arguments until it settles or gets a definite no. A
-  drip in that state stays taken, so it can't be sent twice.
+  drip in that state stays taken, so it can't be sent twice. A resume run marks the payment
+  "retrying since <time>"; if that run dies, the next one picks it up after 5 minutes.
 
 ## Dollars and TAZ
 
@@ -103,7 +107,7 @@ All routes except `/healthz` need `Authorization: Bearer $ZCASH_SERVICE_TOKEN`.
 Sends, drips and new accounts share a limit of 30 a minute (429 `rate_limited`, nothing sent).
 Errors are `{error, message}`: 400 `bad_request`, 404 `not_found`, 409 `insufficient_funds`,
 422 `rejected` (lightwalletd refused the transaction; nothing moved), 503 `not_synced`, 504 `unknown`
-(broadcast got no answer; ask again), 502 `upstream`, 500 `internal` (details only in the service log).
+(broadcast got no answer; ask again), 500 `internal` (details only in the service log).
 
 ## Hosting
 
@@ -138,7 +142,7 @@ at it over HTTPS.
 3. **Fund the treasury with TAZ.** `GET /v1/treasury` gives the address. The faucets listed by ZecHub
    were down on 2026-10-08 (`testnet.zecaucet.com` has no DNS, `faucet.zecpages.com` doesn't answer),
    so ask for TAZ in the Zcash community Discord or forum. A signup drip costs the treasury the drip
-   plus up to about 0.0006 TAZ in fees (two carried fees and the treasury's own, which splits its change): 0.02 TAZ at staging's $1, 0.04 TAZ at production's $2. 2 TAZ covers
+   plus up to about 0.0007 TAZ in fees (three carried fees and the treasury's own, which splits its change): 0.02 TAZ at staging's $1, 0.04 TAZ at production's $2. 2 TAZ covers
    about 45 production signups. Raise `usdPerZec` in the registry if TAZ is scarce.
 4. **One real round-trip** with the local or deployed service:
    ```
@@ -147,9 +151,10 @@ at it over HTTPS.
    It drips $1 to a new wallet, pays it into a second wallet with a memo, and sweeps that one out to a
    third, about 0.03 TAZ.
 5. **Turn it on.** Put `ZCASH_SERVICE_URL` and `ZCASH_SERVICE_TOKEN` in `.env.staging.local` and
-   `.env.production.local`, `pnpm secrets:push` (both envs), then add `"CHAINS": "solana,tempo,zcash"`
-   to the `vars` in `wrangler.jsonc`, top level and `env.staging` (CHAINS isn't set today, so it
-   defaults to `solana,tempo`), and `pnpm ship`. Then flip the landing tile to
+   `.env.production.local`, `pnpm secrets:push` (both envs). In `wrangler.jsonc`, append `zcash` to
+   production's `CHAINS` (top-level `vars`, today `solana,tempo,ethereum,robinhood`), and add a
+   `CHAINS` line to `env.staging`'s `vars` (staging has none, so it runs the default `solana,tempo`):
+   staging first, then production. Then `pnpm ship`. Then flip the landing tile to
    "Live · testnet" once a text has settled there.
 
 ## Running it locally

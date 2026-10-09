@@ -216,10 +216,16 @@ export function createZcashAdapter(cfg: ZcashConfig): SettlementAdapter {
       });
     },
 
+    carriedFees(to) {
+      const fees = to === "escrow" ? 2n : to === "dial" ? 1n : 0n;
+      return zatsToUsd(fees * ZCASH_FEE_ZATS, cfg.usdPerZec);
+    },
+
     async fund(to, amount) {
-      // One fee on top here and one more the service adds for any Dial recipient: the full drip can be
-      // sent on to another Dial wallet. The memo plus the recipient makes the drip idempotent.
-      const zats = usdToZats(amount, cfg.usdPerZec) + ZCASH_FEE_ZATS;
+      // Two fees on top here and one more the service adds for any Dial recipient. The balance holds one
+      // back for the sender's own fee, which leaves the two an escrow send carries: a new user can send
+      // their whole drip to someone not on Dial yet. The memo plus the recipient makes the drip idempotent.
+      const zats = usdToZats(amount, cfg.usdPerZec) + 2n * ZCASH_FEE_ZATS;
       return send("/v1/fund", { to, zats: Number(zats), memo: "Dial test drip", wait: CONFIRM_WAIT_SECONDS });
     },
 

@@ -6,6 +6,9 @@ export { errorText, redactUrls } from "./redact";
 
 export type SettleResult = { txHash: string; explorerUrl: string };
 
+/** Where a payment goes: another Dial wallet, a per-payment escrow wallet, or an address outside Dial. */
+export type RecipientKind = "dial" | "escrow" | "outside";
+
 /** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
 export interface SettlementAdapter extends Capabilities {
   chain: Chain;
@@ -27,6 +30,12 @@ export interface SettlementAdapter extends Capabilities {
     escrow?: boolean;
   }): Promise<SettleResult>;
   fund(to: string, amount: bigint): Promise<SettleResult>;
+  /**
+   * What a payment must carry on top of `amount`, beyond the fee `getBalance` already holds back, by
+   * where it goes: another Dial wallet, a per-payment escrow wallet, or outside Dial. Absent: nothing.
+   * Zcash only, where payments between its wallets carry the fees the recipient will need to move them on.
+   */
+  carriedFees?(to: RecipientKind): bigint;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
 }

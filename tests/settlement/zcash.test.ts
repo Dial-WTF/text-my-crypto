@@ -166,10 +166,17 @@ describe("zcash adapter", () => {
     expect(svc.calls[0]?.body).toMatchObject({ account: 9, sweep: true, memo: "pi_esc" });
   });
 
-  it("drips from the treasury with one fee on top, so the full amount can be sent on", async () => {
+  it("drips with two fees on top (the service adds a third), enough to send the whole drip into an escrow", async () => {
     const svc = fakeService({ "POST /v1/fund": () => ({ json: { txid: "ef".repeat(32) } }) });
     await adapter(svc.fetch).fund(UA, usdToBaseUnits("1"));
-    expect(svc.calls[0]?.body).toMatchObject({ to: UA, zats: 2_000_000 + 10_000 });
+    expect(svc.calls[0]?.body).toMatchObject({ to: UA, zats: 2_000_000 + 20_000 });
+  });
+
+  it("says what each kind of payment carries on top, in dollars", () => {
+    const a = adapter((async () => new Response("{}")) as typeof globalThis.fetch);
+    expect(a.carriedFees?.("escrow")).toBe(10_000n); // two 0.0001 TAZ fees at $50
+    expect(a.carriedFees?.("dial")).toBe(5_000n);
+    expect(a.carriedFees?.("outside")).toBe(0n);
   });
 
   it("returns the treasury address", async () => {

@@ -5,7 +5,7 @@ import { resumeUnknownSettlements } from "@/lib/bot/settle";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
-import { getIntent } from "@/lib/intents";
+import { claimUnknownForRetry, getIntent } from "@/lib/intents";
 import { SettlementUnknownError } from "@/lib/settlement/unconfirmed";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
@@ -80,6 +80,23 @@ describe("zcash in texts", () => {
   });
 });
 
+describe("Zcash network fees", () => {
+  it("says the fees are short when the balance covers the amount but not what an escrow send carries", async () => {
+    zec.carriedFees = (to) => (to === "escrow" ? 10_000n : to === "dial" ? 5_000n : 0n);
+    const reply = await say(ALEX, "send +15550000029 $5 on zcash");
+    expect(reply).toBe(
+      "You have $5 (0.1 TAZ), but on Zcash that payment also needs $0.01 (0.0002 TAZ) for network fees, so I didn't send it. Nothing moved. Try a little less.",
+    );
+    expect(zec.settled).toHaveLength(0);
+  });
+
+  it("lets the same balance pay a little less", async () => {
+    zec.carriedFees = (to) => (to === "escrow" ? 10_000n : 0n);
+    const confirm = await say(ALEX, "send +15550000029 $4.99 on zcash");
+    expect(confirm).toMatch(/^Send \$4\.99 \(0\.0998 TAZ\)/);
+  });
+});
+
 describe("a Zcash send whose answer never came back", () => {
   it("stays settling, tells the sender it may still land, and the resume job finishes it", async () => {
     zec.failNext = () => new SettlementUnknownError("zcash", new Error("504 gateway timeout"));
@@ -97,6 +114,21 @@ describe("a Zcash send whose answer never came back", () => {
     expect(zec.settled.map((c) => c.memo)).toEqual([id, id]);
     expect(sms.to(JEREMY).some((t) => t.includes("$1 (0.02 TAZ)"))).toBe(true);
     expect(await resumeUnknownSettlements(deps)).toEqual([]);
+  });
+
+  it("picks a retry back up when the run that took it died", async () => {
+    zec.failNext = () => new SettlementUnknownError("zcash", new Error("no answer"));
+    const confirm = await say(ALEX, "send @jeremy $1 on zcash");
+    const id = intentIdIn(confirm);
+    await say(ALEX, codeIn(confirm));
+    // A run takes it and dies before finishing: the marker stays.
+    expect(await claimUnknownForRetry(db, id, deps.now())).not.toBeNull();
+    expect(await resumeUnknownSettlements(deps)).toEqual([]);
+    // Five minutes on, the stale claim is fair game again.
+    const later = { ...deps, now: () => new Date(deps.now().getTime() + 6 * 60_000) };
+    const [outcome] = await resumeUnknownSettlements(later);
+    expect(outcome?.ok).toBe(true);
+    expect((await getIntent(db, id))?.status).toBe("settled");
   });
 
   it("marks it failed only when the retry gets a definite no", async () => {

@@ -67,8 +67,8 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
  */
 export async function resumeUnknownSettlements(deps: BotDeps): Promise<SettleOutcome[]> {
   const outcomes: SettleOutcome[] = [];
-  for (const candidate of await unknownSettlements(deps.db)) {
-    const intent = await claimUnknownForRetry(deps.db, candidate.id);
+  for (const candidate of await unknownSettlements(deps.db, deps.now())) {
+    const intent = await claimUnknownForRetry(deps.db, candidate.id, deps.now());
     if (intent) outcomes.push(await execute(deps, intent, { resume: true }));
   }
   return outcomes;
@@ -95,11 +95,21 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
     const wallet = await getWallet(deps.db, intent.senderId, intent.chain);
     if (!wallet) throw new Error("Missing sender wallet");
-    const balance = resume ? intent.amount : await adapter.getBalance(wallet.address);
-    if (balance < intent.amount) {
-      await markFailed(deps.db, intent.id, "Insufficient balance at approval");
-      await notify(deps, sender.phone, replies.insufficientNow(money(balance, intent.chain, deps.network)));
-      return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
+    const goesTo = intent.kind === "withdraw" || intent.escrowProgram ? "outside" : intent.escrowSecretEnc ? "escrow" : "dial";
+    const fees = adapter.carriedFees?.(goesTo) ?? 0n;
+    const balance = resume ? intent.amount + fees : await adapter.getBalance(wallet.address);
+    if (balance < intent.amount + fees) {
+      const error = balance < intent.amount ? "Insufficient balance at approval" : "Not enough for the network fees at approval";
+      await markFailed(deps.db, intent.id, error);
+      const have = money(balance, intent.chain, deps.network);
+      await notify(
+        deps,
+        sender.phone,
+        balance < intent.amount
+          ? replies.insufficientNow(have)
+          : replies.feeShort(have, money(fees, intent.chain, deps.network), chainLabel(intent.chain)),
+      );
+      return { ok: false, reason: "failed", error };
     }
     const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
     if (!resume) {
