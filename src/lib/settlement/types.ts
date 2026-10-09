@@ -1,11 +1,13 @@
 import type { Chain } from "@/lib/chains";
+import type { Capabilities } from "./capabilities";
 import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
 
 export type SettleResult = { txHash: string; explorerUrl: string };
 
-export interface SettlementAdapter {
+/** Send, hold and check a stablecoin on one chain, plus whatever chain-native modules it carries (capabilities.ts). */
+export interface SettlementAdapter extends Capabilities {
   chain: Chain;
   tokenId: string;
   isValidAddress(address: string): boolean;
@@ -22,18 +24,6 @@ export interface SettlementAdapter {
   fund(to: string, amount: bigint): Promise<SettleResult>;
   /** The operator's treasury on this chain: funds signups and pays fees. Public, so anyone can audit it. */
   treasuryAddress(): Promise<string>;
-  /** On-chain escrow for payments to people not on Dial yet. Absent: escrow is a server-held wallet. */
-  escrow?: EscrowProgram;
-  /** HyperEVM only: deposits into HyperCore spot balances. Absent until the deposit contract is deployed. */
-  hyperCore?: HyperCoreBridge;
-}
-
-/** Moves USDC from a HyperEVM wallet into a HyperCore spot balance, in one transaction the treasury pays for. */
-export interface HyperCoreBridge {
-  /** "HyperCore testnet". */
-  network: string;
-  /** Moves `amount` from the wallet behind `fromSecret` into `to`'s HyperCore spot balance. `memo` is the payment id. */
-  deposit(args: { fromSecret: Uint8Array<ArrayBuffer>; to: string; amount: bigint; memo: string }): Promise<SettleResult>;
 }
 
 /**

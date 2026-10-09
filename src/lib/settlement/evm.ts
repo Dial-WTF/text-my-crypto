@@ -75,6 +75,28 @@ export async function signTransferAuthorization(args: {
 }
 
 /**
+ * Waits until the RPC's latest block has reached `block`. Base hands back a receipt from a pre-confirmed block
+ * before every node behind the RPC has it, so a balance read straight afterwards still shows the old balance
+ * (a fresh drop reads as $0). Gives up after `timeoutMs`: the transfer is confirmed either way.
+ */
+export async function waitForHead(
+  head: () => Promise<bigint>,
+  block: bigint,
+  { timeoutMs = 10_000, intervalMs = 500, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) } = {},
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if ((await head()) >= block) return true;
+    } catch {
+      // A failed head check only means we wait a little longer.
+    }
+    if (Date.now() >= deadline) return false;
+    await sleep(intervalMs);
+  }
+}
+
+/**
  * USDC on an EVM chain. Users never hold gas: they sign an EIP-3009 authorization and the
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
@@ -104,6 +126,7 @@ export function createEvmAdapter(
       throw unconfirmedIsTyped ? new TransferUnconfirmedError(cfg.chain, hash, e) : e;
     }
     if (receipt.status !== "success") throw new Error(`${cfg.chain} tx ${hash} reverted`);
+    await waitForHead(() => publicClient.getBlockNumber({ cacheTime: 0 }), receipt.blockNumber);
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
 
