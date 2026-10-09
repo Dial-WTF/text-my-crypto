@@ -1,0 +1,41 @@
+.icon {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.title {
+  margin: 0;
+  font: 700 var(--text-lg) / 1.25 var(--font-body);
+  color: var(--color-on-card);
+}
+
+.link {
+  color: var(--color-on-card);
+  text-underline-offset: 3px;
+}
+
+.wallets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xs);
+}
+
+.walletIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* $1, $5, $10 side by side; they wrap onto a second row on narrow phones. */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5rem), 1fr));
+  gap: var(--space-xs);
+}
+
+.custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-sm);
+}

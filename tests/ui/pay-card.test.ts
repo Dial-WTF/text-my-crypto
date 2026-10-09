@@ -21,12 +21,13 @@ async function render(props: Parameters<typeof PayCard>[0]): Promise<string> {
 const solana = { network: "Solana devnet", address: "So1Addr", uri: "solana:So1Addr", explorer: "https://explorer.test/So1Addr", assetNote: null };
 
 describe("PayCard", () => {
-  it("puts a Blink link next to the Solana Pay QR", async () => {
-    const action = { uri: "solana-action:https://tmc.test/api/actions/pay/alex", blink: "https://dial.to/?action=x&cluster=devnet" };
+  it("puts a link to the Blink checkout next to the Solana Pay QR", async () => {
+    const action = { uri: "solana-action:https://tmc.test/api/actions/pay/alex?amount=5", blink: "https://tmc.test/@alex/blink?amount=5" };
     const html = await render({ ...base, chains: [{ ...solana, action }] });
     expect(html).toContain("Pay with a Solana wallet");
-    expect(html).toContain('href="https://dial.to/?action=x&amp;cluster=devnet"');
-    expect(html).toContain('href="solana-action:https://tmc.test/api/actions/pay/alex"');
+    expect(html).toContain('href="https://tmc.test/@alex/blink?amount=5"');
+    expect(html).not.toContain("dial.to");
+    expect(html).toContain('href="solana-action:https://tmc.test/api/actions/pay/alex?amount=5"');
   });
 
   it("shows no Blink for a chain without an action", async () => {
