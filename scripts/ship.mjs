@@ -14,6 +14,7 @@ const steps = [
   ["typecheck", "pnpm", ["typecheck"]],
   ["test", "pnpm", ["test"]],
   ["build", "pnpm", ["exec", "opennextjs-cloudflare", "build"]],
+  ["scrub baked env", "node", ["scripts/scrub-build-env.mjs"]],
   ["staging: migrate D1", "pnpm", ["exec", "wrangler", "d1", "migrations", "apply", "text-my-crypto-staging", "--env", "staging", "--remote"]],
   ["staging: deploy", "pnpm", ["exec", "opennextjs-cloudflare", "deploy", "--env", "staging"]],
   ["staging: smoke", "node", ["scripts/smoke.mjs", "--env", "staging"]],
