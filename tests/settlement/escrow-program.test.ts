@@ -247,7 +247,7 @@ describe("dial_escrow program", () => {
         createdAt: NOW,
         expiresAt: NOW + 7n * DAY,
       });
-      expect(escrowEventsFromLogs(r.logs())).toEqual([
+      expect(escrowEventsFromLogs(r.logs(), PROGRAM)).toEqual([
         {
           name: "EscrowCreated",
           intentIdHash: hash,
@@ -299,7 +299,25 @@ describe("dial_escrow program", () => {
       expect(svm.getAccount(escrow).exists).toBe(false);
       // Two signatures (treasury and attestor) at 5000 lamports each.
       expect(lamportsOf(treasury.address)).toBe(before + rent - 10_000n);
-      expect(escrowEventsFromLogs(r.logs())).toEqual([
+      expect(escrowEventsFromLogs(r.logs(), PROGRAM)).toEqual([
+        { name: "EscrowClaimed", intentIdHash: hash, escrow, recipient: recipient.address, amount: 12_500_000n },
+      ]);
+    });
+
+    it("only counts events the escrow program wrote, not the same bytes logged by another program", async () => {
+      const { escrow, hash } = await pdas("pi_claim");
+      const logs = ok(await send(treasury, [await claimIx("pi_claim")])).logs();
+      const data = logs.filter((l) => l.startsWith("Program data: "));
+      expect(data).toHaveLength(1);
+      const OTHER = "Evi1111111111111111111111111111111111111111";
+      const TOKEN = "TokenkegQfeZyiNwAJbNbGLPTxkLxs9Ap7tPSkDQs1c";
+      // A sender's own program lists the escrow and logs a forged EscrowClaimed after a real refund.
+      expect(escrowEventsFromLogs([`Program ${OTHER} invoke [1]`, ...data, `Program ${OTHER} success`], PROGRAM)).toEqual([]);
+      // Or the escrow program calls something that logs it: still not the escrow program's event.
+      const nested = [`Program ${PROGRAM} invoke [1]`, `Program ${TOKEN} invoke [2]`, ...data, `Program ${TOKEN} success`];
+      expect(escrowEventsFromLogs([...nested, `Program ${PROGRAM} success`], PROGRAM)).toEqual([]);
+      // Written by the escrow program once its inner call has returned: that one counts.
+      expect(escrowEventsFromLogs([...nested, ...data, `Program ${PROGRAM} success`], PROGRAM)).toEqual([
         { name: "EscrowClaimed", intentIdHash: hash, escrow, recipient: recipient.address, amount: 12_500_000n },
       ]);
     });
@@ -386,7 +404,7 @@ describe("dial_escrow program", () => {
       expect(svm.getAccount(escrow).exists).toBe(false);
       expect(svm.getAccount(vault).exists).toBe(false);
       expect(lamportsOf(treasury.address)).toBe(before + rent);
-      expect(escrowEventsFromLogs(r.logs())).toEqual([
+      expect(escrowEventsFromLogs(r.logs(), PROGRAM)).toEqual([
         { name: "EscrowRefunded", intentIdHash: hash, escrow, sender: sender.address, amount: 30_000_000n },
       ]);
     });

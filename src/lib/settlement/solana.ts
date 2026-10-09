@@ -175,7 +175,7 @@ export function createSolanaAdapter(cfg: {
       const tx = await rl(() =>
         rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send(),
       );
-      return escrowEventsFromLogs(tx?.meta?.logMessages ?? []);
+      return escrowEventsFromLogs(tx?.meta?.logMessages ?? [], programId);
     }
 
     async function lookup(intentId: string): Promise<EscrowLookup> {

@@ -158,7 +158,7 @@ function shieldedPool(deps: BotDeps, chain: Chain): string {
   return deps.adapters[chain]?.shielded?.pool ?? "shielded";
 }
 
-function startOfUtcDay(d: Date): Date {
+export function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
@@ -188,6 +188,15 @@ export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "a
 export async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
+}
+
+/**
+ * The daily cap again, at approval, for payments already claimed for settlement (so they count themselves).
+ * Checking only at creation let several payments wait side by side and then all be approved. Two approved
+ * at the same moment each see the other, so the cap can only err on the side of refusing.
+ */
+export async function overDailyCapAtApproval(deps: BotDeps, payerId: string): Promise<boolean> {
+  return (await sentSince(deps.db, payerId, startOfUtcDay(deps.now()))) > deps.perDayCap;
 }
 
 const JUST_SENT_MS = 3 * 60_000;

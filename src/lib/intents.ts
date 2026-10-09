@@ -320,6 +320,10 @@ export async function latestPendingRequestFor(db: Db, payerId: string, now: Date
   return row ?? null;
 }
 
+/**
+ * What a user has paid out since `since`: payments approved since then that are moving or moved. Counted
+ * by when they were approved, not created, so a request made last week and paid today counts today.
+ */
 export async function sentSince(db: Db, userId: string, since: Date): Promise<bigint> {
   const [row] = await db
     .select({ total: sql<string | null>`sum(${intents.amount})` })
@@ -328,7 +332,7 @@ export async function sentSince(db: Db, userId: string, since: Date): Promise<bi
       and(
         eq(intents.senderId, userId),
         inArray(intents.status, ["settling", "escrowed", "settled"]),
-        gte(intents.createdAt, since),
+        sql`coalesce(${intents.approvedAt}, ${intents.createdAt}) >= ${since.getTime()}`,
       ),
     );
   return BigInt(row?.total ?? 0);
