@@ -7,13 +7,17 @@ import { createUser } from "@/lib/identity";
 import {
   createIntent,
   expiredEscrowForCode,
+  finishUnconfirmedTransfer,
   getIntent,
+  markTransferUnconfirmed,
   matchesExpiredCode,
+  matchPageCode,
   type NewIntent,
   newSplitId,
   sentSince,
   splitHash,
   splitLegs,
+  unconfirmedTransferTx,
 } from "@/lib/intents";
 import { createTestDb } from "./helpers/db";
 
@@ -104,5 +108,54 @@ describe("splitHash", () => {
     const splitId = newSplitId();
     await createIntent(db, { ...base, splitId }, now);
     expect(await splitHash(await splitLegs(db, splitId))).not.toBe(empty);
+  });
+});
+
+describe("matchPageCode", () => {
+  it("on a split leg's page, a wrong guess costs every leg a try, and the right code matches", async () => {
+    const splitId = newSplitId();
+    const a = await createIntent(db, { ...base, splitId }, now);
+    const b = await createIntent(db, { ...base, splitId }, now);
+    await setCode(a.id, "123456");
+    await setCode(b.id, "123456");
+    expect(await matchPageCode(db, a, "000000")).toBe(false);
+    expect((await getIntent(db, b.id))?.codeAttempts).toBe(1);
+    expect(await matchPageCode(db, a, "123456")).toBe(true);
+  });
+
+  it("on a single payment's page, only that payment is checked", async () => {
+    const one = await createIntent(db, base, now);
+    const other = await createIntent(db, base, now);
+    await setCode(one.id, "654321");
+    await setCode(other.id, "654321");
+    expect(await matchPageCode(db, one, "111111")).toBe(false);
+    expect((await getIntent(db, other.id))?.codeAttempts).toBe(0);
+    expect(await matchPageCode(db, one, "654321")).toBe(true);
+  });
+});
+
+describe("unconfirmed transfers", () => {
+  it("only a settling payment marked unconfirmed has a transaction to wait on", () => {
+    expect(unconfirmedTransferTx({ status: "settling", error: "transfer unconfirmed: sig1" })).toBe("sig1");
+    expect(unconfirmedTransferTx({ status: "settling", error: null })).toBeNull();
+    expect(unconfirmedTransferTx({ status: "settling", error: "rpc down" })).toBeNull();
+    expect(unconfirmedTransferTx({ status: "failed", error: "transfer unconfirmed: sig1" })).toBeNull();
+  });
+
+  it("finishUnconfirmedTransfer leaves a payment alone unless it is still the unconfirmed transfer it was", async () => {
+    const i = await createIntent(db, base, now);
+    await db.update(intents).set({ status: "settling" }).where(eq(intents.id, i.id));
+    // Not marked unconfirmed: nothing to finish, and nothing changes.
+    expect(await finishUnconfirmedTransfer(db, { id: i.id, error: null }, { status: "failed", error: "x" })).toBe(false);
+    expect((await getIntent(db, i.id))?.status).toBe("settling");
+
+    await markTransferUnconfirmed(db, i.id, "sig9");
+    const marked = await getIntent(db, i.id);
+    if (!marked) throw new Error("missing");
+    const done = { status: "settled" as const, txHash: "sig9", explorerUrl: "https://explorer.test/sig9", settledAt: now };
+    expect(await finishUnconfirmedTransfer(db, marked, done)).toBe(true);
+    // The second caller lost the race: the row moved on.
+    expect(await finishUnconfirmedTransfer(db, marked, done)).toBe(false);
+    expect((await getIntent(db, i.id))?.status).toBe("settled");
   });
 });

@@ -270,7 +270,8 @@ describe("stocks over MCP", () => {
     };
     const r = body.result;
     const text = r.content[0]?.text ?? "{}";
-    return { isError: r.isError === true, data: r.structuredContent ?? (text.startsWith("{") ? JSON.parse(text) : { text }) };
+    const data = r.structuredContent ?? (text.startsWith("{") ? (JSON.parse(text) as Record<string, unknown>) : { text });
+    return { isError: r.isError === true, data };
   }
 
   it("get_stocks lists holdings in shares, with no prices", async () => {

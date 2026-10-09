@@ -87,7 +87,7 @@ function fakeRpc() {
         const tx = parseTransaction(raw as `0x02${string}`);
         const data = tx.data ?? "0x";
         const { functionName, args } = decodeFunctionData({ abi: ABI, data });
-        sent.push({ to: tx.to ?? undefined, functionName, args: args ?? [], data });
+        sent.push({ to: tx.to ?? undefined, functionName, args, data });
         return keccak256(raw);
       }
       case "eth_getTransactionReceipt":
@@ -112,7 +112,7 @@ function fakeRpc() {
     }
   };
   const fetchMock = vi.fn(async (_url: unknown, init?: { body?: unknown }) => {
-    const body = JSON.parse(String(init?.body)) as { id: number; method: string; params: unknown[] };
+    const body = JSON.parse(String(init?.body)) as { id: number; method: string; params?: unknown[] };
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: answer(body.method, body.params ?? []) }), {
       headers: { "content-type": "application/json" },
     });

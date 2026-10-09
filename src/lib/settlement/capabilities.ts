@@ -70,7 +70,7 @@ interface VenueTransfer {
   balance(address: string): Promise<bigint>;
 }
 
-type Asset = { symbol: string; name: string; address: string; decimals: number };
+export type Asset = { symbol: string; name: string; address: string; decimals: number };
 
 /**
  * Amounts here are the payment's units, millionths of a token (0.1 TSLA is 100_000), so they fit a payment

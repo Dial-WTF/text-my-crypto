@@ -163,7 +163,7 @@ function shieldedPool(deps: BotDeps, chain: Chain): string {
   return deps.adapters[chain]?.shielded?.pool ?? "shielded";
 }
 
-export function startOfUtcDay(d: Date): Date {
+function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 

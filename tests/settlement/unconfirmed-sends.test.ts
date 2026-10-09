@@ -30,6 +30,7 @@ function fakeNode(answer: (rpc: Rpc) => Answer) {
 async function runUntilSettled<T>(p: Promise<T>, maxMs: number): Promise<T> {
   let done = false;
   void p.finally(() => (done = true)).catch(() => {});
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `done` flips in the .finally callback above
   for (let t = 0; t < maxMs && !done; t += 1000) {
     await new Promise((r) => setImmediate(r));
     await vi.advanceTimersByTimeAsync(1000);

@@ -100,6 +100,8 @@ describe("dial_escrow client", () => {
   it("skips program data from other programs (or other events) in the logs", () => {
     const other = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).toString("base64");
     const account = Buffer.from([...ESCROW_DISCRIMINATORS.escrow, 0, 0]).toString("base64");
-    expect(escrowEventsFromLogs([`Program data: ${other}`, `Program data: ${account}`, "Program log: hello"])).toEqual([]);
+    const pid = "Escrow1111111111111111111111111111111111111";
+    const logs = [`Program ${pid} invoke [1]`, `Program data: ${other}`, `Program data: ${account}`, "Program log: hello", `Program ${pid} success`];
+    expect(escrowEventsFromLogs(logs, pid)).toEqual([]);
   });
 });

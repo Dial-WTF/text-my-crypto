@@ -4,7 +4,7 @@ import type { Db } from "@/lib/db/client";
 import type { LlmInterpreter } from "@/lib/operator/brain";
 import { EscrowClosedError, type EscrowLookup, type EscrowProgram, type SettlementAdapter } from "@/lib/settlement/types";
 
-type SettleCall = { to: string; amount: bigint; memo: string; closeSource: boolean };
+export type SettleCall = { to: string; amount: bigint; memo: string; closeSource: boolean };
 type EscrowCall =
   | { op: "create"; intentId: string; amount: bigint; expiresAt: Date }
   | { op: "claim"; intentId: string; to: string }

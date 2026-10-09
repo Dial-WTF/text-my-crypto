@@ -111,7 +111,7 @@ export async function createStockSend(deps: BotDeps, user: User, cmd: MoneyComma
   return { ok: true, prepared: { intent, counterparty: other, code, approveUrl: `${deps.appUrl}/a/${intent.id}` } };
 }
 
-export type StockHolding = { symbol: string; name: string; token: string; shares: string };
+type StockHolding = { symbol: string; name: string; token: string; shares: string };
 export type StockBalances = { chain: Chain; network: string; address: string; holdings: StockHolding[]; symbols: string[] };
 
 /**

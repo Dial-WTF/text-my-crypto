@@ -195,7 +195,7 @@ function amountOut(i: Intent, network: Network): { amountUsd: string | null; sha
     : { amountUsd: usd(i.amount), asset: assetOf(i.chain, network) };
 }
 
-export type AgentPaymentStatus =
+type AgentPaymentStatus =
   | "awaiting_approval"
   | "expired"
   | "settling"
