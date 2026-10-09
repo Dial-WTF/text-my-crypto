@@ -184,7 +184,7 @@ describe("latestSplit", () => {
 });
 
 describe("pay-link Blink", () => {
-  it("shows only the configured demo handle, once claimed, and builds the dial.to link and solana-action URI for it", async () => {
+  it("shows only the configured demo handle, once claimed, and builds its checkout link and solana-action URI", async () => {
     const db = await createTestDb();
     expect(await demoHandle(db, "sam")).toBeNull();
     await createUser(db, { phone: "+15550000050", handle: "alex" }, new Date("2026-10-01T00:00:00Z"));
@@ -193,10 +193,10 @@ describe("pay-link Blink", () => {
     expect(await demoHandle(db, "sam")).toBe("sam");
     expect(await demoHandle(db, "nobody")).toBeNull();
 
-    expect(blinkFor("https://dial.example", "sam", true)).toEqual({
+    expect(blinkFor("https://dial.example", "sam")).toEqual({
       actionUrl: "https://dial.example/api/actions/pay/sam",
       uri: "solana-action:https://dial.example/api/actions/pay/sam",
-      blink: "https://dial.to/?action=solana-action%3Ahttps%3A%2F%2Fdial.example%2Fapi%2Factions%2Fpay%2Fsam&cluster=devnet",
+      blink: "https://dial.example/@sam/blink",
     });
   });
 });
