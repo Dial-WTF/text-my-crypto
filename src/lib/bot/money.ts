@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import { setConversation } from "@/lib/conversations";
+import { isEvmName, normalizeName, wrongNetworkBasename } from "@/lib/evm-names";
 import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   createUnclaimedUser,
@@ -27,8 +28,11 @@ import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasOutboundSince } from "@/lib/sms/log";
 import { hasPasskey } from "@/lib/passkeys";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
+import { type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
+import { REGISTRY } from "@/lib/settlement/registry";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
 import { getWallet } from "@/lib/wallets";
 import { dripOnce, enabledChains, ensureSenderWallet, ensureWallet } from "./accounts";
@@ -68,6 +72,8 @@ export type MoneyError = {
     | "bad_address"
     | "nothing_to_withdraw"
     | "which_chain"
+    | "unknown_name"
+    | "name_lookup_failed"
     | "duplicate";
   message: string;
 };
@@ -305,10 +311,6 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   return { ok: true, prepared: { intent, counterparty: other, code, approveUrl: `${deps.appUrl}/a/${intent.id}` } };
 }
 
-function shortAddress(a: string): string {
-  return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
-}
-
 type ChainPick = { ok: true; chain: Chain; adapter: SettlementAdapter } | { ok: false; error: MoneyError };
 
 /**
@@ -347,8 +349,45 @@ async function nothingToWithdrawReply(deps: BotDeps, user: User, chain: Chain): 
   return replies.nothingToWithdraw(chainLabel(chain), lines, elsewhere[0]?.[0]);
 }
 
-/** Moves funds out to an address the user controls. Same code/limit rules as a send. Texts nobody. */
-export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<Prepared> {
+type Destination = { ok: true; cmd: WithdrawCommand; name: string | null } | { ok: false; error: MoneyError };
+
+/**
+ * An ENS name or Basename becomes its address here, once: the intent stores that address, the confirmation
+ * shows it next to the name, and settlement never looks the name up again. The chain whose name service
+ * answers for the ending (Base for Basenames, Ethereum for other .eth names) is the chain, unless they named
+ * one. A chain that's switched off still resolves first, so they hear "isn't switched on yet".
+ */
+async function resolveDestination(deps: BotDeps, cmd: WithdrawCommand): Promise<Destination> {
+  if (!isEvmName(cmd.address)) return { ok: true, cmd, name: null };
+  const name = normalizeName(cmd.address) ?? cmd.address.toLowerCase();
+  // Enabled chains answer with their adapter's module; chains that are off with the one from deps.names.
+  const service = nameServiceFor({ ...nameHolders(deps), ...deps.adapters }, name);
+  let address: string | null = null;
+  try {
+    address = service ? await service.names.resolve(name) : null;
+  } catch (e) {
+    console.error("name lookup failed", name, errorText(e));
+    return { ok: false, error: { code: "name_lookup_failed", message: replies.nameLookupDown(name) } };
+  }
+  if (service && address) return { ok: true, cmd: { ...cmd, address, chain: cmd.chain ?? service.chain }, name };
+  const network = REGISTRY[service?.chain ?? "ethereum"][deps.network]?.network ?? "this network";
+  const testBasename = deps.network === "testnet" && wrongNetworkBasename(name, deps.network);
+  const message = replies.unknownName(name, network, testBasename);
+  return { ok: false, error: { code: "unknown_name", message } };
+}
+
+/** deps.names in the shape nameServiceFor reads. */
+function nameHolders(deps: BotDeps): Partial<Record<Chain, { names: NameService }>> {
+  const out: Partial<Record<Chain, { names: NameService }>> = {};
+  for (const [chain, names] of Object.entries(deps.names ?? {}) as Array<[Chain, NameService]>) out[chain] = { names };
+  return out;
+}
+
+/** Moves funds out to an address (or ENS name / Basename) the user controls. Same code/limit rules as a send. Texts nobody. */
+export async function createWithdrawIntent(deps: BotDeps, user: User, asked: WithdrawCommand): Promise<Prepared> {
+  const dest = await resolveDestination(deps, asked);
+  if (!dest.ok) return dest;
+  const { cmd } = dest;
   const picked = withdrawChain(deps, user, cmd);
   if (!picked.ok) return picked;
   const { chain, adapter } = picked;
@@ -371,6 +410,7 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
       chain,
       token: adapter.tokenId,
       recipientAddress: cmd.address,
+      recipientName: dest.name,
       amount,
       note: null,
     },
@@ -393,7 +433,7 @@ export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Pr
     case "send":
       return replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
-      return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
+      return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
       await text(

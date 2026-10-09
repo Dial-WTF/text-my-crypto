@@ -3,6 +3,7 @@ import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { codeFor } from "./money";
 import type { BotDeps } from "./types";
 
@@ -57,7 +58,7 @@ export async function statusReply(
   const other = await getUserById(deps.db, otherId);
   const who =
     i.kind === "withdraw"
-      ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
+      ? withdrawTarget(i)
       : other
         ? displayName(other)
         : "them";

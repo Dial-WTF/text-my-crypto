@@ -12,7 +12,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 | `send_payment` | `to`, `amountUsd`, `note?`, `chain?` |
 | `request_payment` | `from`, `amountUsd`, `note?`, `chain?` |
 | `create_invoice` | `to`, `amountUsd`, `note?`, `chain?` |
-| `withdraw` | `amountUsd` (or `"all"`), `address`, `chain?` |
+| `withdraw` | `amountUsd` (or `"all"`), `address` (an address, ENS name or Basename), `chain?` |
 | `get_payment` | `intentId` (`pi_…`) |
 | `list_payments` | `limit?` (1 to 50, default 10) |
 | `get_pay_link` | `handle?` (`@alex`; omit for the owner), `amountUsd?`, `note?` (up to 60 characters on the page) |
@@ -67,6 +67,8 @@ Tool errors come back with `isError: true` and a JSON body `{ "error": "<code>",
 | `insufficient` | Not enough balance; the message says how much there is |
 | `chain_unavailable` | That chain isn't switched on |
 | `bad_address` / `nothing_to_withdraw` | Withdraw problems |
+| `unknown_name` | The ENS name or Basename doesn't point to an address |
+| `name_lookup_failed` | The name couldn't be looked up just now. Try again in a minute |
 | `duplicate` | The same payment is already waiting (the message has its id) or just went out. Poll `get_payment` |
 | `not_found` | No such payment on this account |
 | `rate_limited` | Slow down |
