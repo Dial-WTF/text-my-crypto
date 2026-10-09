@@ -4,7 +4,7 @@ import { site } from "./site";
 export default function manifest(): MetadataRoute.Manifest {
   const s = site();
   return {
-    name: `${s.name} by ${s.company}`,
+    name: s.fullName,
     short_name: s.name,
     description: s.description,
     start_url: "/",

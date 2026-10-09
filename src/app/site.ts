@@ -1,4 +1,5 @@
 import { chainStatuses } from "@/lib/chain-status";
+import { byline as bylineSetting, COMPANY } from "@/lib/brand";
 import { publicEnv } from "@/lib/env";
 import { formatPhone } from "@/lib/phone";
 
@@ -6,10 +7,17 @@ import { formatPhone } from "@/lib/phone";
 export function site() {
   const { APP_URL, DIAL_OPERATOR_NUMBER } = publicEnv();
   const phone = formatPhone(DIAL_OPERATOR_NUMBER);
+  const name = "Dial operator";
+  const company = COMPANY;
+  const byline = bylineSetting();
+  const fullName = byline ? `${name} ${byline}` : name;
   return {
     url: APP_URL,
-    name: "Dial operator",
-    company: "Dial.Work",
+    name,
+    byline,
+    /** The name with its byline when the flag is on: titles, share previews, the manifest. */
+    fullName,
+    company,
     companyUrl: "https://dial.work",
     source: "https://github.com/Dial-WTF/text-my-crypto",
     phone,
@@ -17,7 +25,7 @@ export function site() {
     title: `Text money to anyone · ${phone}`,
     description:
       "Text the Dial operator to send, request and invoice USDC by plain SMS. No app, no wallet address, works on any phone. Powered by Dial.Work.",
-    shareAlt: `Dial operator by Dial.Work. Text money to anyone at ${phone}.`,
+    shareAlt: `${fullName}. Text money to anyone at ${phone}.`,
     themeColor: "#030a05",
   };
 }

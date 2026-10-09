@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { site } from "../../site";
 import { GREEN, INK, markDataUrl, terminalFont } from "../art";
 
 export const dynamic = "force-static";
@@ -13,7 +14,7 @@ export async function GET() {
           <img src={mark} width={260} height={260} alt="" />
         </div>
         <div style={{ display: "flex", fontSize: 104, letterSpacing: -2, textShadow: "0 0 30px rgba(0,255,65,0.5)" }}>Dial.operator</div>
-        <div style={{ display: "flex", fontSize: 40, color: "#8cf5a6" }}>text money to anyone · by Dial.Work</div>
+        <div style={{ display: "flex", fontSize: 40, color: "#8cf5a6" }}>{["text money to anyone", site().byline].filter(Boolean).join(" · ")}</div>
       </div>
     ),
     { width: 1024, height: 1024, fonts: font ? [{ name: "Terminal", data: font, weight: 400, style: "normal" }] : undefined },

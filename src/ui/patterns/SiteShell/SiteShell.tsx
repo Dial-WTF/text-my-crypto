@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { byline } from "@/lib/brand";
 import { formatPhone } from "@/lib/phone";
 import { themeChoice } from "@/ui/theme/server";
 import { Wordmark } from "@/ui/primitives/Wordmark/Wordmark";
@@ -13,7 +14,7 @@ export async function SiteShell({ operatorNumber, children, colophon }: SiteShel
   return (
     <>
       <header className={styles.nav}>
-        <Wordmark />
+        <Wordmark byline={byline()} />
         <div className={styles.tools}>
           <ThemeToggle initial={theme} />
           <a className={styles.cta} href={`sms:${operatorNumber}?&body=hi`}>

@@ -170,6 +170,8 @@ const publicSchema = z.object({
     .regex(/^@?[A-Za-z0-9_]{1,32}$/)
     .transform((h) => h.replace(/^@/, "").toLowerCase())
     .optional(),
+  /** "yes" adds "by Dial.Work" after the site's name: titles, share previews, the wordmark, cards. Off by default. */
+  SHOW_BYLINE: z.enum(["yes", "no"]).optional(),
 });
 
 /** The few settings public pages need: URL, phone number, network, chains and limits. Never includes secrets. */

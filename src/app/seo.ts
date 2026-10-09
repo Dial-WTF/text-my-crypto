@@ -29,7 +29,7 @@ export function pageMeta({ path, title, shareTitle, description, index = true, i
     title,
     description: words.description,
     alternates: { canonical: path },
-    openGraph: { type: "website", siteName: `${s.name} by ${s.company}`, locale: "en_US", url: path, ...words, images },
+    openGraph: { type: "website", siteName: s.fullName, locale: "en_US", url: path, ...words, images },
     twitter: { card: "summary_large_image", ...words, images },
     robots: index ? { index: true, follow: true } : { index: false, follow: false },
   };

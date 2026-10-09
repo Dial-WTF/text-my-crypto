@@ -17,7 +17,7 @@ const s = site();
 /** Site-wide defaults. Each page states its own canonical and og:url (see pageMeta), so none is set here. */
 export const metadata: Metadata = {
   metadataBase: new URL(s.url),
-  title: { default: `${s.name} by ${s.company} · ${s.title}`, template: `%s · ${s.name}` },
+  title: { default: `${s.fullName} · ${s.title}`, template: `%s · ${s.name}` },
   description: s.description,
   applicationName: s.name,
   authors: [{ name: s.company, url: s.companyUrl }],
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   formatDetection: { telephone: true },
   openGraph: {
     type: "website",
-    siteName: `${s.name} by ${s.company}`,
+    siteName: s.fullName,
     title: s.title,
     description: s.description,
     locale: "en_US",

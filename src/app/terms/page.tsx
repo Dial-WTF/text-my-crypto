@@ -6,6 +6,7 @@ import { Section } from "@/ui/patterns/Section/Section";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { Colophon } from "../colophon";
 import { LEGAL_UPDATED } from "../legal";
+import { site } from "../site";
 import { limits } from "../service-facts";
 import { SupportLink } from "../support-link";
 
@@ -95,7 +96,7 @@ export default function TermsPage() {
       <Section heading="SMS terms">
         <Prose>
           <p>
-            <strong>Program name:</strong> Dial operator, by Dial.Work. Texts come from {phone}.
+            <strong>Program name:</strong> {site().fullName}. Texts come from {phone}.
           </p>
           <p>
             <strong>How you join:</strong> you text the operator first, for example &ldquo;hi&rdquo;. If someone sends
