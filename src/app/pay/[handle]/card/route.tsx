@@ -1,8 +1,9 @@
 import { ImageResponse } from "next/og";
+import QRCode from "qrcode";
 import { publicEnv } from "@/lib/env";
 import { formatPhone } from "@/lib/phone";
-import { loadPayHeader } from "@/lib/web/pay-page";
-import { CARD_SIZE, fontsFor, markDataUrl, ShareFrame, SOFT, terminalFont } from "../../../press/art";
+import { askQuery, loadPayHeader } from "@/lib/web/pay-page";
+import { CARD_SIZE, fontsFor, GREEN, INK, markDataUrl, ShareFrame, SOFT, terminalFont } from "../../../press/art";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,20 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
     terminalFont(),
     markDataUrl(),
   ]);
-  const phone = formatPhone(publicEnv().DIAL_OPERATOR_NUMBER);
+  const { APP_URL, DIAL_OPERATOR_NUMBER } = publicEnv();
+  const phone = formatPhone(DIAL_OPERATOR_NUMBER);
+  // The QR opens the pay page itself (every way to pay, amount preset), not one chain's wallet link.
+  // Dark modules on the bright panel: some phone cameras won't read light-on-dark codes.
+  const qr = head
+    ? `data:image/svg+xml;base64,${Buffer.from(
+        await QRCode.toString(`${APP_URL}/@${head.handle}${askQuery(head)}`, {
+          type: "svg",
+          margin: 1,
+          errorCorrectionLevel: "M",
+          color: { dark: INK, light: GREEN },
+        }),
+      ).toString("base64")}`
+    : null;
   const glow = { textShadow: "0 0 24px rgba(0,255,65,0.55)" };
 
   return new ImageResponse(
@@ -30,7 +44,8 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
         aside="or scan with any wallet · Solana · Tempo"
       >
         {head ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 32 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 1, minWidth: 0 }}>
             <div style={{ display: "flex", fontSize: 38, color: SOFT }}>Pay</div>
             <div style={{ display: "flex", fontSize: handleSize(head.handle), letterSpacing: -2, ...glow }}>@{head.handle}</div>
             {head.name !== `@${head.handle}` ? (
@@ -44,6 +59,13 @@ export async function GET(req: Request, ctx: RouteContext<"/pay/[handle]/card">)
             ) : (
               <div style={{ display: "flex", fontSize: 34, marginTop: 10 }}>Crypto by text. No app. No wallet address.</div>
             )}
+          </div>
+          {qr ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <img src={qr} width={250} height={250} alt="" />
+              <div style={{ display: "flex", fontSize: 22, color: SOFT }}>scan to pay</div>
+            </div>
+          ) : null}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
