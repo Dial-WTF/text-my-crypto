@@ -4,7 +4,7 @@ import { errorText } from "./redact";
 
 export { errorText, redactUrls } from "./redact";
 
-export type SettleResult = { txHash: string; explorerUrl: string };
+export type SettleResult = { txHash: string; explorerUrl: string | null };
 
 /** Where a payment goes: another Dial wallet, a per-payment escrow wallet, or an address outside Dial. */
 export type RecipientKind = "dial" | "escrow" | "outside";

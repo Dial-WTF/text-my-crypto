@@ -67,7 +67,7 @@ function feedEntries(rows: FeedItem[], now: Date): FeedEntry[] {
     // The public ledger lists money that moved, so there is no deadline to apply.
     state: stateLabel(r.status, null, now),
     txHash: r.txHash,
-    explorerUrl: r.explorerUrl,
+    explorerUrl: liveExplorer(r.explorerUrl),
     when: timeAgo(r.at, now),
     ...(r.legs ? { legs: r.legs } : {}),
   }));

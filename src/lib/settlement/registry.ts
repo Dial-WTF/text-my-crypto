@@ -46,7 +46,16 @@ export type TempoNetwork = Common & {
  * `escrowContract`: production's dial_escrow contract on this network (contracts/arbitrum-escrow), null until
  * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
  */
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null; escrowContract?: Address | null; venue?: VenueNetwork };
+export type EvmNetwork = Omit<Common, "explorerTx" | "explorerAddress"> & {
+  kind: "evm";
+  viem: ViemChain;
+  token: Address | null;
+  escrowContract?: Address | null;
+  venue?: VenueNetwork;
+  /** Explorer links. Null where no public explorer shows this network today: no link beats a dead one. */
+  explorerTx: (hash: string) => string | null;
+  explorerAddress: (address: string) => string | null;
+};
 /**
  * A trading venue reached from this chain: HyperCore, Hyperliquid's own chain, from HyperEVM. USDC goes in
  * through Circle's CoreDepositWallet (the contract HyperCore's spot metadata links to USDC); `depositContract`
@@ -215,7 +224,11 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://rpc.hyperliquid-testnet.xyz/evm",
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
-      ...scan("testnet.purrsec.com"),
+      // No public explorer shows HyperEVM testnet today (Oct 2026): testnet.purrsec.com is gone, hypurrscan's
+      // testnet EVM pages read mainnet, the Hyperliquid app's explorer is blank for EVM hashes, and
+      // explore-testnet.hyperpc.app stopped indexing in August. Receipts link Dial's own receipt page instead.
+      explorerTx: () => null,
+      explorerAddress: () => null,
       venue: {
         name: "HyperCore",
         network: "HyperCore testnet",

@@ -19,7 +19,7 @@ export type PayChain = {
   assetNote: string | null;
   /** Opens a wallet app on a filled-in transfer: Solana Pay on Solana, ZIP 321 on Zcash, EIP-681 elsewhere. */
   uri: string;
-  explorer: string;
+  explorer: string | null;
   /** Solana only: the same payment as a Solana Action (Blink), and Dial's checkout page for it (/@handle/blink). */
   action?: { url: string; uri: string; blink: string };
 };

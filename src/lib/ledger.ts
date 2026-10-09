@@ -42,9 +42,9 @@ export type ChainProof = {
   chain: Chain;
   network: string;
   treasury: string;
-  treasuryUrl: string;
+  treasuryUrl: string | null;
   /** The escrow program holding payments to people not on Dial yet, when the chain uses one. */
-  escrowProgram?: { address: string; url: string };
+  escrowProgram?: { address: string; url: string | null };
 };
 
 /**

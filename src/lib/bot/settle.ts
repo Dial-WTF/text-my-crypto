@@ -21,6 +21,7 @@ import {
   unconfirmedEscrowFunding,
   unknownSettlements,
 } from "@/lib/intents";
+import { liveExplorer } from "@/lib/explorers";
 import { formatUsd } from "@/lib/money";
 import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
@@ -45,7 +46,7 @@ import { notify } from "./text";
 import type { BotDeps } from "./types";
 
 export type SettleOutcome =
-  | { ok: true; status: "settled" | "escrowed"; txHash: string; explorerUrl: string }
+  | { ok: true; status: "settled" | "escrowed"; txHash: string; explorerUrl: string | null }
   /** "unconfirmed": the send went out but no answer came back. It stays "settling" and a minute job finishes it. */
   | { ok: false; reason: "not_claimable" | "failed" | "expired" | "unconfirmed"; error?: string };
 
@@ -95,7 +96,7 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
     return { ok: false, reason: "failed", error: "Missing sender or recipient" };
   }
 
-  let result: { txHash: string; explorerUrl: string };
+  let result: SettleResult;
   const escrowExpiresAt = new Date(deps.now().getTime() + deps.escrowTtlDays * DAY_MS);
   try {
     const adapter = deps.adapters[intent.chain];
@@ -172,30 +173,35 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
 
   await markSettled(deps.db, intent.id, result, deps.now());
   if (intent.kind === "withdraw") {
-    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), result.explorerUrl));
+    await notify(deps, sender.phone, replies.withdrew(amount, withdrawTarget(intent), receiptUrl(deps, intent, result)));
     return { ok: true, status: "settled", ...result };
   }
   if (isOwnVenueMove(intent)) {
-    await notify(deps, sender.phone, replies.movedToHyperCore(amount, result.explorerUrl));
+    await notify(deps, sender.phone, replies.movedToHyperCore(amount, receiptUrl(deps, intent, result)));
     return { ok: true, status: "settled", ...result };
   }
-  await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, result.explorerUrl));
+  await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, receiptUrl(deps, intent, result)));
   if (intent.kind === "venue") {
     await notify(
       deps,
       recipient.phone,
-      replies.receivedOnHyperCore(displayName(recipient), amount, displayName(sender), intent.note, result.explorerUrl),
+      replies.receivedOnHyperCore(displayName(recipient), amount, displayName(sender), intent.note, receiptUrl(deps, intent, result)),
     );
   } else if (intent.kind === "send") {
     await notify(
       deps,
       recipient.phone,
-      replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note, result.explorerUrl),
+      replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note, receiptUrl(deps, intent, result)),
     );
   } else {
-    await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, result.explorerUrl));
+    await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, receiptUrl(deps, intent, result)));
   }
   return { ok: true, status: "settled", ...result };
+}
+
+/** The explorer page for a payment's transaction, or Dial's own receipt where the chain has no working explorer. */
+export function receiptUrl(deps: Pick<BotDeps, "appUrl">, intent: Pick<Intent, "id">, result: Pick<SettleResult, "explorerUrl">): string {
+  return liveExplorer(result.explorerUrl) ?? `${deps.appUrl}/a/${intent.id}`;
 }
 
 /** A venue deposit into the sender's own account there. */
@@ -234,7 +240,7 @@ function escrowProgramFor(deps: BotDeps, intent: Intent): EscrowProgram {
 }
 
 /** Pays an escrow to its recipient (claim) or back to its sender (refund). */
-async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "sender"): Promise<{ txHash: string; explorerUrl: string }> {
+async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "sender"): Promise<SettleResult> {
   const adapter = deps.adapters[intent.chain];
   if (!adapter) throw new Error(`No adapter for ${intent.chain}`);
   const toUserId = to === "recipient" ? intent.recipientId : intent.senderId;
@@ -281,7 +287,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     const result = await moveEscrow(deps, intent, "recipient");
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
     const amount = money(intent.amount, intent.chain, deps.network);
-    await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
+    await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
   } catch (e) {
@@ -329,7 +335,7 @@ async function recordLateClaim(deps: BotDeps, intent: Intent, result: SettleResu
   const [sender, recipient] = await Promise.all([getUserById(deps.db, intent.senderId), getUserById(deps.db, intent.recipientId)]);
   if (!sender || !recipient) return;
   const amount = formatUsd(intent.amount);
-  await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
+  await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
   await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
 }
 

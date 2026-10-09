@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db/client";
+import { liveExplorer } from "@/lib/explorers";
 import { chainProofs, runningNetwork, safePaymentNetwork } from "@/lib/ledger";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import { quietly } from "../ledger-data";
@@ -36,7 +37,7 @@ export async function GET(): Promise<Response> {
         network: safePaymentNetwork(r),
         status: r.status,
         tx: r.txHash,
-        explorer: r.explorerUrl,
+        explorer: liveExplorer(r.explorerUrl),
         at: r.at.toISOString(),
         split: r.splitId,
       })),

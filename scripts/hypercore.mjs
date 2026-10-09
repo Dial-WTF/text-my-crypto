@@ -74,7 +74,7 @@ async function status() {
     coreUsdc(treasury.address),
   ]);
   console.log(`${entry.network} via ${rpc.source} (${new URL(rpc.url).host})`);
-  console.log(`  treasury           ${treasury.address} (${entry.explorerAddress(treasury.address)})`);
+  console.log(`  treasury           ${treasury.address} (${entry.explorerAddress(treasury.address) ?? "no public explorer"})`);
   console.log(`  gas                ${formatUnits(gas, 18)} ${entry.viem.nativeCurrency.symbol}`);
   console.log(`  USDC on HyperEVM   $${formatUnits(usd, 6)}`);
   console.log(`  USDC on ${core.network}  $${spot} (${core.explorerAddress(treasury.address)})`);
@@ -90,9 +90,9 @@ async function deploy() {
   console.log(`\nDeploying DialCoreDeposit(USDC ${usdc}, CoreDepositWallet ${core.coreDepositWallet})…`);
   const hash = await wallet.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode, args: [usdc, core.coreDepositWallet] });
   const receipt = await pub.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success" || !receipt.contractAddress) stop(`Deploy reverted: ${entry.explorerTx(hash)}`);
+  if (receipt.status !== "success" || !receipt.contractAddress) stop(`Deploy reverted: ${entry.explorerTx(hash) ?? hash}`);
   console.log(`DialCoreDeposit on ${entry.network}: ${receipt.contractAddress}`);
-  console.log(`  deploy: ${entry.explorerTx(hash)}`);
+  console.log(`  deploy: ${entry.explorerTx(hash) ?? hash}`);
   console.log(`\nNext: set venue.depositContract: "${receipt.contractAddress}" on REGISTRY.hyperevm.${network} in src/lib/settlement/registry.ts.`);
 }
 
@@ -133,8 +133,8 @@ async function deposit() {
     args: [treasury.address, treasury.address, amount, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
   });
   const receipt = await pub.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") stop(`Deposit reverted: ${entry.explorerTx(hash)}`);
-  console.log(`  HyperEVM tx: ${entry.explorerTx(hash)}`);
+  if (receipt.status !== "success") stop(`Deposit reverted: ${entry.explorerTx(hash) ?? hash}`);
+  console.log(`  HyperEVM tx: ${entry.explorerTx(hash) ?? hash}`);
 
   for (let i = 0; i < 30; i++) {
     const now = await coreUsdc(treasury.address);

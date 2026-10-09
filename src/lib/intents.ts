@@ -189,7 +189,7 @@ export async function declineIntent(db: Db, id: string): Promise<boolean> {
 export async function markSettled(
   db: Db,
   id: string,
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   now = new Date(),
 ): Promise<void> {
   await db
@@ -201,7 +201,7 @@ export async function markSettled(
 export async function markEscrowed(
   db: Db,
   id: string,
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   escrowExpiresAt: Date,
 ): Promise<void> {
   await db
@@ -214,7 +214,7 @@ export async function markReleased(
   db: Db,
   id: string,
   status: "settled" | "refunded",
-  r: { txHash: string; explorerUrl: string },
+  r: { txHash: string; explorerUrl: string | null },
   now: Date,
 ): Promise<void> {
   await db
@@ -425,7 +425,7 @@ export async function settleUnconfirmed(
   db: Db,
   id: string,
   set:
-    | { status: "escrowed"; txHash: string; explorerUrl: string; escrowExpiresAt: Date }
+    | { status: "escrowed"; txHash: string; explorerUrl: string | null; escrowExpiresAt: Date }
     | { status: "failed"; error: string },
 ): Promise<boolean> {
   const values = set.status === "escrowed" ? { ...set, error: null } : { ...set, codeHash: null };

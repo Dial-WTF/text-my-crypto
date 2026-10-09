@@ -249,8 +249,7 @@ export default async function ChainPage({ params }: PageProps<"/chains/[chain]">
                 <ReceiptRule />
                 {unlinked ? (
                   <Fine>
-                    Shown without links: the explorer the registry names for {status.network} doesn&apos;t serve pages right
-                    now.
+                    Shown without links: no public explorer serves {status.network} pages right now.
                   </Fine>
                 ) : null}
                 <Fine>

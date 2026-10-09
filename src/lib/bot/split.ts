@@ -20,12 +20,12 @@ import { shareList, splitReplies } from "@/lib/operator/split-replies";
 import { hasPasskey } from "@/lib/passkeys";
 import { seal } from "@/lib/secretbox";
 import { type BatchTransfer, chainWith } from "@/lib/settlement/capabilities";
-import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
+import { errorText, type SettlementAdapter, type SettleResult } from "@/lib/settlement/types";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
 import { ensureSenderWallet, ensureWallet } from "./accounts";
 import { dripQuietly, insufficientReply, type MoneyError, overDailyCap, resolveCounterparty } from "./money";
-import type { SettleOutcome } from "./settle";
+import { receiptUrl, type SettleOutcome } from "./settle";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
 
@@ -254,7 +254,7 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
 
   const pays = legs.reduce((a, l) => a + l.amount, 0n);
   const shares = sharesText(legs.map((l, i) => ({ amount: l.amount, person: people[i] as User })));
-  let result: { txHash: string; explorerUrl: string };
+  let result: SettleResult;
   try {
     const adapter = deps.adapters[head.chain];
     if (!adapter?.batch) throw new Error(`No batch settlement on ${head.chain}`);
@@ -292,9 +292,9 @@ export async function approveSplit(deps: BotDeps, splitId: string): Promise<Sett
       continue;
     }
     await markSettled(deps.db, leg.id, result, deps.now());
-    await notify(deps, person.phone, replies.received(displayName(person), amount, displayName(sender), chain, leg.note, result.explorerUrl));
+    await notify(deps, person.phone, replies.received(displayName(person), amount, displayName(sender), chain, leg.note, receiptUrl(deps, leg, result)));
   }
-  await notify(deps, sender.phone, splitReplies.sent(shares, chain, result.explorerUrl, waiting, deps.escrowTtlDays));
+  await notify(deps, sender.phone, splitReplies.sent(shares, chain, receiptUrl(deps, head, result), waiting, deps.escrowTtlDays));
   return { ok: true, status: waiting.length === legs.length ? "escrowed" : "settled", ...result };
 }
 

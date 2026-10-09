@@ -44,7 +44,8 @@ function fakeHyperCore(): FakeHyperCore {
         throw e;
       }
       deposits.push({ to, amount, memo });
-      return { txHash: `0xdep_${memo}`, explorerUrl: `https://testnet.purrsec.com/tx/0xdep_${memo}` };
+      // Like the registry's HyperEVM testnet entry: no public explorer shows it, so no link.
+      return { txHash: `0xdep_${memo}`, explorerUrl: null };
     },
   };
 }
@@ -116,7 +117,7 @@ describe("move $5 to hyperliquid", () => {
     expect(hl.settled).toHaveLength(0);
     expect(sms.to(ALEX).slice(-2)).toEqual([
       "Sending $5 to your spot balance on Hyperliquid…",
-      `Moved $5 to your Hyperliquid spot balance. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`,
+      `Moved $5 to your Hyperliquid spot balance. Receipt: https://tmc.test/a/${id}`,
     ]);
     expect(await getIntent(db, id)).toMatchObject({ kind: "venue", status: "settled", chain: "hyperevm", recipientAddress: mine });
   });
@@ -192,9 +193,9 @@ describe("send @jeremy $5 to hyperliquid", () => {
     await say(ALEX, codeIn(confirm));
     const id = intentIdIn(confirm);
     expect(core.deposits).toEqual([{ to: await hyperevmAddress(JEREMY), amount: 5_000_000n, memo: id }]);
-    expect(sms.last(ALEX)).toBe(`Sent $5 to jeremy on Hyperliquid. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`);
+    expect(sms.last(ALEX)).toBe(`Sent $5 to jeremy on Hyperliquid. Receipt: https://tmc.test/a/${id}`);
     expect(sms.last(JEREMY)).toBe(
-      `jeremy, alex sent $5 to your Hyperliquid spot balance. Text "hl balance" to see it. Receipt: https://testnet.purrsec.com/tx/0xdep_${id}`,
+      `jeremy, alex sent $5 to your Hyperliquid spot balance. Text "hl balance" to see it. Receipt: https://tmc.test/a/${id}`,
     );
   });
 
@@ -222,7 +223,8 @@ describe("send @jeremy $5 to hyperliquid", () => {
       kind: "venue",
       from: "@alex",
       to: "@jeremy",
-      explorerUrl: `https://testnet.purrsec.com/tx/0xdep_${id}`,
+      txHash: `0xdep_${id}`,
+      explorerUrl: null,
     });
     expect((await publicStats(db)).payments).toBe(1);
     const view = await buildPaymentView(db, (await getIntent(db, id))!, deps.now(), { network: "testnet", audience: "public" });

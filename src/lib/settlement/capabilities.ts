@@ -51,7 +51,7 @@ export interface PaymentActions {
    * Confirmed payments carrying `reference` that paid `recipient`, oldest first: `amount` is what
    * `recipient` received, `payer` the wallet it came from. Empty until one lands.
    */
-  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
+  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { explorerUrl: string; payer: string; amount: bigint }>>;
 }
 
 export interface ShieldedTransfer {

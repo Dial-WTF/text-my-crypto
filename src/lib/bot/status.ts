@@ -1,3 +1,4 @@
+import { liveExplorer } from "@/lib/explorers";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
@@ -85,7 +86,10 @@ export async function statusReply(
     case "settling":
       return replies.statusSending(amount, who);
     case "settled":
-      return outgoing ? replies.statusSent(amount, who, i.explorerUrl) : replies.statusReceived(amount, who, i.explorerUrl);
+      // Where the chain has no working explorer, Dial's own receipt page shows the transaction.
+      return outgoing
+        ? replies.statusSent(amount, who, liveExplorer(i.explorerUrl) ?? link)
+        : replies.statusReceived(amount, who, liveExplorer(i.explorerUrl) ?? link);
     case "escrowed": {
       if (outgoing) return replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires");
       // Too late to claim: it can only go back to the sender now.

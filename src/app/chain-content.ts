@@ -1,4 +1,5 @@
 import { type Chain, CHAINS } from "@/lib/chains";
+import { liveExplorer } from "@/lib/explorers";
 import { usdToBaseUnits } from "@/lib/money";
 import { eip681TransferUri, solanaPayUri, zip321Uri } from "@/lib/pay-links";
 import type { FeatureId } from "@/lib/settlement/capabilities";
@@ -202,11 +203,26 @@ export const CHAIN_COPY: Record<Chain, ChainCopy> = {
     runs: [
       "Settles on HyperEVM, Hyperliquid's EVM chain. Text \"on hyperliquid\" or \"on hyperevm\" to pick it.",
       ...evmRuns("test USDC"),
+      "Text \"price BTC\" or \"price HYPE\" for the current mid from Hyperliquid's public info API (mainnet market data). A quote, not advice. Agents get the same from the get_price MCP tool.",
+      "No public explorer shows HyperEVM testnet transactions today, so receipts link Dial's own receipt page, which shows the transaction hash.",
     ],
-    features: {},
+    features: {
+      venue: {
+        detail: [
+          "\"move $5 to hyperliquid\" or \"send @alex $5 to hyperliquid\" moves USDC from a Dial HyperEVM wallet into a HyperCore spot balance in one transaction. The sender signs, the treasury pays the gas, and DialCoreDeposit hands the USDC to Circle's CoreDepositWallet.",
+          "HyperCore only credits accounts it already has, so before any money moves the operator asks HyperEVM's coreUserExists precompile. If the account isn't open, nothing is sent.",
+          "\"hl balance\" reads the HyperCore spot balance back from Hyperliquid's info API. Agents get send_to_hyperliquid and get_hyperliquid_balance.",
+        ],
+        code: [
+          { path: "contracts/src/DialCoreDeposit.sol", label: "Deposit contract" },
+          { path: "src/lib/bot/hyperliquid.ts", label: "Hyperliquid by text" },
+          { path: "tests/settlement/hypercore.fork.test.ts", label: "Tests on a testnet fork" },
+        ],
+      },
+    },
     textWord: "hyperliquid",
     token: { testnet: "test USDC", mainnet: null },
-    code: EVM_CODE,
+    code: [...EVM_CODE, { path: "src/lib/settlement/hypercore.ts", label: "Hyperliquid info API" }],
   },
   robinhood: {
     name: "Robinhood Chain",
@@ -330,22 +346,7 @@ export function notSettlingYet(chain: Chain, network: Network): string | null {
   return null;
 }
 
-/**
- * Explorer hosts the registry still names but that don't serve pages, so a chain page never offers their
- * links as proof. HyperEVM testnet's testnet.purrsec.com answers 404. Remove a host once the registry
- * points somewhere that works; a new host shows again with no change here.
- */
-export const DEAD_EXPLORER_HOSTS: ReadonlySet<string> = new Set(["testnet.purrsec.com"]);
-
-/** `url` when its explorer serves pages, else null (shown without a link). */
-export function liveExplorer(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    return DEAD_EXPLORER_HOSTS.has(new URL(url).host) ? null : url;
-  } catch {
-    return null;
-  }
-}
+export { DEAD_EXPLORER_HOSTS, liveExplorer } from "@/lib/explorers";
 
 /** The registry addresses a chain page links: the stablecoin contract and, on Solana, the escrow program. */
 export function registryProof(chain: Chain, network: Network): { label: string; address: string; url: string | null }[] {
