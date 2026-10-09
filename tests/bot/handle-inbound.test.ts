@@ -70,7 +70,18 @@ describe("signup over SMS", () => {
     await say(JEREMY, "hi");
     expect(await say(JEREMY, "!!!")).toBe("What should I call you? Any name works, like Alex or J. P. Meyer.");
     expect(await say(JEREMY, "send alex $5")).toBe("First things first: what name should people use to pay you?");
-    expect(await say(JEREMY, "Al")).toMatch(/^You're in, Al\. Your Dial name is @dial0011,/);
+    // Too short for a handle: the fallback is random, never the phone's last digits (handles are public).
+    expect(await say(JEREMY, "Al")).toMatch(/^You're in, Al\. Your Dial name is @dial[a-z2-7]{4},/);
+    expect((await findUserByPhone(db, JEREMY))?.handle).not.toContain("0011");
+  });
+
+  it("signs up someone called Ty instead of welcoming them again", async () => {
+    await say(NEWBIE, "hi");
+    expect(await say(NEWBIE, "Ty")).toMatch(/^You're in, Ty\. Your Dial name is @dial[a-z2-7]{4},/);
+    expect((await findUserByPhone(db, NEWBIE))?.name).toBe("Ty");
+    // Once they're in, the same word is thanks again.
+    clock = new Date(clock.getTime() + 2 * 60_000);
+    expect(await say(NEWBIE, "ty")).toBe("Anytime.");
   });
 
   it("ignores a duplicate delivery", async () => {

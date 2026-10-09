@@ -53,6 +53,25 @@ describe("decide: onboarding", () => {
     expect(decide(naming, { kind: "code", code: "123456" })).toEqual({ do: "welcome" });
     expect(decide(naming, { kind: "phone", phone: "+15550000001" })).toEqual({ do: "badName" });
   });
+
+  it("takes a name that happens to be a thanks or status word (someone called Ty)", () => {
+    const naming = s({ account: "unknown", convo: awaitingName });
+    expect(decide(naming, { kind: "thanks", text: "Ty" })).toEqual({ do: "signup", name: "Ty" });
+    expect(decide(s({ account: "unclaimed", convo: awaitingName }), { kind: "thanks", text: "ty" })).toEqual({
+      do: "signup",
+      name: "ty",
+    });
+    expect(decide(naming, { kind: "status", text: "Update" })).toEqual({ do: "signup", name: "Update" });
+  });
+
+  it("still welcomes a stranger who says thanks before being asked their name", () => {
+    expect(decide(s({ account: "unknown" }), { kind: "thanks", text: "ty" })).toEqual({ do: "welcome" });
+  });
+
+  it("members still get thanks and status for the same words", () => {
+    expect(decide(s(), { kind: "thanks", text: "ty" })).toEqual({ do: "thanks" });
+    expect(decide(s({ convo: awaitingName }), { kind: "status", text: "status" })).toEqual({ do: "status" });
+  });
 });
 
 describe("decide: answers to the operator's questions", () => {

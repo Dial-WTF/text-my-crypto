@@ -24,6 +24,9 @@ describe("classify", () => {
     ["send jeremy $5", { kind: "text", text: "send jeremy $5" }],
     ["stop sending me stuff", { kind: "text", text: "stop sending me stuff" }],
     ["1234567", { kind: "text", text: "1234567" }],
+    ["Ty", { kind: "thanks", text: "Ty" }],
+    ["thanks!", { kind: "thanks", text: "thanks" }],
+    ["did it work?", { kind: "status", text: "did it work?" }],
   ])("%j", (raw, expected) => {
     expect(classify(raw)).toEqual(expected);
   });
