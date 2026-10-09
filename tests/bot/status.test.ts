@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleInbound } from "@/lib/bot/handle-inbound";
+import { statusReply } from "@/lib/bot/status";
 import type { BotDeps } from "@/lib/bot/types";
+import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
+import { findUserByPhone } from "@/lib/identity";
+import { getIntent } from "@/lib/intents";
 import { noLlm } from "@/lib/operator/brain";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { createTestDb } from "../helpers/db";
@@ -23,6 +27,7 @@ const say = async (from: string, body: string) => {
   return sms.last(from);
 };
 const codeIn = (s: string) => /\b(\d{6})\b/.exec(s)?.[1] ?? "";
+const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
 const later = (minutes: number) => {
   clock = new Date(clock.getTime() + minutes * 60_000);
 };
@@ -107,6 +112,119 @@ describe("status questions", () => {
     await say(ALEX, "status");
     later(1);
     expect(await say(ALEX, "(555) 000-0055")).toMatch(/^Send \$1 USDC to /);
+  });
+});
+
+describe("asking for a new code never buys more guesses", () => {
+  const wrongCodes = (real: string) => ["000001", "000002", "000003", "000004", "000005", "000006"].filter((c) => c !== real);
+
+  it("a fresh code keeps the wrong tries already made", async () => {
+    const confirm = await say(ALEX, "send @jeremy $1");
+    const wrong = wrongCodes(codeIn(confirm));
+    await say(ALEX, wrong[0]!);
+    later(0.2);
+    expect(await say(ALEX, wrong[1]!)).toBe("That code didn't match. 3 tries left.");
+    later(0.2);
+    const fresh = codeIn(await say(ALEX, "status"));
+    expect(fresh).toMatch(/^\d{6}$/);
+    later(0.2);
+    expect(await say(ALEX, wrongCodes(fresh)[2]!)).toBe("That code didn't match. 2 tries left.");
+  });
+
+  it("a payment locked by wrong codes gets no new code from status or a repeat", async () => {
+    const confirm = await say(ALEX, "send @jeremy $1");
+    const id = intentIdIn(confirm);
+    const wrong = wrongCodes(codeIn(confirm));
+    for (const c of wrong.slice(0, 5)) {
+      await say(ALEX, c);
+      later(0.2);
+    }
+    expect(sms.last(ALEX)).toBe("That code didn't match and that was the last try. Text the payment again for a new code.");
+    const locked = await getIntent(db, id);
+
+    expect(await say(ALEX, "status")).toBe("That code didn't match and that was the last try. Text the payment again for a new code.");
+    later(0.2);
+    expect(await say(ALEX, "send @jeremy $1")).toBe(
+      "That code didn't match and that was the last try. Text the payment again for a new code.",
+    );
+    const after = await getIntent(db, id);
+    expect(after?.codeHash).toBe(locked?.codeHash);
+    expect(after?.codeAttempts).toBe(MAX_CODE_ATTEMPTS);
+  });
+});
+
+describe("which payment status talks about", () => {
+  it("prefers the payment waiting on their code over money that just landed", async () => {
+    await say(ALEX, "send @jeremy $2");
+    later(1);
+    const back = await say(JEREMY, "send @alex $1");
+    later(1);
+    await say(JEREMY, codeIn(back));
+    expect(sms.to(ALEX).at(-1)).toMatch(/you got \$1 from Jeremy/);
+    later(1);
+    expect(await say(ALEX, "yo")).toBe(
+      'Still waiting on you: $2 to Jeremy. Reply with the code from my text, or text "status" for a new one.',
+    );
+    later(1);
+    expect(await say(ALEX, "did it work?")).toMatch(/^Still waiting on you: \$2 to Jeremy\. I didn't get your code\. New code: reply \d{6}/);
+  });
+
+  it("falls back to the newest payment when nothing is waiting", async () => {
+    const back = await say(JEREMY, "send @alex $1");
+    later(1);
+    await say(JEREMY, codeIn(back));
+    later(1);
+    expect(await say(ALEX, "did it work?")).toMatch(/^Yes: you got \$1 from Jeremy\./);
+  });
+});
+
+describe("status on an escrow", () => {
+  const SAM = "+15550000055";
+
+  async function escrowToSam(amount: string): Promise<string> {
+    const confirm = await say(ALEX, `send $${amount} to (555) 000-0055`);
+    later(1);
+    await say(ALEX, codeIn(confirm));
+    later(1);
+    return intentIdIn(confirm);
+  }
+
+  it("tells the recipient it's waiting for them to claim, with a claim code that works", async () => {
+    const id = await escrowToSam("5");
+    await say(SAM, "hi");
+    later(1);
+    await say(SAM, "Sam");
+    later(1);
+    const offered = codeIn(sms.to(SAM).find((m) => m.startsWith("Alex sent you $5 USDC. Reply")) ?? "");
+    expect(offered).toMatch(/^\d{6}$/);
+
+    const reply = await say(SAM, "did it work?");
+    expect(reply).toMatch(/^Alex sent you \$5 and it's waiting for you to claim it\. New code: reply \d{6} to claim it\.$/);
+    const fresh = codeIn(reply);
+    later(1);
+    if (fresh !== offered) expect(await say(SAM, offered)).toMatch(/^That code didn't match/);
+    later(1);
+    await say(SAM, fresh);
+    expect(sms.last(SAM)).toMatch(/^Claimed \$5 from Alex/);
+    expect((await getIntent(db, id))?.status).toBe("settled");
+  });
+
+  it("tells the recipient of a refunded escrow it went back to the sender, not to them", async () => {
+    const id = await escrowToSam("4");
+    later(8 * 24 * 60);
+    expect(await say(ALEX, "reclaim")).toBe("Got back $4 from 1 unclaimed payment.");
+    const refunded = await getIntent(db, id);
+    expect(refunded?.status).toBe("refunded");
+
+    await say(SAM, "hi");
+    later(1);
+    await say(SAM, "Sam");
+    const sam = await findUserByPhone(db, SAM);
+    const alex = await findUserByPhone(db, ALEX);
+    expect(await statusReply(deps, sam!, refunded)).toBe(
+      "The $4 from Alex wasn't claimed in time, so it went back to them. Ask them to send it again.",
+    );
+    expect(await statusReply(deps, alex!, refunded)).toMatch(/^That \$4 came back to you\./);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
-import { intentsFor } from "@/lib/intents";
+import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
 import { codeFor } from "./money";
@@ -9,10 +9,18 @@ import type { BotDeps } from "./types";
 /** How far back "did it work?" looks. Older payments are history, not something in flight. */
 const RECENT_MS = 24 * 60 * 60_000;
 
-/** The payment this person is most likely asking about: their newest one from the last day. */
+/**
+ * The payment this person is most likely asking about, from the last day: one still waiting on them or
+ * still moving (their own pending or settling payment, an escrow for them to claim), else their newest.
+ * Money that landed for them a minute later doesn't hide the payment still waiting on their code.
+ */
 export async function latestRecent(deps: BotDeps, user: User): Promise<Intent | null> {
+  const now = deps.now();
+  const since = new Date(now.getTime() - RECENT_MS);
+  const inFlight = await latestInFlightFor(deps.db, user.id, since, now);
+  if (inFlight) return inFlight;
   const [latest] = await intentsFor(deps.db, user.id, 1);
-  return latest && deps.now().getTime() - latest.createdAt.getTime() < RECENT_MS ? latest : null;
+  return latest && latest.createdAt > since ? latest : null;
 }
 
 const JUST_EXPIRED_MS = 30 * 60_000;
@@ -59,9 +67,11 @@ export async function statusReply(
     case "pending": {
       if (i.expiresAt <= now) return replies.statusExpired(amount, who);
       if (!outgoing) return replies.statusWaitingOnThem(amount, who);
+      // Locked by wrong codes: asking again must not buy more guesses.
+      if (isCodeLocked(i)) return replies.codeMismatch(0);
       // A nudge must not replace a code that may still be on its way; only an explicit "status" does.
       if (!freshCode) return replies.statusReminder(amount, who);
-      const code = await codeFor(deps, user.id, i.id, i.amount);
+      const code = await codeFor(deps, user.id, i.id, i.amount, { keepAttempts: true });
       return i.kind === "send" || i.kind === "withdraw"
         ? replies.statusWaitingOnYou(amount, who, code, link)
         : replies.statusAskedToPay(amount, who, code, link);
@@ -70,12 +80,23 @@ export async function statusReply(
       return replies.statusSending(amount, who);
     case "settled":
       return outgoing ? replies.statusSent(amount, who, i.explorerUrl) : replies.statusReceived(amount, who, i.explorerUrl);
-    case "escrowed":
-      return outgoing
-        ? replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires")
-        : replies.statusReceived(amount, who, i.explorerUrl);
+    case "escrowed": {
+      if (outgoing) return replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires");
+      // Waiting for this person to claim it: the same shared claim code as offerEscrowClaims, sent again.
+      if (isCodeLocked(i)) return replies.codeMismatch(0);
+      if (!freshCode) return replies.statusClaimWaiting(amount, who, null);
+      const waiting = (await escrowedTo(deps.db, user.id)).filter((e) => !isCodeLocked(e));
+      const code = await issueSharedCode(
+        deps.db,
+        waiting.map((e) => e.id),
+        { keepAttempts: true },
+      );
+      return replies.statusClaimWaiting(amount, who, code);
+    }
     case "refunded":
-      return replies.statusRefunded(amount, i.releaseExplorerUrl ?? i.explorerUrl);
+      return outgoing
+        ? replies.statusRefunded(amount, i.releaseExplorerUrl ?? i.explorerUrl)
+        : replies.statusReturnedToSender(amount, who);
     case "failed":
       return replies.statusFailed(amount, who);
     case "declined":
