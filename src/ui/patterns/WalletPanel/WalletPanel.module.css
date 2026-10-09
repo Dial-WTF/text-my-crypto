@@ -4,3 +4,60 @@
   align-items: center;
   gap: var(--space-sm);
 }
+
+.link {
+  color: var(--color-on-card);
+  text-underline-offset: 3px;
+}
+
+.payLink {
+  font: 700 var(--text-lg) / 1.2 var(--font-mono);
+  color: var(--color-on-card);
+  overflow-wrap: anywhere;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.payLink:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Copy and Share side by side; Share drops out where the browser can't share, and Copy fills the row. */
+.actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-xs);
+}
+
+.ask {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-sm);
+}
+
+.chain {
+  border-bottom: var(--rule-thin) dashed var(--color-card-rule);
+  padding-block: var(--space-xs);
+}
+
+.chain:last-child {
+  border-bottom: 0;
+}
+
+.summary {
+  cursor: pointer;
+  padding-block: var(--space-2xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-on-card);
+  overflow-wrap: anywhere;
+}
+
+.summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.chain[open] > .summary {
+  margin-bottom: var(--space-sm);
+}

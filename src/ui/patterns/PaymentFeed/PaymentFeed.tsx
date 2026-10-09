@@ -12,6 +12,10 @@ export type FeedEntry = {
   state: string;
   txHash: string | null;
   explorerUrl: string | null;
+  /** "2h ago". */
+  when?: string;
+  /** Something the viewer can do about this payment now, e.g. approve it. */
+  action?: { href: string; label: string };
 };
 
 /** Recent on-chain payments, printed as one long receipt. Handles and payment ids only, never numbers. */
@@ -35,11 +39,17 @@ export function PaymentFeed({
               <Money amount={e.amount} unit={null} />
             </ReceiptLine>
             <div className={styles.meta}>
+              {e.when ? <span>{e.when}</span> : null}
+              <span className={styles.state}>{e.state}</span>
               <span>{e.network}</span>
-              <span>{e.state}</span>
-              <Mono value={e.id} full />
+              <Mono value={e.id} />
               {e.txHash ? <Mono value={e.txHash} href={e.explorerUrl} /> : null}
             </div>
+            {e.action ? (
+              <a className={styles.action} href={e.action.href}>
+                {e.action.label}
+              </a>
+            ) : null}
           </div>
         ))
       )}

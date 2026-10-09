@@ -17,6 +17,24 @@
   color: var(--color-on-card-muted);
 }
 
+.state {
+  color: var(--color-on-card);
+}
+
+.action {
+  justify-self: start;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-on-card);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.action:hover {
+  text-decoration-thickness: 2px;
+}
+
 .empty {
   margin: 0;
   color: var(--color-on-card-muted);

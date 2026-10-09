@@ -21,6 +21,9 @@ export type WalletActivity = {
   txHash: string | null;
   explorerUrl: string | null;
   at: Date;
+  expiresAt: Date;
+  /** Pending, not expired, and this person is the one who approves it (they pay). */
+  waitingOnYou: boolean;
 };
 
 export type WalletAgent = { id: string; label: string; createdAt: Date; lastUsedAt: Date | null };
@@ -77,6 +80,8 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
       txHash: i.txHash,
       explorerUrl: i.explorerUrl,
       at: i.createdAt,
+      expiresAt: i.expiresAt,
+      waitingOnYou: i.status === "pending" && i.senderId === user.id && i.expiresAt > deps.now(),
     });
   }
 
@@ -104,7 +109,12 @@ export function walletJson(v: WalletView) {
   return {
     ...v,
     chains: v.chains.map(({ balance, ...c }) => ({ ...c, balanceUsd: balance === null ? null : usd(balance) })),
-    activity: v.activity.map(({ amount, at, ...a }) => ({ ...a, amountUsd: usd(amount), at: at.toISOString() })),
+    activity: v.activity.map(({ amount, at, expiresAt, ...a }) => ({
+      ...a,
+      amountUsd: usd(amount),
+      at: at.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    })),
     agents: v.agents.map((a) => ({ ...a, createdAt: a.createdAt.toISOString(), lastUsedAt: a.lastUsedAt?.toISOString() ?? null })),
   };
 }

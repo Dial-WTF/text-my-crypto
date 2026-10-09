@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createUser } from "@/lib/identity";
+import { createIntent } from "@/lib/intents";
+import { stateLabel } from "@/lib/payment-labels";
 import { cleanAsk, payProfile } from "@/lib/views/pay";
 import { walletJson, walletView } from "@/lib/views/wallet";
 import { createTestDb } from "../helpers/db";
@@ -51,4 +53,34 @@ describe("wallet view", () => {
     expect(json.agents).toEqual([]);
     expect(json.passkey).toBe(false);
   });
+
+  it("flags a payment waiting on the owner until its deadline, then labels it expired", async () => {
+    const { db, deps, user } = await setup();
+    const bob = await createUser(db, { phone: "+15550000402", handle: "bob" }, now);
+    await createIntent(
+      db,
+      {
+        kind: "send",
+        createdBy: user.id,
+        senderId: user.id,
+        recipientId: bob.id,
+        chain: "solana",
+        token: "Mint111",
+        recipientAddress: "bobAddr",
+        amount: 1_690_000n,
+        note: null,
+        escrowSecretEnc: null,
+      },
+      new Date(deps.now().getTime() - 60_000),
+    );
+    const [open] = (await walletView(deps, user)).activity;
+    expect(open).toMatchObject({ other: "@bob", direction: "out", waitingOnYou: true });
+    expect(stateLabel(open!.status, open!.expiresAt, deps.now())).toBe("awaiting approval");
+
+    const later = new Date(deps.now().getTime() + 15 * 60_000);
+    const [stale] = (await walletView({ ...deps, now: () => later }, user)).activity;
+    expect(stale?.waitingOnYou).toBe(false);
+    expect(stateLabel(stale!.status, stale!.expiresAt, later)).toBe("expired");
+  });
 });
+

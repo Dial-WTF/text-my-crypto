@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { botDeps } from "@/lib/deps";
 import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
+import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { smsUri } from "@/lib/pay-links";
 import { walletView } from "@/lib/views/wallet";
 import { currentUser } from "@/lib/web/current";
@@ -16,17 +17,9 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Wallet", robots: { index: false } };
 
-const STATUS: Record<string, string> = {
-  pending: "awaiting approval",
-  settling: "sending",
-  escrowed: "waiting to be claimed",
-  settled: "delivered",
-  refunded: "refunded",
-  failed: "failed",
-  declined: "declined",
-};
+const FAUCET = { href: "https://faucet.circle.com", label: "faucet.circle.com" };
 
-const when = (d: Date | null) => (d ? `used ${d.toISOString().slice(0, 10)}` : "never used");
+const lastUsed = (d: Date | null, now: Date) => (d ? `used ${timeAgo(d, now)}` : "never used");
 
 export default async function WalletPage() {
   const number = publicEnv().DIAL_OPERATOR_NUMBER;
@@ -45,12 +38,19 @@ export default async function WalletPage() {
     );
   }
 
-  const v = await walletView(botDeps(), user);
+  const deps = botDeps();
+  const now = deps.now();
+  const v = await walletView(deps, user);
+  const readable = v.chains.filter((c) => c.balance !== null);
+  const total = readable.reduce((sum, c) => sum + (c.balance ?? 0n), 0n);
+
   return (
     <SiteShell operatorNumber={number} colophon={<Colophon />}>
       <Desk heading={`Hi, ${v.name}`} lede="Your Dial wallet. Share your pay link to get paid; deposit from any wallet app.">
         <WalletPanel
           handle={v.handle}
+          total={readable.length ? formatUsd(total) : null}
+          faucet={deps.network === "testnet" && readable.length && total === 0n ? FAUCET : null}
           payUrl={v.payUrl}
           chains={v.chains.map((c) => ({ ...c, balance: c.balance === null ? null : formatUsd(c.balance) }))}
           activity={v.activity.map((a) => ({
@@ -59,11 +59,13 @@ export default async function WalletPage() {
             to: a.direction === "in" ? "you" : a.other,
             amount: a.amount,
             network: a.network,
-            state: STATUS[a.status] ?? a.status,
+            state: stateLabel(a.status, a.expiresAt, now),
             txHash: a.txHash,
             explorerUrl: a.explorerUrl,
+            when: timeAgo(a.at, now),
+            ...(a.waitingOnYou ? { action: { href: `/a/${a.id}`, label: "Approve →" } } : {}),
           }))}
-          agents={v.agents.map((a) => ({ id: a.id, label: a.label, lastUsed: when(a.lastUsedAt) }))}
+          agents={v.agents.map((a) => ({ id: a.id, label: a.label, lastUsed: lastUsed(a.lastUsedAt, now) }))}
           passkey={v.passkey}
           revokeAgent={revokeAgent}
           signOut={signOut}
