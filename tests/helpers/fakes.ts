@@ -2,38 +2,69 @@ import { vi } from "vitest";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
 import type { LlmInterpreter } from "@/lib/operator/brain";
-import type { EscrowProgram, SettlementAdapter } from "@/lib/settlement/types";
+import { EscrowClosedError, type EscrowLookup, type EscrowProgram, type SettlementAdapter } from "@/lib/settlement/types";
 
 export type SettleCall = { to: string; amount: bigint; memo: string; closeSource: boolean };
 export type EscrowCall =
   | { op: "create"; intentId: string; amount: bigint; expiresAt: Date }
   | { op: "claim"; intentId: string; to: string }
   | { op: "refund"; intentId: string };
-export type FakeEscrow = EscrowProgram & { calls: EscrowCall[]; fail: { next: Error | null } };
 export type FakeAdapter = SettlementAdapter & { settled: SettleCall[]; funded: string[]; balances: Map<string, bigint> };
 
-/** An escrow program that records what the app asked of it. `fail.next` makes the next call throw. */
+/**
+ * An escrow program that records what the app asked of it and what the chain would say (`chain`, for
+ * `lookup`). `fail.next` makes the next call throw; with `fail.landed` the call still takes effect on
+ * the "chain" first, like a send that timed out after it landed.
+ */
+export type FakeEscrow = EscrowProgram & {
+  calls: EscrowCall[];
+  fail: { next: Error | null; landed?: boolean };
+  chain: Map<string, EscrowLookup>;
+};
+
 export function fakeEscrow(programId = "Escrow1111111111111111111111111111111111111"): FakeEscrow {
   const calls: EscrowCall[] = [];
-  const fail: { next: Error | null } = { next: null };
+  const fail: FakeEscrow["fail"] = { next: null };
+  const chain = new Map<string, EscrowLookup>();
   const done = (call: EscrowCall) => {
+    const sig = `sig_${call.op}_${call.intentId}`;
+    const result = { txHash: sig, explorerUrl: `https://explorer.test/${sig}` };
+    const apply = () => {
+      if (call.op === "create") {
+        chain.set(call.intentId, { state: "open", sender: "sender", amount: call.amount, expiresAt: call.expiresAt, funded: result });
+      } else {
+        chain.set(call.intentId, { state: call.op === "claim" ? "claimed" : "refunded", result });
+      }
+    };
     if (fail.next) {
       const e = fail.next;
+      if (fail.landed) apply();
       fail.next = null;
+      fail.landed = false;
       throw e;
     }
     calls.push(call);
-    const sig = `sig_${call.op}_${call.intentId}`;
-    return { txHash: sig, explorerUrl: `https://explorer.test/${sig}` };
+    apply();
+    return result;
+  };
+  const closed = (intentId: string, want: "claimed" | "refunded") => {
+    const now = chain.get(intentId);
+    if (now?.state === want) return now.result;
+    if (now?.state === "claimed" || now?.state === "refunded") throw new EscrowClosedError(now.state, now.result);
+    return null;
   };
   return {
     programId,
     calls,
     fail,
+    chain,
     vaultAddress: async (intentId) => `vault_${intentId}`,
     create: async ({ intentId, amount, expiresAt }) => done({ op: "create", intentId, amount, expiresAt }),
-    claim: async ({ intentId, to }) => done({ op: "claim", intentId, to }),
-    refund: async ({ intentId }) => done({ op: "refund", intentId }),
+    // Like the real adapter: an escrow that already closed the same way returns that transaction,
+    // the other way throws EscrowClosedError.
+    claim: async ({ intentId, to }) => closed(intentId, "claimed") ?? done({ op: "claim", intentId, to }),
+    refund: async ({ intentId }) => closed(intentId, "refunded") ?? done({ op: "refund", intentId }),
+    lookup: async (intentId) => chain.get(intentId) ?? { state: "none" },
   };
 }
 

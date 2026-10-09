@@ -54,6 +54,25 @@ export const ESCROW_ERRORS = {
   NotAssociatedTokenAccount: 6005,
 } as const;
 
+/**
+ * The program's error code behind a failed send, if it was the program that refused. Kit reports a failed
+ * preflight as "Transaction simulation failed" and puts the instruction error ({ code: 6002 }) in a cause.
+ */
+export function escrowErrorCode(e: unknown): number | null {
+  const codes = new Set<number>(Object.values(ESCROW_ERRORS));
+  for (let at: unknown = e, depth = 0; at && depth < 5; depth++) {
+    const code = (at as { context?: { code?: unknown } }).context?.code;
+    if (typeof code === "number" && codes.has(code)) return code;
+    at = (at as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** "WrongAttestor" for 6004, and so on. */
+export function escrowErrorName(code: number): string | null {
+  return Object.entries(ESCROW_ERRORS).find(([, c]) => c === code)?.[0] ?? null;
+}
+
 const hash32 = fixEncoderSize(getBytesEncoder(), 32);
 const hash32Decoder = fixDecoderSize(getBytesDecoder(), 32);
 const encoder = new TextEncoder();

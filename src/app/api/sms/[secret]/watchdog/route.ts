@@ -1,16 +1,20 @@
+import { reconcileEscrows } from "@/lib/bot/settle";
 import { getDb } from "@/lib/db/client";
+import { botDeps } from "@/lib/deps";
 import { env } from "@/lib/env";
 import { normalizePhone } from "@/lib/phone";
 import { safeEqual } from "@/lib/runtime";
 import { getAdapters } from "@/lib/settlement";
 import { logSender, payphoneSender } from "@/lib/sms/payphone";
+import { errorText } from "@/lib/settlement/types";
 import { runWatchdog } from "@/lib/watchdog/run";
 
 export const dynamic = "force-dynamic";
 
 /**
  * One watchdog pass, run every minute by the cron trigger in worker.ts. Behind the webhook secret.
- * Texts only ALERT_PHONE, at most once per problem per 30 minutes.
+ * Texts only ALERT_PHONE, at most once per problem per 30 minutes. Also settles escrow fundings that
+ * didn't confirm in time, from what the chain says.
  */
 export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/watchdog">): Promise<Response> {
   const { secret } = await ctx.params;
@@ -31,5 +35,9 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     adapters: getAdapters(),
     alert: owner ? (body) => send(owner, body) : null,
   });
-  return Response.json(report);
+  const escrows = await reconcileEscrows(botDeps()).catch((err: unknown) => {
+    console.error(JSON.stringify({ evt: "reconcile_escrows", error: errorText(err) }));
+    return null;
+  });
+  return Response.json({ ...report, escrows });
 }

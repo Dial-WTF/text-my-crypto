@@ -38,7 +38,14 @@ export interface EscrowProgram {
   create(args: { fromSecret: Uint8Array<ArrayBuffer>; intentId: string; amount: bigint; expiresAt: Date }): Promise<SettleResult>;
   claim(args: { intentId: string; to: string }): Promise<SettleResult>;
   refund(args: { intentId: string }): Promise<SettleResult>;
+  /** What the chain says about this intent's escrow, for settling payments whose outcome we didn't see. */
+  lookup(intentId: string): Promise<EscrowLookup>;
 }
+
+export type EscrowLookup =
+  | { state: "open"; sender: string; amount: bigint; expiresAt: Date; funded: SettleResult | null }
+  | { state: "claimed" | "refunded"; result: SettleResult }
+  | { state: "none" };
 
 export type Adapters = Partial<Record<Chain, SettlementAdapter>>;
 
@@ -50,6 +57,41 @@ export class ChainDownError extends Error {
   ) {
     super(`${chain} RPC unavailable: ${errorText(cause)}`.slice(0, 300));
     this.name = "ChainDownError";
+  }
+}
+
+/** The transaction's blockhash expired before it landed, so it never will. Nothing moved. */
+export class NotLandedError extends Error {
+  constructor(sig: string) {
+    super(`Solana tx ${sig} expired without landing`);
+    this.name = "NotLandedError";
+  }
+}
+
+/** We can't tell whether an escrow's funding landed (the RPC stopped answering). Check the chain before calling it failed. */
+export class EscrowUnconfirmedError extends Error {
+  constructor(intentId: string, cause: unknown) {
+    super(`Escrow for ${intentId} unconfirmed: ${errorText(cause)}`.slice(0, 300), { cause });
+    this.name = "EscrowUnconfirmedError";
+  }
+}
+
+/** The escrow already closed the other way: claimed when we tried to refund, or refunded when we tried to claim. */
+export class EscrowClosedError extends Error {
+  constructor(
+    readonly outcome: "claimed" | "refunded",
+    readonly result: SettleResult,
+  ) {
+    super(`Escrow was already ${outcome} in ${result.txHash}`);
+    this.name = "EscrowClosedError";
+  }
+}
+
+/** The escrow program refused a claim because the escrow has expired. It can only go back to the sender now. */
+export class EscrowExpiredError extends Error {
+  constructor(intentId: string) {
+    super(`Escrow for ${intentId} has expired; it can only be refunded`);
+    this.name = "EscrowExpiredError";
   }
 }
 

@@ -85,6 +85,13 @@
       "when": 1791514111935,
       "tag": "0011_escrow_program",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1791516081515,
+      "tag": "0012_intent_approved_at",
+      "breakpoints": true
     }
   ]
 }

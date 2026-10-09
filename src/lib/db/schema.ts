@@ -105,6 +105,8 @@ export const intents = sqliteTable("intents", {
   /** Set when the escrow lives in an on-chain program (this program id) instead of a server-held wallet. */
   escrowProgram: text("escrow_program"),
   escrowExpiresAt: ts("escrow_expires_at"),
+  /** When the approved payment started moving (status "settling"). The reconciler times unconfirmed sends from here. */
+  approvedAt: ts("approved_at"),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),
   releaseTxHash: text("release_tx_hash"),

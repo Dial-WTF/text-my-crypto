@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import { hashCode, MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
@@ -119,7 +119,8 @@ export async function codeCandidates(db: Db, userId: string, now: Date): Promise
         lt(intents.codeAttempts, MAX_CODE_ATTEMPTS),
         or(
           and(eq(intents.senderId, userId), eq(intents.status, "pending"), gt(intents.expiresAt, now)),
-          and(eq(intents.recipientId, userId), eq(intents.status, "escrowed")),
+          // Escrows waiting for this person, until they expire: then they can only go back to the sender.
+          and(eq(intents.recipientId, userId), eq(intents.status, "escrowed"), gt(intents.escrowExpiresAt, now)),
         ),
       ),
     );
@@ -148,17 +149,17 @@ export async function matchCode(db: Db, candidates: Intent[], code: string): Pro
 export async function claimForSettlement(db: Db, id: string, now: Date): Promise<Intent | null> {
   const [row] = await db
     .update(intents)
-    .set({ status: "settling", codeHash: null })
+    .set({ status: "settling", codeHash: null, approvedAt: now })
     .where(and(eq(intents.id, id), eq(intents.status, "pending"), gt(intents.expiresAt, now)))
     .returning();
   return row ?? null;
 }
 
-export async function claimEscrowForRelease(db: Db, id: string): Promise<Intent | null> {
+export async function claimEscrowForRelease(db: Db, id: string, now: Date): Promise<Intent | null> {
   const [row] = await db
     .update(intents)
     .set({ status: "settling", codeHash: null })
-    .where(and(eq(intents.id, id), eq(intents.status, "escrowed")))
+    .where(and(eq(intents.id, id), eq(intents.status, "escrowed"), gt(intents.escrowExpiresAt, now)))
     .returning();
   return row ?? null;
 }
@@ -232,11 +233,12 @@ export async function markFailed(db: Db, id: string, error: string): Promise<voi
     .where(eq(intents.id, id));
 }
 
-export async function escrowedTo(db: Db, userId: string): Promise<Intent[]> {
+/** Escrows still waiting for this person to claim them (not yet expired). */
+export async function escrowedTo(db: Db, userId: string, now: Date): Promise<Intent[]> {
   return db
     .select()
     .from(intents)
-    .where(and(eq(intents.recipientId, userId), eq(intents.status, "escrowed")))
+    .where(and(eq(intents.recipientId, userId), eq(intents.status, "escrowed"), gt(intents.escrowExpiresAt, now)))
     .orderBy(intents.createdAt);
 }
 
@@ -338,6 +340,67 @@ export async function findRecentCompletedDuplicate(
 }
 
 /** Does this code belong to one of the user's payments that has already expired? */
+/** A claim code for an escrow that has since expired: the escrow, so the reply can say what happened to it. */
+export async function expiredEscrowForCode(db: Db, userId: string, code: string, now: Date): Promise<Intent | null> {
+  const expired = await db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.recipientId, userId),
+        eq(intents.status, "escrowed"),
+        lte(intents.escrowExpiresAt, now),
+        isNotNull(intents.codeHash),
+      ),
+    );
+  for (const i of expired) if (i.codeHash === (await hashCode(i.id, code))) return i;
+  return null;
+}
+
+/** Funding an escrow was sent but not confirmed: it stays "settling" with the error until the chain says. */
+export async function markFundingUnconfirmed(db: Db, id: string, error: string): Promise<void> {
+  await db
+    .update(intents)
+    .set({ error: error.slice(0, 500) })
+    .where(and(eq(intents.id, id), eq(intents.status, "settling")));
+}
+
+/** Finishes an unconfirmed funding, once: only the caller whose update lands acts on it. */
+export async function settleUnconfirmed(
+  db: Db,
+  id: string,
+  set:
+    | { status: "escrowed"; txHash: string; explorerUrl: string; escrowExpiresAt: Date }
+    | { status: "failed"; error: string },
+): Promise<boolean> {
+  const values = set.status === "escrowed" ? { ...set, error: null } : { ...set, codeHash: null };
+  const rows = await db
+    .update(intents)
+    .set(values)
+    .where(and(eq(intents.id, id), eq(intents.status, "settling"), isNull(intents.txHash)))
+    .returning({ id: intents.id });
+  return rows.length > 0;
+}
+
+/**
+ * Program escrows whose funding we couldn't confirm: marked unconfirmed, or still "settling" with no
+ * funding transaction long after approval (the worker died mid-send). Settled from the chain by
+ * `reconcileEscrows`.
+ */
+export async function unconfirmedEscrowFunding(db: Db, staleBefore: Date): Promise<Intent[]> {
+  return db
+    .select()
+    .from(intents)
+    .where(
+      and(
+        eq(intents.status, "settling"),
+        isNotNull(intents.escrowProgram),
+        isNull(intents.txHash),
+        or(isNotNull(intents.error), lt(intents.approvedAt, staleBefore)),
+      ),
+    );
+}
+
 export async function matchesExpiredCode(db: Db, userId: string, code: string, now: Date): Promise<boolean> {
   const expired = await db
     .select()
