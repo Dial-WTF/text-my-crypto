@@ -160,8 +160,8 @@ export const replies = {
         ? `That code didn't match. ${plural(triesLeft, "try")} left.`
         : `That code didn't match and that was the last try. Text the payment again for a new code.`,
   balance: (lines: string[]) => `You have ${lines.join(", ")}.`,
-  walletLink: (link: string, code: string) =>
-    `Your wallet: ${link} Enter ${code} there to open it. The link works once, for 15 minutes.`,
+  /** The link never changes; the code works once, for 15 minutes. One GSM-7 segment for any handle on today's APP_URL. */
+  walletLink: (link: string, code: string) => `Your wallet: ${link} Code: ${code}. It works once, for 15 minutes.`,
   receive: (handle: string, payUrl: string, addresses: string[]) =>
     `Your pay link: ${payUrl} Anyone can pay you there, or text me "send ${handle} $5". To deposit, send ${addresses.some((a) => a.startsWith("Zcash")) ? "USDC (testnet ZEC on Zcash)" : "USDC"} to ${addresses.join(" | ")}`,
   sent: (amount: string, who: string, chain: string, explorerUrl: string) =>

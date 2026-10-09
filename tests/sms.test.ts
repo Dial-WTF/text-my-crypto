@@ -33,10 +33,10 @@ describe("logSender", () => {
   it("prints texts to test numbers whole, and only the last four digits of any other number, with no body", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     await logSender("+15550000001", "Reply 123456 to confirm");
-    await logSender("+14155552671", "Your wallet: https://tmc.test/wallet/in/abc Enter 654321 there");
+    await logSender("+14155552671", "Your wallet: https://tmc.test/@alex/wallet Code: 654321. It works once, for 15 minutes.");
     expect(info.mock.calls.map((c) => String(c[0]))).toEqual([
       "[sms:log] → +15550000001: Reply 123456 to confirm",
-      "[sms:log] → •••2671: (62 chars)",
+      "[sms:log] → •••2671: (87 chars)",
     ]);
     info.mockRestore();
   });

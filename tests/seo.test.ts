@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pageMeta } from "@/app/seo";
 import { site } from "@/app/site";
 import { Wordmark } from "@/ui/primitives/Wordmark/Wordmark";
@@ -25,7 +25,7 @@ describe("pageMeta", () => {
 
 describe("the SHOW_BYLINE flag", () => {
   afterEach(() => {
-    delete process.env.SHOW_BYLINE;
+    vi.unstubAllEnvs();
   });
 
   it("leaves the byline off by default: titles, share previews and the wordmark say just the name", () => {
@@ -36,7 +36,7 @@ describe("the SHOW_BYLINE flag", () => {
   });
 
   it("puts 'by Dial.Work' back everywhere at once when it's yes", () => {
-    process.env.SHOW_BYLINE = "yes";
+    vi.stubEnv("SHOW_BYLINE", "yes");
     expect(site()).toMatchObject({ byline: "by Dial.Work", fullName: "Dial operator by Dial.Work" });
     expect(site().shareAlt).toMatch(/^Dial operator by Dial\.Work\. /);
     expect(pageMeta({ path: "/x", title: "X" }).openGraph).toMatchObject({ siteName: "Dial operator by Dial.Work" });

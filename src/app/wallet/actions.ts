@@ -7,7 +7,7 @@ import { revokeAgentKey } from "@/lib/agents/keys";
 import { botDeps } from "@/lib/deps";
 import { LOGIN_CHALLENGE_TTL_MS, relyingParty, startPasskeyLogin, verifyPasskeyLogin } from "@/lib/passkeys";
 import { currentUser, SESSION_COOKIE_OPTIONS } from "@/lib/web/current";
-import { createSession, endSession, redeemLoginLink, SESSION_COOKIE } from "@/lib/web/sessions";
+import { createSession, endSession, SESSION_COOKIE } from "@/lib/web/sessions";
 import { formText } from "@/lib/form";
 
 const CHALLENGE_COOKIE = "dial_passkey_challenge";
@@ -16,17 +16,6 @@ async function startSession(userId: string, via: "text" | "passkey"): Promise<vo
   const deps = botDeps();
   const token = await createSession(deps.db, userId, via, deps.now());
   (await cookies()).set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS);
-}
-
-/** The texted link's form: the code from the same text opens the wallet. */
-export async function signInWithCode(form: FormData): Promise<void> {
-  const token = formText(form, "token");
-  const code = formText(form, "code");
-  const deps = botDeps();
-  const r = await redeemLoginLink(deps.db, token, code, deps.now());
-  if (!r.ok) redirect(`/wallet/in/${encodeURIComponent(token)}${r.reason === "bad_code" ? "?error=code" : ""}`);
-  await startSession(r.userId, "text");
-  redirect("/wallet");
 }
 
 /** The challenge itself stays on the server; the cookie only names it. */

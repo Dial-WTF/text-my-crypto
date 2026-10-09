@@ -98,7 +98,7 @@ Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KE
 
 `wrangler.jsonc` → `env.staging`: Worker `text-my-crypto-staging` (https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev), D1 `text-my-crypto-staging`, queues `sms-inbound-staging` and `sms-inbound-staging-dlq`, the same testnet chains, and `SMS_MODE=log`, so it never sends a real text. Its secrets are in `.env.staging.local` (`pnpm secrets:push --env staging`). It needs no `PAYPHONE_API_KEY`: in log mode the Payphone checks are skipped. Give it its own treasury keys (`node scripts/gen-secrets.mjs`, then fund the printed addresses from the faucets) so smoke runs never spend from, or race nonces with, production's treasury.
 
-`pnpm smoke --env staging` drives the real webhook with fictional 555-01XX numbers: a new user texts `hi`, a name, `balance`, `send @<receiver> $1`, the code (expects `Sending…` then `Sent…`), and `wallet` (expects a link). Replies are read from `/api/sms/<secret>/log`, which only exists where `SMS_MODE=log` and only shows 555-01XX numbers. A failure prints the whole transcript. `pnpm smoke --env local` runs it against `pnpm dev`.
+`pnpm smoke --env staging` drives the real webhook with fictional 555-01XX numbers: a new user texts `hi`, a name, `balance`, `send @<receiver> $1`, the code (expects `Sending…` then `Sent…`), and `wallet` (expects the wallet link and a code, then signs in with them and checks `/wallet`). Replies are read from `/api/sms/<secret>/log`, which only exists where `SMS_MODE=log` and only shows 555-01XX numbers. A failure prints the whole transcript. `pnpm smoke --env local` runs it against `pnpm dev`.
 
 ### Watchdog
 
