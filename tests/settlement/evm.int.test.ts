@@ -4,7 +4,7 @@ import { createEvmAdapter } from "@/lib/settlement/evm";
 import { type EvmNetwork, REGISTRY, resolveRpc } from "@/lib/settlement/registry";
 
 // Live check of one EVM testnet with the real treasury: a 1-cent drop, then a gasless signed transfer back.
-// set -a; . ./.env.production.local; set +a; EVM_INT=1 EVM_INT_CHAIN=robinhood pnpm vitest run tests/settlement/evm.int.test.ts
+// set -a; . ./.env.production.local; set +a; EVM_INT=1 EVM_INT_CHAIN=robinhood pnpm vitest run tests/settlement/evm.int.test.ts --silent=false
 const run = process.env.EVM_INT === "1";
 const chain = (process.env.EVM_INT_CHAIN ?? "base") as "base" | "ethereum" | "arbitrum" | "hyperevm" | "robinhood";
 
@@ -22,11 +22,12 @@ describe.runIf(run)(`evm adapter (${chain} testnet, live)`, () => {
     const treasury = await adapter.treasuryAddress();
     const wallet = await adapter.createWallet();
 
-    await adapter.fund(wallet.address, 10_000n);
+    const drop = await adapter.fund(wallet.address, 10_000n);
     expect(await adapter.getBalance(wallet.address)).toBe(10_000n);
 
     const res = await adapter.settle({ fromSecret: wallet.secret, to: treasury, amount: 10_000n, memo: `pi_int${Date.now()}` });
     expect(res.explorerUrl).toContain(res.txHash);
     expect(await adapter.getBalance(wallet.address)).toBe(0n);
+    console.info(`${entry.network} drop ${drop.explorerUrl}\n${entry.network} signed transfer back ${res.explorerUrl}`);
   });
 });

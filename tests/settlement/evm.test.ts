@@ -1,7 +1,7 @@
 import { bytesToHex, recoverTypedDataAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { authorizationNonce, signTransferAuthorization } from "@/lib/settlement/evm";
+import { authorizationNonce, signTransferAuthorization, waitForHead } from "@/lib/settlement/evm";
 
 describe("EIP-3009 authorizations", () => {
   it("binds the nonce to the payment id", () => {
@@ -42,5 +42,28 @@ describe("EIP-3009 authorizations", () => {
       signature,
     });
     expect(recovered).toBe(payer);
+  });
+});
+
+describe("waitForHead", () => {
+  const noSleep = async () => {};
+
+  it("waits until the RPC has the receipt's block, so the next read sees the transfer", async () => {
+    const heads = [99n, 99n, 100n];
+    let calls = 0;
+    const head = async () => heads[Math.min(calls++, heads.length - 1)] as bigint;
+    expect(await waitForHead(head, 100n, { sleep: noSleep })).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("rides out a failed head check and gives up quietly at the deadline", async () => {
+    let calls = 0;
+    const head = async () => {
+      calls++;
+      if (calls === 1) throw new Error("rate limited");
+      return 5n;
+    };
+    expect(await waitForHead(head, 10n, { timeoutMs: 0, sleep: noSleep })).toBe(false);
+    expect(await waitForHead(async () => 10n, 10n, { sleep: noSleep })).toBe(true);
   });
 });
