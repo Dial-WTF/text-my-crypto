@@ -7,12 +7,21 @@ import { gatewayInterpreter, type LlmInterpreter, noLlm, workersAiInterpreter } 
 import { getAdapters } from "@/lib/settlement";
 import { logSender, payphoneSender } from "@/lib/sms/payphone";
 
+/** The Worker's "ai" binding, or undefined outside a Worker (scripts, tests). */
+function aiBinding(): Ai | undefined {
+  try {
+    return getCloudflareContext().env.AI;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Workers AI through the binding; else Workers AI over REST with a token; else AI Gateway if keyed;
  * else none (the grammar still handles every money command).
  */
 function operatorModel(e: Env): LlmInterpreter {
-  const binding = getCloudflareContext().env.AI;
+  const binding = aiBinding();
   if (binding) return workersAiInterpreter({ binding }, e.WORKERS_AI_MODEL);
   if (e.CLOUDFLARE_ACCOUNT_ID && e.WORKERS_AI_API_TOKEN) {
     return workersAiInterpreter({ accountId: e.CLOUDFLARE_ACCOUNT_ID, apiKey: e.WORKERS_AI_API_TOKEN }, e.WORKERS_AI_MODEL);

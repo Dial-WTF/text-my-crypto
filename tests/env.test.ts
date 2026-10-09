@@ -45,7 +45,7 @@ describe("env", () => {
     resetEnvForTests();
     Object.assign(process.env, { SMS_MODE: "payphone" });
     expect(() => env()).toThrow(/PAYPHONE_API_KEY/);
-    delete process.env.SMS_MODE;
+    Reflect.deleteProperty(process.env, "SMS_MODE");
     process.env.PAYPHONE_API_KEY = base.PAYPHONE_API_KEY;
   });
 
