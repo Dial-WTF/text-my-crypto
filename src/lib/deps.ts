@@ -1,10 +1,24 @@
 import type { BotDeps } from "@/lib/bot/types";
 import { getDb } from "@/lib/db/client";
-import { env } from "@/lib/env";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { type Env, env } from "@/lib/env";
 import { usdToBaseUnits } from "@/lib/money";
-import { gatewayInterpreter, noLlm } from "@/lib/operator/brain";
+import { gatewayInterpreter, type LlmInterpreter, noLlm, workersAiInterpreter } from "@/lib/operator/brain";
 import { getAdapters } from "@/lib/settlement";
 import { logSender, payphoneSender } from "@/lib/sms/payphone";
+
+/**
+ * Workers AI through the binding; else Workers AI over REST with a token; else AI Gateway if keyed;
+ * else none (the grammar still handles every money command).
+ */
+function operatorModel(e: Env): LlmInterpreter {
+  const binding = getCloudflareContext().env.AI;
+  if (binding) return workersAiInterpreter({ binding }, e.WORKERS_AI_MODEL);
+  if (e.CLOUDFLARE_ACCOUNT_ID && e.WORKERS_AI_API_TOKEN) {
+    return workersAiInterpreter({ accountId: e.CLOUDFLARE_ACCOUNT_ID, apiKey: e.WORKERS_AI_API_TOKEN }, e.WORKERS_AI_MODEL);
+  }
+  return e.AI_GATEWAY_API_KEY ? gatewayInterpreter(e.DIAL_OPERATOR_MODEL) : noLlm;
+}
 
 export function botDeps(): BotDeps {
   const e = env();
@@ -14,7 +28,7 @@ export function botDeps(): BotDeps {
       e.SMS_MODE === "payphone"
         ? payphoneSender({ baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY, from: e.DIAL_OPERATOR_NUMBER })
         : logSender,
-    llm: e.AI_GATEWAY_API_KEY ? gatewayInterpreter(e.DIAL_OPERATOR_MODEL) : noLlm,
+    llm: operatorModel(e),
     adapters: getAdapters(),
     appUrl: e.APP_URL,
     operatorNumber: e.DIAL_OPERATOR_NUMBER,
