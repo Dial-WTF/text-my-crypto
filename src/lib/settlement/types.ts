@@ -24,6 +24,22 @@ export interface SettlementAdapter {
   treasuryAddress(): Promise<string>;
   /** On-chain escrow for payments to people not on Dial yet. Absent: escrow is a server-held wallet. */
   escrow?: EscrowProgram;
+  /** Other tokens this chain can move besides the stablecoin (tokenized stocks), keyed by token address. */
+  assets?: Record<string, AssetAdapter>;
+}
+
+/**
+ * A token other than the stablecoin, moved from the same wallets: a tokenized stock. Amounts are in the
+ * payment's units (millionths of a token); the adapter scales to the token's decimals.
+ */
+export type AssetAdapter = Pick<SettlementAdapter, "tokenId" | "getBalance" | "settle"> & { symbol: string };
+
+/** What moves a payment's token: the stablecoin adapter itself, or one of its assets. */
+export function moverFor(adapter: SettlementAdapter, token: string): Pick<SettlementAdapter, "getBalance" | "settle"> {
+  if (token === adapter.tokenId) return adapter;
+  const asset = adapter.assets?.[token];
+  if (!asset) throw new Error(`${adapter.chain} cannot move token ${token}`);
+  return asset;
 }
 
 /**
@@ -106,5 +122,8 @@ export function guardAdapter(adapter: SettlementAdapter): SettlementAdapter {
         throw e instanceof ChainDownError ? e : new ChainDownError(adapter.chain, e);
       }
     };
-  return { ...adapter, getBalance: guard(adapter.getBalance), fund: guard(adapter.fund) };
+  const assets = adapter.assets
+    ? Object.fromEntries(Object.entries(adapter.assets).map(([k, a]) => [k, { ...a, getBalance: guard(a.getBalance) }]))
+    : undefined;
+  return { ...adapter, getBalance: guard(adapter.getBalance), fund: guard(adapter.fund), ...(assets ? { assets } : {}) };
 }

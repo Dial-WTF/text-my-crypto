@@ -2,6 +2,7 @@ import { and, count, desc, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
 import { type Intent, intents, users } from "@/lib/db/schema";
+import { STOCK_TOKEN_ADDRESSES, stockForToken } from "@/lib/stocks";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
 
@@ -9,7 +10,11 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    .select({ payments: count(), moved: sql<number | null>`sum(${intents.amount})` })
+    // A stock token payment counts as a payment but adds no dollars: its amount is shares, and testnet has no price.
+    .select({
+      payments: count(),
+      moved: sql<number | null>`sum(case when ${inArray(intents.token, [...STOCK_TOKEN_ADDRESSES])} then 0 else ${intents.amount} end)`,
+    })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
   const [people] = await db.select({ n: count() }).from(users).where(isNotNull(users.claimedAt));
@@ -34,6 +39,8 @@ export type FeedItem = {
   from: string;
   to: string;
   amount: bigint;
+  /** The stock token's ticker when the payment moved one; null for dollars. */
+  stock: string | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -60,6 +67,7 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
     from: who(r.senderId),
     to: who(r.recipientId),
     amount: r.amount,
+    stock: stockForToken(r.chain, r.token)?.symbol ?? null,
     chain: r.chain,
     status: r.status,
     txHash: r.txHash,

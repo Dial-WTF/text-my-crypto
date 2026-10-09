@@ -34,7 +34,7 @@ export function PaymentReceipt({ view, children }: { view: PaymentView; children
       ) : null}
       <ReceiptRule />
       <ReceiptLine label="Total" total>
-        <Money amount={view.amount} />
+        <Money amount={view.amount} stock={view.stock} />
       </ReceiptLine>
       {children ? (
         <>

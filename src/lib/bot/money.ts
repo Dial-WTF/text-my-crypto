@@ -30,8 +30,10 @@ import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
+import { formatAmount, usdAmount } from "@/lib/stocks";
 import { getWallet } from "@/lib/wallets";
 import { dripOnce, enabledChains, ensureSenderWallet, ensureWallet } from "./accounts";
+import { checkStock, confirmSendReply, createStockSend } from "./stocks";
 import { notify, text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -41,6 +43,7 @@ export const moneyCommandSchema = z.object({
   amountUsd: z.string(),
   note: z.string().optional(),
   chain: z.enum(CHAINS).optional(),
+  asset: z.string().optional(),
 });
 
 export const withdrawCommandSchema = z.object({
@@ -68,7 +71,8 @@ export type MoneyError = {
     | "bad_address"
     | "nothing_to_withdraw"
     | "which_chain"
-    | "duplicate";
+    | "duplicate"
+    | "unknown_asset";
   message: string;
 };
 
@@ -119,10 +123,11 @@ export async function codeFor(
   deps: BotDeps,
   payerId: string,
   intentId: string,
-  amount: bigint,
+  /** The payment in dollars; null when it has no price (a testnet stock), which the code approves. */
+  amount: bigint | null,
   opts: IssueOptions = {},
 ): Promise<string | null> {
-  if (amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
+  if (amount !== null && amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
   return issueCode(deps.db, intentId, opts);
 }
 
@@ -148,17 +153,20 @@ function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-type Checked = { ok: true; chain: Chain; adapter: SettlementAdapter; amount: bigint } | { ok: false; error: MoneyError };
+type Checked =
+  | { ok: true; chain: Chain; adapter: SettlementAdapter; amount: bigint; token: string }
+  | { ok: false; error: MoneyError };
 
 /** The checks that need no lookup: chain switched on, amount well-formed and under the per-payment cap. */
-export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain">): Checked {
+export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "asset">): Checked {
+  if (cmd.asset) return checkStock(deps, cmd);
   const chain = cmd.chain ?? user.defaultChain;
   const adapter = deps.adapters[chain];
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
   if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.badAmount(formatUsd(deps.perTxCap)) } };
   if (amount > deps.perTxCap) return { ok: false, error: { code: "over_cap", message: replies.overCap(formatUsd(deps.perTxCap)) } };
-  return { ok: true, chain, adapter, amount };
+  return { ok: true, chain, adapter, amount, token: adapter.tokenId };
 }
 
 async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
@@ -178,17 +186,18 @@ export async function findDuplicate(
   kind: MoneyCommand["kind"],
   amount: bigint,
   chain: Chain,
+  token: string,
 ): Promise<Duplicate> {
   const isSend = kind === "send";
   const pending = await findPendingDuplicate(
     deps.db,
-    { senderId: isSend ? user.id : other.id, recipientId: isSend ? other.id : user.id, kind, amount, chain },
+    { senderId: isSend ? user.id : other.id, recipientId: isSend ? other.id : user.id, kind, amount, chain, token },
     deps.now(),
   );
   if (pending) return { pending };
   if (!isSend) return null;
   const since = new Date(deps.now().getTime() - JUST_SENT_MS);
-  const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: other.id, amount, chain }, since);
+  const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: other.id, amount, chain, token }, since);
   return done ? { justSent: done } : null;
 }
 
@@ -206,20 +215,19 @@ async function repeatReply(
 ): Promise<{ text: string; askNew: boolean } | null> {
   if (!dup) return null;
   const otherName = describe(other);
-  if ("justSent" in dup) return { text: replies.justSent(formatUsd(dup.justSent.amount), otherName), askNew: true };
+  if ("justSent" in dup) return { text: replies.justSent(formatAmount(dup.justSent), otherName), askNew: true };
   const { pending } = dup;
-  if (kind !== "send") return { text: replies.alreadyRequested(formatUsd(pending.amount), otherName), askNew: false };
+  if (kind !== "send") return { text: replies.alreadyRequested(formatAmount(pending), otherName), askNew: false };
   // Too many wrong codes on it already: repeating the command must not hand out a fresh one.
   if (isCodeLocked(pending)) return { text: replies.codeMismatch(0), askNew: false };
-  const code = await codeFor(deps, user.id, pending.id, pending.amount, { keepAttempts: true });
+  const code = await codeFor(deps, user.id, pending.id, usdAmount(pending), { keepAttempts: true });
   const link = `${deps.appUrl}/a/${pending.id}`;
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    const text = replies.confirmSend(formatUsd(pending.amount), otherName, chainLabel(pending.chain), pending.note, code, link);
-    return { text, askNew: false };
+    return { text: confirmSendReply(pending, otherName, code, link), askNew: false };
   }
-  return { text: replies.alreadyPending(formatUsd(pending.amount), otherName, code, link), askNew: true };
+  return { text: replies.alreadyPending(formatAmount(pending), otherName, code, link), askNew: true };
 }
 
 /**
@@ -227,6 +235,7 @@ async function repeatReply(
  * Texts nobody: callers decide who hears about it (see `announce`).
  */
 export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCommand, other: User): Promise<Prepared> {
+  if (cmd.asset) return cmd.kind === "send" ? createStockSend(deps, user, cmd, other) : fail("bad_amount", replies.didntCatch());
   const checked = checkMoney(deps, user, cmd);
   if (!checked.ok) return checked;
   const { chain, adapter, amount } = checked;
@@ -386,12 +395,12 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
  */
 export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Promise<string> {
   const { intent, code, approveUrl: link } = p;
-  const amount = formatUsd(intent.amount);
+  const amount = formatAmount(intent);
   const chain = chainLabel(intent.chain);
   const other = describe(p.counterparty);
   switch (intent.kind) {
     case "send":
-      return replies.confirmSend(amount, other, chain, intent.note, code, link);
+      return confirmSendReply(intent, other, code, link);
     case "withdraw":
       return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
     // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
@@ -462,7 +471,7 @@ export async function prepareMoney(
   if (other.id === user.id) return replies.selfSend();
 
   if (!opts.allowDuplicate) {
-    const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain);
+    const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain, checked.token);
     const repeat = await repeatReply(deps, user, other, cmd.kind, dup);
     if (repeat?.askNew) {
       await setConversation(deps.db, user.phone, { state: "awaiting_duplicate", payload: { command: JSON.stringify(cmd) } }, deps.now());

@@ -31,6 +31,8 @@ import {
 } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
 import { cleanDisplayName } from "@/lib/names";
+import { stockReplies } from "@/lib/operator/stock-replies";
+import { formatAmount, stockForToken } from "@/lib/stocks";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
 import { ChainDownError } from "@/lib/settlement/types";
@@ -47,6 +49,7 @@ import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { latestRecent, needsMention, statusReply } from "./status";
+import { stockPricedReply, stocksReply } from "./stocks";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -248,6 +251,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await prepareMoney(deps, user, cmd));
     case "withdraw":
       return reply(await prepareWithdraw(deps, user, cmd));
+    case "stocks":
+      return reply(await stocksReply(deps, user));
+    case "stock_priced":
+      return reply(stockPricedReply(deps, cmd.symbol));
   }
 }
 
@@ -270,7 +277,10 @@ async function welcome(deps: BotDeps, user: User | null): Promise<string> {
     const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
     const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender), deps.appUrl);
+    if (waiting && sender) {
+      const withMoney = stockForToken(waiting.chain, waiting.token) ? stockReplies.welcomeWithStock : replies.welcomeWithMoney;
+      return withMoney(formatAmount(waiting), displayName(sender), deps.appUrl);
+    }
   }
   return replies.welcome(deps.appUrl);
 }

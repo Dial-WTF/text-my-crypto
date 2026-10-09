@@ -8,6 +8,8 @@ export type FeedEntry = {
   from: string;
   to: string;
   amount: bigint;
+  /** The stock token's ticker when the payment moved one, else dollars. */
+  stock?: string | null;
   network: string;
   state: string;
   txHash: string | null;
@@ -36,7 +38,7 @@ export function PaymentFeed({
         entries.map((e) => (
           <div key={e.id} className={styles.item}>
             <ReceiptLine label={`${e.from} → ${e.to}`}>
-              <Money amount={e.amount} unit={null} />
+              <Money amount={e.amount} unit={null} stock={e.stock ?? null} />
             </ReceiptLine>
             <div className={styles.meta}>
               {e.when ? <span>{e.when}</span> : null}

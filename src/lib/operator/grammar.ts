@@ -1,14 +1,17 @@
 import { type Chain, parseChain } from "@/lib/chains";
 import { isUsdAmount } from "@/lib/money";
+import { KNOWN_STOCK_SYMBOLS } from "@/lib/stocks";
 
 export type MoneyKind = "send" | "request" | "invoice";
 
+/** `asset`: a stock ticker ("TSLA"). Then `amountUsd` is the number of shares, not dollars. Sends only. */
 export type MoneyCommand = {
   kind: MoneyKind;
   counterparty: string;
   amountUsd: string;
   note?: string;
   chain?: Chain;
+  asset?: string;
 };
 
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
@@ -27,6 +30,9 @@ export type Command =
   | { kind: "connect_agent"; label?: string }
   | { kind: "revoke_agents" }
   | { kind: "wallet" }
+  | { kind: "stocks" }
+  /** "send @alex $5 of TSLA": a dollar amount of a stock, which needs a price. */
+  | { kind: "stock_priced"; symbol: string }
   | { kind: "help" }
   | { kind: "chat" };
 
@@ -61,6 +67,50 @@ const PATTERNS: Pattern[] = [
   p("request", String.raw`${REQUEST}\s+(${WHO})\s+${AMT}`, 1, 2, 3, 4),
   p("invoice", String.raw`${INVOICE}\s+(${WHO})\s+${AMT}`, 1, 2, 3, 4),
 ];
+
+// Stock sends: "send @alex 0.1 TSLA", "send 2 shares of $AMZN to alex", and the priced form "send alex $5 of TSLA".
+const SHARES = String.raw`(\d{1,6}(?:\.\d{1,6})?)\s*(?:shares?\s+(?:of\s+)?)?`;
+const TICKER = String.raw`\$?([a-z]{1,5})`;
+const DOLLARS_OF = String.raw`\$(\d{1,7}(?:\.\d+)?)\s+(?:worth\s+of|of|in)\s+`;
+const stock = (src: string) => new RegExp(`^${src}${FOR}${ON}${END}`, "i");
+const STOCK_SENDS: Array<{ re: RegExp; who: number; qty: number; sym: number; note: number; on: number }> = [
+  { re: stock(String.raw`${SEND}\s+(?:to\s+)?(${WHO})\s+${SHARES}${TICKER}`), who: 1, qty: 2, sym: 3, note: 4, on: 5 },
+  { re: stock(String.raw`${SEND}\s+${SHARES}${TICKER}\s+to\s+(${WHO})`), who: 3, qty: 1, sym: 2, note: 4, on: 5 },
+];
+const STOCK_PRICED = [
+  stock(String.raw`${SEND}\s+(?:to\s+)?(?:${WHO})\s+${DOLLARS_OF}${TICKER}`),
+  stock(String.raw`${SEND}\s+${DOLLARS_OF}${TICKER}\s+to\s+(?:${WHO})`),
+];
+const STOCKS = /^(?:stocks?|my stocks|portfolio|my portfolio|holdings)\??$/i;
+
+/** A ticker: one we know in any case ("tsla"), or any other typed in capitals ("AAPL"). Never a dollar word. */
+function tickerOf(raw: string | undefined): string | null {
+  if (!raw || /^(?:usdc?|dollars?|bucks?)$/i.test(raw)) return null;
+  const upper = raw.toUpperCase();
+  return KNOWN_STOCK_SYMBOLS.has(upper) || raw === upper ? upper : null;
+}
+
+function parseStock(t: string): Command | null {
+  for (const re of STOCK_PRICED) {
+    const symbol = tickerOf(re.exec(t)?.[2]);
+    if (symbol) return { kind: "stock_priced", symbol };
+  }
+  for (const pat of STOCK_SENDS) {
+    const m = pat.re.exec(t);
+    const who = m?.[pat.who];
+    const qty = m?.[pat.qty];
+    const asset = tickerOf(m?.[pat.sym]);
+    if (!m || !who || !qty || !asset) continue;
+    const cmd: MoneyCommand = { kind: "send", counterparty: normalizeCounterparty(who), amountUsd: qty, asset };
+    const note = m[pat.note]?.trim();
+    if (note) cmd.note = note.slice(0, 120);
+    const chainWord = m[pat.on];
+    if (chainWord === undefined) return cmd;
+    const chain = parseChain(chainWord);
+    return chain ? { ...cmd, chain } : { kind: "chat" };
+  }
+  return null;
+}
 
 const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,})`;
 const WITHDRAW = new RegExp(
@@ -106,6 +156,7 @@ export function parseCommand(text: string): Command {
   if (BALANCE.test(t)) return { kind: "balance" };
   if (RECEIVE.test(t)) return { kind: "receive" };
   if (WALLET.test(t)) return { kind: "wallet" };
+  if (STOCKS.test(t)) return { kind: "stocks" };
   if (HELP.test(t)) return { kind: "help" };
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
@@ -134,5 +185,5 @@ export function parseCommand(text: string): Command {
     const cmd = build(pat, m);
     if (cmd) return cmd;
   }
-  return { kind: "chat" };
+  return parseStock(t) ?? { kind: "chat" };
 }

@@ -44,6 +44,7 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     from: r.from,
     to: r.to,
     amount: r.amount,
+    stock: r.stock,
     network: safeNetworkName(r.chain),
     // The public ledger lists money that moved, so there is no deadline to apply.
     state: stateLabel(r.status, null, now),

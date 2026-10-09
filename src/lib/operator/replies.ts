@@ -1,5 +1,5 @@
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
-const approveWith = (code: string | null, link: string, verb = "confirm") =>
+export const approveWith = (code: string | null, link: string, verb = "confirm") =>
   code ? `Reply ${code} to ${verb}, or tap: ${link}` : `Approve with your passkey: ${link}`;
 const plural = (n: number, word: string) =>
   `${n} ${n === 1 ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`}`;
@@ -16,12 +16,12 @@ const ASK_NAME = "What name should people use to pay you?";
  * The first text anyone gets: program name, disclosure, then the question. Past two segments, the
  * disclosure leads on a line of its own and the rest shrinks to `short` plus the question.
  */
-const firstContact = (appUrl: string, intro: string, short: string) => {
+export const firstContact = (appUrl: string, intro: string, short: string) => {
   const full = `hi, I'm the ${PROGRAM}. ${intro} ${disclosure(appUrl)}\n${ASK_NAME}`;
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
 /** Ends every text to someone who never texted the operator. */
-const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
+export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
 
 export const replies = {
   welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),

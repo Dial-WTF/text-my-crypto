@@ -5,6 +5,7 @@ import { getUserById } from "@/lib/identity";
 import { intentsFor } from "@/lib/intents";
 import { hasPasskey } from "@/lib/passkeys";
 import { errorText } from "@/lib/settlement/types";
+import { formatShares, stockForToken } from "@/lib/stocks";
 import { type PayChain, payProfile } from "./pay";
 
 export type WalletChain = PayChain & { balance: bigint | null };
@@ -15,6 +16,8 @@ export type WalletActivity = {
   direction: "in" | "out";
   other: string;
   amount: bigint;
+  /** The stock token's ticker when the payment moved one; null for dollars. */
+  stock: string | null;
   status: Intent["status"];
   network: string;
   note: string | null;
@@ -74,6 +77,7 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
       direction,
       other: i.kind === "withdraw" ? "an outside wallet" : await nameOf(otherId ?? ""),
       amount: i.amount,
+      stock: stockForToken(i.chain, i.token)?.symbol ?? null,
       status: i.status,
       network: profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain,
       note: i.note,
@@ -111,7 +115,7 @@ export function walletJson(v: WalletView) {
     chains: v.chains.map(({ balance, ...c }) => ({ ...c, balanceUsd: balance === null ? null : usd(balance) })),
     activity: v.activity.map(({ amount, at, expiresAt, ...a }) => ({
       ...a,
-      amountUsd: usd(amount),
+      ...(a.stock ? { amountUsd: null, shares: formatShares(amount) } : { amountUsd: usd(amount) }),
       at: at.toISOString(),
       expiresAt: expiresAt.toISOString(),
     })),

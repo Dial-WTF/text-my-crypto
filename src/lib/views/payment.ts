@@ -5,6 +5,7 @@ import { displayName, getUserById } from "@/lib/identity";
 import { networkName } from "@/lib/ledger";
 import { hasPasskey } from "@/lib/passkeys";
 import type { Network } from "@/lib/settlement/registry";
+import { stockForToken } from "@/lib/stocks";
 
 export type StatusTone = "done" | "waiting" | "bad";
 
@@ -14,6 +15,8 @@ export type PaymentView = {
   id: string;
   kindLabel: string;
   amount: bigint;
+  /** The stock token's ticker when the payment moves one ("TSLA"); null for dollars. */
+  stock: string | null;
   from: string;
   to: string;
   network: string;
@@ -84,6 +87,7 @@ export async function buildPaymentView(
     id: i.id,
     kindLabel: KIND_LABEL[i.kind],
     amount: i.amount,
+    stock: stockForToken(i.chain, i.token)?.symbol ?? null,
     from: name(sender),
     to,
     network: networkName(i.chain, opts.network),

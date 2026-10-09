@@ -1,8 +1,8 @@
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
+import { formatAmount, usdAmount } from "@/lib/stocks";
 import { codeFor } from "./money";
 import type { BotDeps } from "./types";
 
@@ -51,7 +51,7 @@ export async function statusReply(
   const i = latest === undefined ? await latestRecent(deps, user) : latest;
   if (!i) return replies.nothingInFlight();
   const now = deps.now();
-  const amount = formatUsd(i.amount);
+  const amount = formatAmount(i);
   const outgoing = i.senderId === user.id;
   const otherId = outgoing ? i.recipientId : i.senderId;
   const other = await getUserById(deps.db, otherId);
@@ -71,7 +71,7 @@ export async function statusReply(
       if (isCodeLocked(i)) return replies.codeMismatch(0);
       // A nudge must not replace a code that may still be on its way; only an explicit "status" does.
       if (!freshCode) return replies.statusReminder(amount, who);
-      const code = await codeFor(deps, user.id, i.id, i.amount, { keepAttempts: true });
+      const code = await codeFor(deps, user.id, i.id, usdAmount(i), { keepAttempts: true });
       return i.kind === "send" || i.kind === "withdraw"
         ? replies.statusWaitingOnYou(amount, who, code, link)
         : replies.statusAskedToPay(amount, who, code, link);

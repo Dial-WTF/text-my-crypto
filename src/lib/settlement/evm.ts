@@ -14,9 +14,10 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
-import type { EvmNetwork } from "./registry";
+import { STOCK_ONCHAIN_SCALE } from "@/lib/stocks";
+import type { EvmNetwork, StockToken } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { SettlementAdapter, SettleResult } from "./types";
+import type { AssetAdapter, SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
 
 const ERC20_3009 = parseAbi([
@@ -26,6 +27,25 @@ const ERC20_3009 = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
 ]);
+
+/** A stock token: EIP-2612 permit plus the EIP-5267 domain, so the treasury can move it for a wallet with no gas. */
+const STOCK_ABI = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function nonces(address) view returns (uint256)",
+  "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
+  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
+  "function transferFrom(address from, address to, uint256 value) returns (bool)",
+]);
+
+const PERMIT_TYPES = {
+  Permit: [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
 
 const AUTH_TYPES = {
   TransferWithAuthorization: [
@@ -66,12 +86,34 @@ export async function signTransferAuthorization(args: {
   return { from: account.address, nonce, signature };
 }
 
+/** Signs an EIP-2612 permit letting `spender` move `value` of the token. Pure: no network. */
+export async function signPermit(args: {
+  secret: Uint8Array<ArrayBuffer>;
+  token: Address;
+  chainId: number;
+  domainName: string;
+  domainVersion: string;
+  spender: Address;
+  value: bigint;
+  nonce: bigint;
+  deadline: bigint;
+}): Promise<{ owner: Address; signature: Hex }> {
+  const account = privateKeyToAccount(bytesToHex(args.secret));
+  const signature = await account.signTypedData({
+    domain: { name: args.domainName, version: args.domainVersion, chainId: args.chainId, verifyingContract: args.token },
+    types: PERMIT_TYPES,
+    primaryType: "Permit",
+    message: { owner: account.address, spender: args.spender, value: args.value, nonce: args.nonce, deadline: args.deadline },
+  });
+  return { owner: account.address, signature };
+}
+
 /**
  * USDC on an EVM chain. Users never hold gas: they sign an EIP-3009 authorization and the
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "stocks"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
 ): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
@@ -99,9 +141,75 @@ export function createEvmAdapter(
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
 
+  /**
+   * A stock token, moved like the stablecoin without the sender holding gas: the wallet signs a permit for
+   * the treasury, which submits it and then transferFrom. The payment id rides on the transferFrom calldata.
+   */
+  function stockAsset(stock: StockToken): AssetAdapter {
+    const address = stock.address;
+    let stockDomain: Promise<{ name: string; version: string }> | undefined;
+    const domainOf = () =>
+      (stockDomain ??= rl(() => publicClient.readContract({ address, abi: STOCK_ABI, functionName: "eip712Domain" })).then(
+        ([, name, version]) => ({ name, version }),
+      ));
+    return {
+      tokenId: address,
+      symbol: stock.symbol,
+      async getBalance(owner) {
+        const raw = await rl(() =>
+          publicClient.readContract({ address, abi: STOCK_ABI, functionName: "balanceOf", args: [owner as Address] }),
+        );
+        return raw / STOCK_ONCHAIN_SCALE;
+      },
+      async settle({ fromSecret, to, amount, memo }) {
+        const value = amount * STOCK_ONCHAIN_SCALE;
+        const owner = privateKeyToAccount(bytesToHex(fromSecret)).address;
+        const [{ name, version }, nonce] = await Promise.all([
+          domainOf(),
+          rl(() => publicClient.readContract({ address, abi: STOCK_ABI, functionName: "nonces", args: [owner] })),
+        ]);
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const { signature } = await signPermit({
+          secret: fromSecret,
+          token: address,
+          chainId: cfg.viem.id,
+          domainName: name,
+          domainVersion: version,
+          spender: treasury.address,
+          value,
+          nonce,
+          deadline,
+        });
+        const { r, s, v, yParity } = parseSignature(signature);
+        const permitted = await rl(() =>
+          wallet.writeContract({
+            address,
+            abi: STOCK_ABI,
+            functionName: "permit",
+            args: [owner, treasury.address, value, deadline, Number(v ?? BigInt(yParity + 27)), r, s],
+          }),
+        );
+        await confirm(permitted);
+        const hash = await rl(() =>
+          wallet.writeContract({
+            address,
+            abi: STOCK_ABI,
+            functionName: "transferFrom",
+            args: [owner, to as Address, value],
+            dataSuffix: stringToHex(memo),
+          }),
+        );
+        return confirm(hash);
+      },
+    };
+  }
+
+  const assets = cfg.stocks?.length ? Object.fromEntries(cfg.stocks.map((s) => [s.address, stockAsset(s)])) : undefined;
+
   return {
     chain: cfg.chain,
     tokenId: token,
+    ...(assets ? { assets } : {}),
     isValidAddress: (a) => isAddress(a, { strict: false }),
     async createWallet() {
       const secret = crypto.getRandomValues(new Uint8Array(32));
