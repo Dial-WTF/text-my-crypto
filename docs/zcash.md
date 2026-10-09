@@ -95,7 +95,7 @@ Zcash balances are listed per chain and left out of the USDC total. People still
 shielded send whatever the sender's default chain; agents pass `private: true` to `send_payment`.
 The operator picks the chain with `chainWith(adapters, "shielded")` (see docs/CAPABILITIES.md),
 never by name; today only Zcash carries that module. The confirm text names the chain and its pool. The payment carries the
-`private` flag (migration 0015), and every public surface treats it accordingly:
+`private` flag (migration 0016), and every public surface treats it accordingly:
 
 - The /a/<id> receipt and its share card show "Shielded payment", no amount, names or note. The
   transaction id stays, since Zcash publishes that anyway. The sender and their agent still see
