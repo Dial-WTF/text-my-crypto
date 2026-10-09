@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 description = "Dial's Zcash testnet wallet service: shielded accounts, balances and sends over HTTP."
-license = "MIT"
 
 # Zcash testnet activated NU7 at height 4,465,026. Only the librustzcash NU7 pre-release
 # cohort builds valid transactions there, so these are pinned exactly, like Zallet does.
