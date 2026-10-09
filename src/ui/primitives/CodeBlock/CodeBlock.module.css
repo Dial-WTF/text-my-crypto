@@ -6,7 +6,9 @@
   color: var(--color-on-card);
   border-radius: var(--radius-sm);
   font: 400 var(--text-xs) / 1.6 var(--font-mono);
-  white-space: pre;
+  /* Wrap rather than scroll: blocks hold instructions and URLs as well as code, and must fit a phone. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-width: 100%;
 }
 

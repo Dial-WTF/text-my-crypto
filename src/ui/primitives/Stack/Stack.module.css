@@ -1,5 +1,7 @@
+/* One column that never grows past its container: wide children (code, long values) wrap or scroll inside it. */
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
 

@@ -25,6 +25,7 @@
 
 .body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2xs);
   font-variant-numeric: tabular-nums;
 }
@@ -54,8 +55,10 @@
   transform: translateY(-0.3em);
 }
 
+/* The value gives way first: it shrinks and wraps so a long label and value still fit the line. */
 .value {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 70%;
   text-align: right;
   overflow-wrap: anywhere;
