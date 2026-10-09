@@ -7,7 +7,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 
 | Tool | Arguments |
 |---|---|
-| `whoami`, `get_balance`, `get_receive_address`, `get_wallet` | none |
+| `whoami`, `get_balance`, `get_receive_address`, `get_wallet`, `list_chain_features` | none |
 | `resolve_recipient` | `to` |
 | `send_payment` | `to`, `amountUsd`, `note?`, `chain?` |
 | `request_payment` | `from`, `amountUsd`, `note?`, `chain?` |
