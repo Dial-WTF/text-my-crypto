@@ -1,50 +1,21 @@
-import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { env } from "@/lib/env";
+import { dependencyChecks } from "@/lib/health";
 import { safeEqual } from "@/lib/runtime";
 import { activeChains, getAdapters } from "@/lib/settlement";
-import { errorText } from "@/lib/settlement/types";
 
 export const dynamic = "force-dynamic";
-
-type Check = { ok: boolean; ms: number; detail?: string };
-
-async function timed(fn: () => Promise<string | undefined>): Promise<Check> {
-  const start = Date.now();
-  try {
-    const detail = await fn();
-    return { ok: true, ms: Date.now() - start, ...(detail ? { detail } : {}) };
-  } catch (e) {
-    const message = errorText(e);
-    return { ok: false, ms: Date.now() - start, detail: message.replace(/\d{7,}/g, "…").slice(0, 300) };
-  }
-}
 
 /** Read-only dependency check behind the webhook secret. Never sends a text and never moves money. */
 export async function GET(_req: Request, ctx: RouteContext<"/api/sms/[secret]/health">): Promise<Response> {
   const { secret } = await ctx.params;
   if (!safeEqual(secret, env().SMS_WEBHOOK_SECRET)) return new Response("Not found", { status: 404 });
   const e = env();
-  const adapters = getAdapters();
-  const probe = "11111111111111111111111111111111";
-  const checks: Record<string, Check> = {
-    d1: await timed(async () => {
-      await getDb().run(sql`select 1`);
-      return undefined;
-    }),
-    payphoneAuth: await timed(async () => {
-      const res = await fetch(`${e.PAYPHONE_BASE_URL}/api/v1/numbers/mine`, {
-        headers: { authorization: `Bearer ${e.PAYPHONE_API_KEY}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return undefined;
-    }),
-  };
-  for (const [chain, adapter] of Object.entries(adapters)) {
-    if (!adapter) continue;
-    const address = chain === "solana" ? probe : "0x000000000000000000000000000000000000dEaD";
-    checks[`${chain}Balance`] = await timed(async () => `${await adapter.getBalance(address)}`);
-  }
+  const checks = await dependencyChecks({
+    db: getDb(),
+    payphone: { baseUrl: e.PAYPHONE_BASE_URL, apiKey: e.PAYPHONE_API_KEY },
+    adapters: getAdapters(),
+  });
   // Which RPC each chain resolved to. Host only: keyed URLs carry their key in the path or query.
   const rpcs = Object.fromEntries(
     activeChains(e).map(({ chain, entry, rpc }) => [chain, `${entry.id} via ${rpc.source} (${new URL(rpc.url).host})`]),

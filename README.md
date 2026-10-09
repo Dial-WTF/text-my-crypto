@@ -81,7 +81,19 @@ Local runs use `SMS_MODE=log`: replies are printed, never sent. `pnpm dev` handl
 
 ## Deploy
 
-Pushes to `main` run `.github/workflows/deploy.yml`: checks, D1 migrations, then `opennextjs-cloudflare deploy`. It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KEY`, `SOLANA_TREASURY_SEED`, optional `AI_GATEWAY_API_KEY`) live in the Worker via `wrangler secret`.
+`pnpm ship` is the gated deploy: lint, typecheck and tests, one build, then **staging** (D1 migrations, deploy, `pnpm smoke --env staging`), and only if the smoke test passes, **production** (D1 migrations, deploy). Pushes to `main` run the same script in `.github/workflows/deploy.yml`, which needs the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `STAGING_SMS_WEBHOOK_SECRET` repository secrets. `pnpm run deploy` still deploys production directly, skipping the gate.
+
+Runtime secrets (`PAYPHONE_API_KEY`, `SMS_WEBHOOK_SECRET`, `WALLET_ENCRYPTION_KEY`, `SOLANA_TREASURY_SEED`, optional `AI_GATEWAY_API_KEY`, optional `ALERT_PHONE`) live in the Worker: keep them in `.env.production.local` and run `pnpm secrets:push`.
+
+### Staging
+
+`wrangler.jsonc` → `env.staging`: Worker `text-my-crypto-staging` (https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev), D1 `text-my-crypto-staging`, queues `sms-inbound-staging` and `sms-inbound-staging-dlq`, the same testnet chains, and `SMS_MODE=log`, so it never sends a real text. Its secrets are in `.env.staging.local` (`pnpm secrets:push --env staging`).
+
+`pnpm smoke --env staging` drives the real webhook with fictional 555-01XX numbers: a new user texts `hi`, a name, `balance`, `send @<receiver> $1`, the code (expects `Sending…` then `Sent…`), and `wallet` (expects a link). Replies are read from `/api/sms/<secret>/log`, which only exists where `SMS_MODE=log` and only shows 555-01XX numbers. A failure prints the whole transcript. `pnpm smoke --env local` runs it against `pnpm dev`.
+
+### Watchdog
+
+A cron trigger runs `worker.ts`'s `scheduled` handler every minute in production. It calls `/api/sms/<secret>/watchdog`, which checks D1, Payphone auth and every chain's RPC (the same checks as `/health`), inbound texts over a minute old with no reply and no handled mark, and Payphone's inbox for texts over two minutes old that never reached `sms_log`. Problems are texted to `ALERT_PHONE` only, once per problem per 30 minutes, with one all-clear text when they clear (state in the `watchdog_problems` table; dependencies alert on the second failing minute). Each run logs one `"evt":"watchdog"` line. If the app can't answer at all, the worker texts the owner directly. Without `ALERT_PHONE` it only logs.
 
 Inbound SMS goes through a Cloudflare Queue (bindings in `wrangler.jsonc`). The queues must exist before the first deploy that uses them:
 
