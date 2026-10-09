@@ -43,7 +43,21 @@ export type TempoNetwork = Common & {
   faucet: boolean;
 };
 export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null };
-export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
+/**
+ * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
+ * (services/zcash-wallet). `publicRpc` is the lightwalletd that service scans; the Worker never
+ * talks to it. People see dollars converted at `usdPerZec`, a fixed demo rate: testnet ZEC (TAZ)
+ * has no price.
+ */
+export type ZcashNetwork = Common & {
+  kind: "zcash";
+  asset: "TAZ" | "ZEC";
+  usdPerZec: number | null;
+  addressPrefix: string;
+  /** True once a real round-trip has gone through the wallet service here. Until then, switched off reads "Building", not "Wired". */
+  proven: boolean;
+};
+export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork | ZcashNetwork;
 
 /** Explorer links for an Etherscan-style explorer. */
 const scan = (host: string) => ({
@@ -214,7 +228,23 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       ...scan("robinhoodchain.blockscout.com"),
     },
   },
-  zcash: { testnet: null, mainnet: null },
+  zcash: {
+    testnet: {
+      kind: "zcash",
+      id: "ZCASH_TESTNET",
+      network: "Zcash testnet",
+      publicRpc: "https://testnet.zec.rocks:443",
+      asset: "TAZ",
+      // $50 per TAZ: "$5" is 0.1 TAZ, and the 0.0001 TAZ network fee is half a cent.
+      usdPerZec: 50,
+      addressPrefix: "utest1",
+      proven: false, // flip after ZCASH_INT=1 passes against the deployed service
+      explorerTx: (h) => `https://testnet.zcashexplorer.app/transactions/${h}`,
+      // Shielded addresses have no public history; the explorer page only confirms the address is valid.
+      explorerAddress: (a) => `https://testnet.zcashexplorer.app/address/${a}`,
+    },
+    mainnet: null, // custody and a real ZEC price come first
+  },
 };
 
 /** Every RPC override secret name, for the env schema and the secrets push script. */

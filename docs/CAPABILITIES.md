@@ -10,7 +10,7 @@ The contract is in [`src/lib/settlement/capabilities.ts`](../src/lib/settlement/
 | `names` | Withdraw to a name instead of an address. The name resolves once, when the payment is created; the payment keeps that address | Ethereum (ENS), Base (Basenames) |
 | `batch` | Several transfers in one transaction, all or none | planned: Tempo |
 | `actions` | Anyone can pay a Dial pay link from their own wallet: the link unfurls as a Blink, and the payment is found on-chain by a reference key | Solana (Actions / Blinks) |
-| `shielded` | Amount, parties and memo encrypted on-chain | planned: Zcash |
+| `shielded` | Amount, parties and memo encrypted on-chain | Zcash (testnet, Ironwood pool, every send) |
 | `venue` | Move money into the chain's own trading venue | planned: Hyperliquid (HyperCore) |
 | `assets` | Send assets beyond the stablecoin | planned: Robinhood Chain |
 

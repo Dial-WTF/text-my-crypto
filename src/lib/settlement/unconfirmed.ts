@@ -16,3 +16,15 @@ export class TransferUnconfirmedError extends ChainDownError {
     this.name = "TransferUnconfirmedError";
   }
 }
+
+/**
+ * A send or drip went out to the chain's service and no definite answer came back (a timeout, a dropped
+ * connection, a 5xx). The money may have moved. Never record it as failed: retry with the same arguments,
+ * which only adapters with idempotent sends throw this for.
+ */
+export class SettlementUnknownError extends ChainDownError {
+  constructor(chain: Chain, cause: unknown) {
+    super(chain, cause);
+    this.name = "SettlementUnknownError";
+  }
+}

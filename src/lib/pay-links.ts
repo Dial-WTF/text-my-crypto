@@ -1,6 +1,6 @@
 /**
  * Payment request links that wallets open straight into a filled-in transfer. Pure: no network.
- * Solana: Solana Pay transfer requests. Tempo and EVM chains: EIP-681 token transfers.
+ * Solana: Solana Pay transfer requests. Tempo and EVM chains: EIP-681 token transfers. Zcash: ZIP 321.
  */
 
 const enc = encodeURIComponent;
@@ -35,6 +35,16 @@ export function solanaActionLinks(actionUrl: string, testnet: boolean): { uri: s
 export function eip681TransferUri(args: { token: string; chainId: number; address: string; baseUnits?: bigint }): string {
   const amount = args.baseUnits !== undefined ? `&uint256=${args.baseUnits}` : "";
   return `ethereum:${args.token}@${args.chainId}/transfer?address=${args.address}${amount}`;
+}
+
+/** zcash:<address>?amount=<ZEC>&label=…&message=… (ZIP 321). Amount is in coins, not dollars. */
+export function zip321Uri(args: { address: string; amountZec?: string; label: string; message?: string }): string {
+  const params = [
+    args.amountZec ? `amount=${args.amountZec}` : null,
+    `label=${enc(args.label)}`,
+    args.message ? `message=${enc(args.message)}` : null,
+  ].filter(Boolean);
+  return `zcash:${args.address}?${params.join("&")}`;
 }
 
 /** What someone texts the operator to pay this handle, e.g. "send @alex $5 for pizza". */

@@ -46,6 +46,16 @@ const schema = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
+  /** The Zcash wallet service (services/zcash-wallet) and its bearer token. Zcash is off when either is unset. */
+  ZCASH_SERVICE_URL: z
+    .url()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  ZCASH_SERVICE_TOKEN: z
+    .string()
+    .min(32)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   /**
    * "on": escrow for people not on Dial yet goes through the chain's escrow program (Solana's dial_escrow),
    * where the money can only go to the recipient on the attestor's word or back to the sender after expiry.

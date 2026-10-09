@@ -18,7 +18,7 @@ async function render(props: Parameters<typeof PayCard>[0]): Promise<string> {
   return new Response(stream).text();
 }
 
-const solana = { network: "Solana devnet", address: "So1Addr", uri: "solana:So1Addr", explorer: "https://explorer.test/So1Addr" };
+const solana = { network: "Solana devnet", address: "So1Addr", uri: "solana:So1Addr", explorer: "https://explorer.test/So1Addr", assetNote: null };
 
 describe("PayCard", () => {
   it("puts a Blink link next to the Solana Pay QR", async () => {

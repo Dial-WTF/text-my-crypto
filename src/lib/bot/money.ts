@@ -24,6 +24,7 @@ import {
   sentSince,
 } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasOutboundSince } from "@/lib/sms/log";
@@ -147,7 +148,7 @@ function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: big
   const testnet = deps.network === "testnet";
   const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
   const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
-  return replies.insufficient(formatUsd(balance), payUrl, testnet, faucet);
+  return replies.insufficient(money(balance, chain, deps.network), payUrl, testnet, faucet);
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -212,9 +213,9 @@ async function repeatReply(
 ): Promise<{ text: string; askNew: boolean } | null> {
   if (!dup) return null;
   const otherName = describe(other);
-  if ("justSent" in dup) return { text: replies.justSent(formatUsd(dup.justSent.amount), otherName), askNew: true };
+  if ("justSent" in dup) return { text: replies.justSent(money(dup.justSent.amount, dup.justSent.chain, deps.network), otherName), askNew: true };
   const { pending } = dup;
-  if (kind !== "send") return { text: replies.alreadyRequested(formatUsd(pending.amount), otherName), askNew: false };
+  if (kind !== "send") return { text: replies.alreadyRequested(money(pending.amount, pending.chain, deps.network), otherName), askNew: false };
   // Too many wrong codes on it already: repeating the command must not hand out a fresh one.
   if (isCodeLocked(pending)) return { text: replies.codeMismatch(0), askNew: false };
   const code = await codeFor(deps, user.id, pending.id, pending.amount, { keepAttempts: true });
@@ -222,10 +223,10 @@ async function repeatReply(
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    const text = replies.confirmSend(formatUsd(pending.amount), otherName, chainLabel(pending.chain), pending.note, code, link);
+    const text = replies.confirmSend(money(pending.amount, pending.chain, deps.network), otherName, chainLabel(pending.chain), pending.note, code, link);
     return { text, askNew: false };
   }
-  return { text: replies.alreadyPending(formatUsd(pending.amount), otherName, code, link), askNew: true };
+  return { text: replies.alreadyPending(money(pending.amount, pending.chain, deps.network), otherName, code, link), askNew: true };
 }
 
 /**
@@ -246,13 +247,18 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
 
   if (cmd.kind === "send") {
     let balance = await adapter.getBalance(mine.address);
+    // Zcash payments carry the recipient's next fees on top; other chains carry nothing.
+    const fees = adapter.carriedFees?.(isClaimed(other) ? "dial" : adapter.escrow ? "outside" : "escrow") ?? 0n;
     // Short, and the test drip never landed (say the chain was down at signup): drop it now. A wallet opened
     // this turn already had its try. A drip that fails (empty treasury, rate limit) just means "not enough".
-    if (balance < amount && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
+    if (balance < amount + fees && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
       balance += deps.dripAmount;
-      await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
+      await notify(deps, user.phone, replies.dripped(money(deps.dripAmount, chain, deps.network)));
     }
     if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
+    if (balance < amount + fees) {
+      return fail("insufficient", replies.feeShort(money(balance, chain, deps.network), money(fees, chain, deps.network), chainLabel(chain)));
+    }
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
     const id = newIntentId();
@@ -426,7 +432,7 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, asked: Wit
  */
 export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Promise<string> {
   const { intent, code, approveUrl: link } = p;
-  const amount = formatUsd(intent.amount);
+  const amount = money(intent.amount, intent.chain, deps.network);
   const chain = chainLabel(intent.chain);
   const other = describe(p.counterparty);
   switch (intent.kind) {

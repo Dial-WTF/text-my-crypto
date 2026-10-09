@@ -1,0 +1,26 @@
+// The Zcash wallet service as a Cloudflare Container behind a tiny Worker.
+// Deploy: cd services/zcash-wallet/worker && pnpm install --ignore-workspace && pnpm run deploy
+// Secrets (wrangler secret put): ZCASH_SEED_PHRASE, ZCASH_SERVICE_TOKEN. Var: ZCASH_BIRTHDAY.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dial-zcash-wallet",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "ZcashWallet",
+      "image": "../Dockerfile",
+      "max_instances": 1,
+      // Proving a shielded spend wants real CPU; the smaller types take tens of seconds.
+      "instance_type": "standard-1"
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "WALLET", "class_name": "ZcashWallet" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ZcashWallet"] }],
+  "vars": {
+    // Every account's birthday: the block height the service seed was created at.
+    "ZCASH_BIRTHDAY": "4480374",
+    "LIGHTWALLETD_URL": "https://testnet.zec.rocks:443"
+  }
+}

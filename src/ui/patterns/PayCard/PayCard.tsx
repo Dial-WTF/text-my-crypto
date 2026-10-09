@@ -9,7 +9,14 @@ import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
 /** `action`: Solana only, the pay link as a Solana Action (Blink). */
-export type PayCardChain = { network: string; address: string; uri: string; explorer: string; action?: { uri: string; blink: string } };
+export type PayCardChain = {
+  network: string;
+  address: string;
+  uri: string;
+  explorer: string;
+  assetNote: string | null;
+  action?: { uri: string; blink: string };
+};
 
 type PayCardProps = {
   handle: string;
@@ -56,6 +63,7 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
         <Stack key={c.network} gap="sm">
           <ReceiptRule />
           <Fine caps>Pay from a wallet · {c.network}</Fine>
+          {c.assetNote ? <Fine>{c.assetNote}</Fine> : null}
           <QrCode value={c.uri} label={`QR code to pay @${handle} on ${c.network}`} caption="Scan with a wallet app" />
           <ReceiptLine label="Address">
             <Mono value={c.address} href={c.explorer} full />

@@ -3,15 +3,21 @@ import type { BotDeps } from "@/lib/bot/types";
 import type { Chain } from "@/lib/chains";
 import type { User } from "@/lib/db/schema";
 import { isUsdAmount, usdToBaseUnits } from "@/lib/money";
-import { eip681TransferUri, payActionUrl, payByTextBody, smsUri, solanaActionLinks, solanaPayUri } from "@/lib/pay-links";
+import { eip681TransferUri, payActionUrl, payByTextBody, smsUri, solanaActionLinks, solanaPayUri, zip321Uri } from "@/lib/pay-links";
 import { REGISTRY } from "@/lib/settlement/registry";
+import { ChainDownError } from "@/lib/settlement/types";
+import { formatZec, usdToZats } from "@/lib/settlement/zcash";
 
 export type PayChain = {
   chain: Chain;
   network: string;
   address: string;
   token: string;
-  /** Opens a wallet app on a filled-in transfer: Solana Pay on Solana, EIP-681 elsewhere. */
+  /** What lands in the wallet: "USDC", or "TAZ" (testnet ZEC) on Zcash. */
+  asset: string;
+  /** Said next to the wallet option when the coin isn't dollars, e.g. "Pays 0.1 TAZ: testnet ZEC at a demo rate of $50 per coin." */
+  assetNote: string | null;
+  /** Opens a wallet app on a filled-in transfer: Solana Pay on Solana, ZIP 321 on Zcash, EIP-681 elsewhere. */
   uri: string;
   explorer: string;
   /** Solana only: the same payment as a Solana Action (Blink) any Solana wallet can sign. */
@@ -56,21 +62,43 @@ export async function payProfile(deps: BotDeps, user: User, ask: PayAsk = {}): P
   for (const [chain, adapter] of enabledChains(deps)) {
     const entry = REGISTRY[chain][deps.network];
     if (!entry) continue;
-    const token = entry.kind === "solana" ? entry.mint : entry.token;
+    const token = entry.kind === "solana" ? entry.mint : entry.kind === "zcash" ? entry.asset : entry.token;
     if (!token) continue;
-    const { address } = await ensureWallet(deps, user.id, chain, adapter);
-    const uri =
-      entry.kind === "solana"
-        ? solanaPayUri({ address, mint: token, amountUsd: ask.amountUsd, label, message: ask.note })
-        : eip681TransferUri({
-            token,
-            chainId: entry.viem.id,
-            address,
-            baseUnits: ask.amountUsd ? usdToBaseUnits(ask.amountUsd) : undefined,
-          });
+    let address: string;
+    try {
+      ({ address } = await ensureWallet(deps, user.id, chain, adapter));
+    } catch (e) {
+      // A chain that can't open a wallet right now (its RPC or wallet service is down) just isn't offered.
+      if (e instanceof ChainDownError) continue;
+      throw e;
+    }
+    const baseUnits = ask.amountUsd ? usdToBaseUnits(ask.amountUsd) : undefined;
+    let uri: string;
+    let assetNote: string | null = null;
+    if (entry.kind === "solana") {
+      uri = solanaPayUri({ address, mint: token, amountUsd: ask.amountUsd, label, message: ask.note });
+    } else if (entry.kind === "zcash") {
+      const amountZec = baseUnits !== undefined && entry.usdPerZec ? formatZec(usdToZats(baseUnits, entry.usdPerZec)) : undefined;
+      uri = zip321Uri({ address, amountZec, label, message: ask.note });
+      const rate = `testnet ZEC at a demo rate of $${entry.usdPerZec} per coin`;
+      assetNote = amountZec ? `Pays ${amountZec} ${entry.asset}: ${rate}.` : `${entry.asset} is ${rate}.`;
+    } else {
+      uri = eip681TransferUri({ token, chainId: entry.viem.id, address, baseUnits });
+    }
+    const asset = entry.kind === "zcash" ? entry.asset : "USDC";
     const actionUrl = payActionUrl(deps.appUrl, handle, ask);
     const action = entry.kind === "solana" ? { url: actionUrl, ...solanaActionLinks(actionUrl, deps.network === "testnet") } : null;
-    chains.push({ chain, network: entry.network, address, token, uri, explorer: entry.explorerAddress(address), ...(action ? { action } : {}) });
+    chains.push({
+      chain,
+      network: entry.network,
+      address,
+      token,
+      asset,
+      assetNote,
+      uri,
+      explorer: entry.explorerAddress(address),
+      ...(action ? { action } : {}),
+    });
   }
   const body = payByTextBody(handle, ask.amountUsd, ask.note);
   const query = new URLSearchParams({ ...(ask.amountUsd ? { amount: ask.amountUsd } : {}), ...(ask.note ? { note: ask.note } : {}) });
