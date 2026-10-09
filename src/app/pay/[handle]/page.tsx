@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { publicEnv } from "@/lib/env";
-import { loadPayProfile } from "@/lib/web/pay-page";
+import { handleFromParam, loadPayProfile } from "@/lib/web/pay-page";
 import { Desk } from "@/ui/patterns/Desk/Desk";
 import { PayCard } from "@/ui/patterns/PayCard/PayCard";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
@@ -13,7 +13,8 @@ type Query = { amount?: string; note?: string };
 
 export async function generateMetadata({ params }: PageProps<"/pay/[handle]">): Promise<Metadata> {
   const { handle } = await params;
-  const h = decodeURIComponent(handle).replace(/^@/, "").toLowerCase();
+  const h = handleFromParam(handle);
+  if (!h) notFound();
   return {
     title: `Pay @${h}`,
     description: `Pay @${h} by text from any phone, or from any crypto wallet. Powered by the Dial operator.`,
