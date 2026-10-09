@@ -37,11 +37,12 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 - **Any phone.** Signup is replying with a name. Every money movement is confirmed with a 6-digit code texted to the payer (bound to that one payment, 10 minutes, 5 tries). A forged inbound message can't confirm anything because the code only goes to the real phone.
 - **Smartphone upgrade.** Text `upgrade` to add a passkey. Payments over $20 then need it; the WebAuthn challenge is the payment's hash.
 - **Paying someone new.** Their phone number is enough. Funds wait in escrow; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days. On Solana the escrow is an on-chain program ([`solana/`](solana/README.md)): it pays the recipient only on the operator's attestation, and after expiry anyone can send the money back to the sender, with or without Dial. On devnet Dial still holds the program's upgrade key; mainnet would put it behind a multisig or freeze the program.
+- **Splitting a bill.** `split $30 between @alex @sam on tempo` divides it to the cent (a leftover cent goes to the first person); `split $30 with @alex @sam` counts you in and you pay the others' shares. Up to 10 people. One code approves it, and every share settles in a single Tempo transaction: one TIP-20 transfer-with-memo per person, each memo that share's payment id, with the treasury paying the fee. Tempo runs the calls atomically, so either everyone is paid or nobody is. Someone not on Dial yet gets their share held for them, in the same transaction.
 - **Exit anytime.** `withdraw all to <address>`.
 
 Names work like an operator's switchboard: reply with any name ("J. P. Meyer, crypto anarchist" becomes J. P. Meyer, `@jpmeyer`), find people with `411 <name>`, and pay a name: your contacts first, then the directory (one match connects, several ask you to pick, none asks for a number).
 
-Commands: `send jeremy $10`, `411 jeremy`, `call me <name>`, `whoami`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `connect agent`, `revoke agents`, `help`.
+Commands: `send jeremy $10`, `split $30 between @alex @sam on tempo`, `411 jeremy`, `call me <name>`, `whoami`, `send $5 to +1 555 123 4567`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `balance`, `receive`, `withdraw $10 to <address>`, `reclaim`, `no` (decline a request), `upgrade`, `connect agent`, `revoke agents`, `help`.
 
 ## For agents
 
@@ -49,7 +50,7 @@ Any MCP client can pay, request or invoice anyone with a phone number. The perso
 
 1. Text `connect agent` to +1 806 607 1387. You get a one-time link and code; the page shows an agent key once.
 2. Point your MCP client at `https://text-my-crypto.raspy-thunder-20d2.workers.dev/api/mcp` with `Authorization: Bearer <key>`.
-3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `withdraw`, `get_payment`, `list_payments`.
+3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `split_payment`, `withdraw`, `get_payment`, `list_payments`.
 
 Money tools create a pending payment, text the payer a code, and return `{ intentId, status: "awaiting_approval", approveUrl }`. Agents poll `get_payment`; there is no tool that approves. Text `revoke agents` to turn off every key. Keys are stored as SHA-256 hashes and rate-limited per key.
 

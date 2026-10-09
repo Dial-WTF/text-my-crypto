@@ -41,7 +41,14 @@ describe("tool input validation", () => {
   });
 
   it("marks exactly the money tools", () => {
-    expect([...MONEY_TOOLS].sort()).toEqual(["create_invoice", "request_payment", "send_payment", "send_to_hyperliquid", "withdraw"]);
+    expect([...MONEY_TOOLS].sort()).toEqual([
+      "create_invoice",
+      "request_payment",
+      "send_payment",
+      "send_to_hyperliquid",
+      "split_payment",
+      "withdraw",
+    ]);
   });
 
   it("publishes a JSON Schema for every tool", () => {

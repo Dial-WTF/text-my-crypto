@@ -112,6 +112,7 @@ describe("MCP over Streamable HTTP", () => {
         "resolve_recipient",
         "send_payment",
         "send_to_hyperliquid",
+        "split_payment",
         "whoami",
         "withdraw",
       ].sort(),

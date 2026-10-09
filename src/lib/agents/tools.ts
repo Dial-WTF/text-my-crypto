@@ -10,6 +10,15 @@ import {
   type PreparedIntent,
   resolveCounterparty,
 } from "@/lib/bot/money";
+import {
+  confirmSplitText,
+  createSplit,
+  MAX_SPLIT_PEOPLE,
+  type PreparedSplit,
+  resolvePeople,
+  splitChain,
+  type SplitErrorCode,
+} from "@/lib/bot/split";
 import { text } from "@/lib/bot/text";
 import { FEATURES, featuresOf } from "@/lib/settlement/capabilities";
 import type { BotDeps } from "@/lib/bot/types";
@@ -119,6 +128,20 @@ export const toolInputs = {
       .regex(/^\$?[A-Za-z][A-Za-z0-9]{0,9}$/, 'A Hyperliquid coin like "BTC" or "HYPE"')
       .describe('A coin Hyperliquid lists a perp for, e.g. "BTC", "ETH" or "HYPE".'),
   }),
+  split_payment: z.object({
+    amountUsd,
+    people: z
+      .array(person)
+      .min(1)
+      .max(MAX_SPLIT_PEOPLE)
+      .describe("Who shares the amount: phone numbers, Dial @handles or contact names. Each person once."),
+    includeMe: z
+      .boolean()
+      .optional()
+      .describe("True when the owner takes a share too and pays everyone else's (\"split $30 with @a @b\"). Default false."),
+    note,
+    chain: z.enum(CHAINS).optional().describe("Leave out: splits run on a chain that settles them as one transaction (Tempo). A chain that can't is refused."),
+  }),
   list_chain_features: z.object({}),
 } as const;
 
@@ -131,6 +154,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
   "request_payment",
   "create_invoice",
   "withdraw",
+  "split_payment",
   "send_to_hyperliquid",
 ]);
 
@@ -139,7 +163,7 @@ export const MONEY_TOOLS: ReadonlySet<ToolName> = new Set([
 // ---------------------------------------------------------------------------------------------
 
 export type ToolError = {
-  error: MoneyError["code"] | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
+  error: MoneyError["code"] | SplitErrorCode | "ambiguous_recipient" | "invalid_input" | "not_found" | "rate_limited" | "unavailable";
   message: string;
 };
 export type ToolResult = { ok: true; data: Record<string, unknown> } | { ok: false; error: ToolError };
@@ -184,7 +208,8 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     amountUsd: usd(i.amount),
     asset: assetOf(i.chain, deps.network),
     from: view.from,
-    to: view.to,
+    // One leg of a split: who this leg pays. The view's "to" names the whole split.
+    to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
     chain: i.chain,
     network: view.network,
     note: i.note,
@@ -197,6 +222,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     explorerUrl: i.explorerUrl,
     releaseTxHash: i.releaseTxHash,
     releaseExplorerUrl: i.releaseExplorerUrl,
+    splitId: i.splitId,
   };
 }
 
@@ -339,6 +365,51 @@ async function moneyTool(
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
 }
 
+async function splitCreated(deps: BotDeps, agent: Agent, s: PreparedSplit): Promise<ToolResult> {
+  const { user } = agent;
+  const ownerTexted = await text(deps, user.phone, replies.fromAgent(agent.key.label, confirmSplitText(s)));
+  const [first] = s.legs;
+  const pays = s.legs.reduce((a, l) => a + l.intent.amount, 0n);
+  return ok({
+    splitId: s.splitId,
+    status: "awaiting_approval",
+    approveUrl: s.approveUrl,
+    approver: "you",
+    approveBy: first?.intent.expiresAt.toISOString() ?? null,
+    amountUsd: usd(s.total),
+    paysUsd: usd(pays),
+    ownShareUsd: s.mine === null ? null : usd(s.mine),
+    asset: "USDC",
+    chain: s.chain,
+    legs: s.legs.map((l) => ({ intentId: l.intent.id, to: describe(l.person), amountUsd: usd(l.intent.amount), onDial: isClaimed(l.person) })),
+    message: ownerTexted
+      ? `Texted the owner one code for the whole split (${formatUsd(pays)}). Nothing moves until they approve; then every share settles in one transaction, or none do. Poll get_payment on any leg.`
+      : "The owner has paused texts from Dial (STOP), so no code went out: they can approve at approveUrl with their passkey, or text START first.",
+  });
+}
+
+async function splitPayment(deps: BotDeps, agent: Agent, input: ToolInput<"split_payment">): Promise<ToolResult> {
+  const { user } = agent;
+  // Checked before anyone is looked up, so a split that can't run never creates accounts.
+  const picked = splitChain(deps, user, input.chain);
+  if (!picked.ok && picked.error.code === "split_chain" && input.chain) {
+    return err("split_chain", `Splits settle in one transaction, which ${chainLabel(input.chain)} can't do. Leave chain out to use one that can (see list_chain_features).`);
+  }
+  if (!picked.ok) return err(picked.error.code, picked.error.message);
+  const resolved = await resolvePeople(deps, user, input.people);
+  if (!resolved.ok) return err(resolved.error.code, resolved.error.message);
+  const cmd = {
+    kind: "split" as const,
+    amountUsd: input.amountUsd,
+    people: input.people,
+    includeMe: input.includeMe ?? false,
+    note: input.note,
+    chain: picked.chain,
+  };
+  const r = await createSplit(deps, user, cmd, resolved.people);
+  return r.ok ? splitCreated(deps, agent, r.split) : err(r.error.code, r.error.message);
+}
+
 async function withdraw(deps: BotDeps, agent: Agent, input: ToolInput<"withdraw">): Promise<ToolResult> {
   const r = await createWithdrawIntent(deps, agent.user, { kind: "withdraw", ...input });
   return r.ok ? created(deps, agent, r.prepared) : err(r.error.code, r.error.message);
@@ -463,6 +534,8 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return getHyperliquidBalance(deps, agent);
     case "get_price":
       return withInput(toolInputs.get_price, raw, (i) => getPrice(i));
+    case "split_payment":
+      return withInput(toolInputs.split_payment, raw, (i) => splitPayment(deps, agent, i));
     case "list_chain_features":
       return listChainFeatures(deps);
   }
@@ -527,6 +600,11 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
     title: "Price",
     description:
       "The current mid price of a coin on Hyperliquid (mainnet market data), e.g. BTC or HYPE. A quote only, not advice. Read-only.",
+  },
+  split_payment: {
+    title: "Split payment",
+    description:
+      "Split an amount between people, to the cent (any leftover cent goes to the first person). With includeMe the owner takes a share and pays everyone else's. Up to 10 people. Runs on a chain with batched transactions (Tempo, see list_chain_features): the owner approves once with one texted code, then every share settles in one transaction with each payment id as its memo, or none do. People not on Dial yet get their share held for them to claim. Returns splitId and an intentId per person; poll get_payment.",
   },
   get_wallet: {
     title: "Wallet",

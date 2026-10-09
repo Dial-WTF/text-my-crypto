@@ -6,7 +6,7 @@ import { env, publicEnv } from "@/lib/env";
 import { type ChainProof, chainProofs, safePaymentNetwork } from "@/lib/ledger";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { errorText } from "@/lib/settlement/types";
-import { movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { groupSplits, movedByChain, type PublicStats, publicStats, recentPayments } from "@/lib/stats";
 import type { FeedEntry } from "@/ui/patterns/PaymentFeed/PaymentFeed";
 
 export type Ledger = { stats: PublicStats | null; feed: FeedEntry[]; proofs: ChainProof[]; note: string };
@@ -39,7 +39,7 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     quietly("chain proofs unavailable", () => chainProofs(), []),
   ]);
   const now = new Date();
-  const feed = rows.map((r) => ({
+  const feed = groupSplits(rows).map((r) => ({
     id: r.id,
     from: r.from,
     to: r.to,
@@ -50,6 +50,7 @@ export async function loadLedger(limit: number): Promise<Ledger> {
     txHash: r.txHash,
     explorerUrl: r.explorerUrl,
     when: timeAgo(r.at, now),
+    ...(r.legs ? { legs: r.legs } : {}),
   }));
   return { stats, feed, proofs, note: proofNote(proofs) };
 }

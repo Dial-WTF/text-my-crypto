@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { customType, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { CHAINS } from "@/lib/chains";
 
 /** Token amounts in base units. SQLite INTEGER is 64-bit; the app works in bigint. */
@@ -117,7 +117,9 @@ export const intents = sqliteTable("intents", {
   error: text("error"),
   createdAt: ts("created_at").notNull().default(now),
   settledAt: ts("settled_at"),
-});
+  /** Legs of one split share this id: one code approves them all, and they settle in one transaction. */
+  splitId: text("split_id"),
+}, (t) => [index("intents_split").on(t.splitId)]);
 
 /** Numbers that texted STOP. Nothing is sent to them until they text START. */
 export const smsOptOuts = sqliteTable("sms_opt_outs", {
@@ -233,9 +235,39 @@ export const watchdogProblems = sqliteTable("watchdog_problems", {
   resolvedAt: ts("resolved_at"),
 });
 
+/**
+ * Payments from any Solana wallet through a pay link's Solana Action (a Blink). Each POST gets a fresh
+ * reference key, put in the transfer as a read-only account so the payment can be found on-chain. The
+ * watchdog cron looks the reference up and records the payment once: `signature` is set exactly once.
+ * Rows still unpaid after `expiresAt` are deleted.
+ */
+export const actionPayments = sqliteTable("action_payments", {
+  /** Also the transaction's memo, so a ledger row matches its transaction. */
+  id: text("id").primaryKey(),
+  reference: text("reference").notNull().unique(),
+  recipientId: text("recipient_id")
+    .notNull()
+    .references(() => users.id),
+  chain: text("chain", { enum: CHAINS }).notNull(),
+  /** The recipient's Dial wallet the transfer pays. */
+  recipientAddress: text("recipient_address").notNull(),
+  /** The wallet that asked for the transaction; once paid, the wallet the money actually came from. */
+  payerAddress: text("payer_address").notNull(),
+  amount: amount("amount").notNull(),
+  note: text("note"),
+  createdAt: ts("created_at").notNull().default(now),
+  expiresAt: ts("expires_at").notNull(),
+  signature: text("signature").unique(),
+  explorerUrl: text("explorer_url"),
+  /** What the recipient's token account actually gained, which is what the ledger shows. */
+  received: amount("received"),
+  paidAt: ts("paid_at"),
+});
+
 export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type Passkey = typeof passkeys.$inferSelect;
 export type AgentKey = typeof agentKeys.$inferSelect;
+export type ActionPayment = typeof actionPayments.$inferSelect;

@@ -14,9 +14,21 @@ export type MoneyCommand = {
 /** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
 export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
 
-/** USDC from HyperEVM into a HyperCore spot balance: someone's, or with no counterparty, the sender's own. */
 /** `venue` is the word they used ("hyperliquid", "hypercore", "hl"); the bot matches it to a chain's venue module. */
 export type VenueCommand = { kind: "venue"; venue: string; amountUsd: string; counterparty?: string };
+
+/**
+ * "split $30 between @a @b @c": $30 divided among the people listed. "split $30 with @a @b" (or listing "me")
+ * divides it among them and the sender, who pays everyone else's share.
+ */
+export type SplitCommand = {
+  kind: "split";
+  amountUsd: string;
+  people: string[];
+  includeMe: boolean;
+  note?: string;
+  chain?: Chain;
+};
 
 export type Command =
   | MoneyCommand
@@ -24,6 +36,7 @@ export type Command =
   | VenueCommand
   | { kind: "venue_balance"; venue: string }
   | { kind: "price"; coin: string }
+  | SplitCommand
   | { kind: "balance" }
   | { kind: "receive" }
   | { kind: "reclaim" }
@@ -95,6 +108,56 @@ const HL_BALANCE = new RegExp(
   "i",
 );
 const PRICE = /^(?:price|px|quote)\s+(?:of\s+|for\s+)?\$?([a-z][a-z0-9]{0,9})\??$|^\$?([a-z][a-z0-9]{0,9})\s+price\??$/i;
+const SPLIT = new RegExp(String.raw`^split\s+${AMT}\s+(between|among|amongst|with)\s+(.+?)${FOR}${ON}${END}`, "i");
+// One person in a list: an @handle, a phone number (digit groups may be spaced), or a plain word.
+const PERSON_TOKEN = /@[a-z0-9_]+|\+?\(?\d[\d().-]*(?:\s+\(?\d[\d().-]*)*|[a-z][a-z0-9_']*/gi;
+const ME = /^(?:me|myself)$/i;
+const NAME = /^[a-z][a-z0-9_']*(?:\s[a-z][a-z0-9_']*){0,2}$/i;
+
+/**
+ * The people in a split list. Commas, "and" and "&" separate people, so a name can have spaces
+ * ("alex, my brother jake"); without them every handle, number and word is its own person
+ * ("@a @b carol"). "me" puts the sender in. Repeats are dropped. Null when something isn't a person.
+ */
+export function parsePeople(list: string): { people: string[]; includeMe: boolean } | null {
+  const chunks = list
+    .split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const separated = chunks.length > 1;
+  const people: string[] = [];
+  let includeMe = false;
+  for (const chunk of chunks) {
+    const tokens = chunk.match(PERSON_TOKEN) ?? [];
+    if (tokens.join(" ").replace(/\s+/g, "") !== chunk.replace(/\s+/g, "")) return null;
+    const singles = tokens.every((t) => t.startsWith("@") || /\d/.test(t) || ME.test(t));
+    const names = !separated || singles || tokens.length === 1 ? tokens : NAME.test(chunk) ? [chunk] : null;
+    if (!names) return null;
+    for (const name of names) {
+      if (ME.test(name)) includeMe = true;
+      else people.push(normalizeCounterparty(name));
+    }
+  }
+  return { people: [...new Set(people)], includeMe };
+}
+
+function parseSplit(m: RegExpExecArray): Command {
+  const [, amount, word, list, note, chainWord] = m;
+  if (!amount || !word || !list) return { kind: "chat" };
+  if (!isUsdAmount(amount)) return { kind: "chat" };
+  const parsed = parsePeople(list);
+  if (!parsed || parsed.people.length === 0) return { kind: "chat" };
+  const cmd: SplitCommand = {
+    kind: "split",
+    amountUsd: amount,
+    people: parsed.people,
+    includeMe: parsed.includeMe || word.toLowerCase() === "with",
+  };
+  if (note?.trim()) cmd.note = note.trim().slice(0, 120);
+  if (chainWord === undefined) return cmd;
+  const chain = parseChain(chainWord);
+  return chain ? { ...cmd, chain } : { kind: "chat" };
+}
 
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
 const RECEIVE = /^(?:receive|my address|address|deposit|pay link|my pay link)\??$/i;
@@ -183,6 +246,8 @@ export function parseCommand(text: string): Command {
     const chain = parseChain(w[3]);
     return chain ? { ...cmd, chain } : { kind: "chat" };
   }
+  const split = SPLIT.exec(t);
+  if (split) return parseSplit(split);
   for (const pat of PATTERNS) {
     const m = pat.re.exec(t);
     if (!m) continue;

@@ -47,6 +47,7 @@ import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { prepareVenue, priceReply, venueBalanceReply } from "./hyperliquid";
+import { prepareSplit } from "./split";
 import { latestRecent, needsMention, statusReply } from "./status";
 import { text } from "./text";
 import type { BotDeps } from "./types";
@@ -255,6 +256,8 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await venueBalanceReply(deps, user, cmd.venue));
     case "price":
       return reply(await priceReply(cmd.coin));
+    case "split":
+      return reply(await prepareSplit(deps, user, cmd));
   }
 }
 
@@ -301,7 +304,13 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
   }
   const notes: string[] = [];
   const retry: Intent[] = [];
+  // Every leg of a split shares its code: approve the split once.
+  const splits = new Set<string>();
   for (const intent of matches) {
+    if (intent.splitId) {
+      if (splits.has(intent.splitId)) continue;
+      splits.add(intent.splitId);
+    }
     if (intent.status === "escrowed") {
       const outcome = await releaseEscrow(deps, intent.id);
       if (outcome.ok) continue;

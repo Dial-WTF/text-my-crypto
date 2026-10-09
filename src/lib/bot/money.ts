@@ -134,7 +134,7 @@ export async function codeFor(
 }
 
 /** dripOnce, but a failure is logged instead of ending the turn. */
-async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
+export async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
   try {
     return await dripOnce(deps, wallet, adapter);
   } catch (e) {
