@@ -27,6 +27,13 @@ describe("pay profile", () => {
     expect(p.chains).toHaveLength(1);
     expect(p.chains[0]).toMatchObject({ chain: "solana", network: "Solana devnet", address: "solanaAddr1" });
     expect(p.chains[0]?.uri).toMatch(/^solana:solanaAddr1\?amount=5&spl-token=/);
+    // The same payment as a Solana Action, and a dial.to Blink for it on devnet.
+    const action = "https://tmc.test/api/actions/pay/alex?amount=5&note=pizza";
+    expect(p.chains[0]?.action).toEqual({
+      url: action,
+      uri: `solana-action:${action}`,
+      blink: `https://dial.to/?action=${encodeURIComponent(`solana-action:${action}`)}&cluster=devnet`,
+    });
     expect(JSON.stringify(p)).not.toMatch(/555|balance/i);
   });
 

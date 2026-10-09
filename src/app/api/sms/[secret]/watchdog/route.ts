@@ -1,3 +1,5 @@
+import { solanaActionChain } from "@/lib/actions/chain";
+import { recordActionPayments } from "@/lib/actions/record";
 import { reconcileEscrows } from "@/lib/bot/settle";
 import { getDb } from "@/lib/db/client";
 import { botDeps } from "@/lib/deps";
@@ -14,7 +16,7 @@ export const dynamic = "force-dynamic";
 /**
  * One watchdog pass, run every minute by the cron trigger in worker.ts. Behind the webhook secret.
  * Texts only ALERT_PHONE, at most once per problem per 30 minutes. Also settles escrow fundings that
- * didn't confirm in time, from what the chain says.
+ * didn't confirm in time, from what the chain says, and records payments made through pay-link Blinks.
  */
 export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/watchdog">): Promise<Response> {
   const { secret } = await ctx.params;
@@ -39,5 +41,12 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sms/[secret]/w
     console.error(JSON.stringify({ evt: "reconcile_escrows", error: errorText(err) }));
     return null;
   });
-  return Response.json({ ...report, escrows });
+  const solana = solanaActionChain();
+  const actionPayments = solana
+    ? await recordActionPayments(botDeps(), solana).catch((err: unknown) => {
+        console.error(JSON.stringify({ evt: "record_action_payments", error: errorText(err) }));
+        return null;
+      })
+    : null;
+  return Response.json({ ...report, escrows, actionPayments });
 }
