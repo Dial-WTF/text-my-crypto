@@ -1,9 +1,10 @@
 #!/bin/sh
 # Starts a local Arbitrum Nitro dev node on 8547 and sets it up the way cargo-stylus's own devnet does
 # (chain owner, no L1 fee, ArbOS 60, CREATE2 factory, StylusDeployer), so dial_escrow can be deployed and
-# run on it while Stylus activations are paused on Arbitrum Sepolia. Local chain only: the key below is
-# Nitro's public dev key. Needs Docker, Foundry's cast, and cargo-stylus 0.10.10 installed (its crate
-# source holds the factory and deployer bytecode).
+# run on it while Stylus activations are paused on Arbitrum Sepolia. Then it deploys EscrowTestUSD
+# (contracts/src) with the dev key and mints it $10, since dial_escrow is deployed with its token fixed.
+# Local chain only: the key below is Nitro's public dev key. Needs Docker, Foundry's cast, and cargo-stylus
+# 0.10.10 installed (its crate source holds the factory and deployer bytecode). Run from the repo root.
 #   sh scripts/nitro-devnode.sh        then: docker stop dial-nitro-dev
 set -e
 export FOUNDRY_DISABLE_NIGHTLY_WARNING=1
@@ -25,4 +26,8 @@ cast publish --rpc-url $RPC "0x$(hex CREATE2_FACTORY_RAW_TX)" >/dev/null
 sleep 1
 cast send -q --rpc-url $RPC --private-key $KEY 0x4e59b44847b379578588920ca78fbf26c0b4956c \
   "0x0000000000000000000000000000000000000000000000000000000000000000$(hex STYLUS_DEPLOYER)"
+BYTECODE=$(python3 -c 'import json; print(json.load(open("contracts/artifacts/EscrowTestUSD.json"))["bytecode"])')
+TOKEN=$(cast send --json --rpc-url $RPC --private-key $KEY --create "$BYTECODE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["contractAddress"])')
+cast send -q --rpc-url $RPC --private-key $KEY "$TOKEN" "mint(address,uint256)" "$(cast wallet address $KEY)" 10000000
 echo "Nitro dev node ready on $RPC (chain $(cast chain-id --rpc-url $RPC)). Funded dev key: $KEY"
+echo "EscrowTestUSD: $TOKEN (deploy dial_escrow with --token $TOKEN)"

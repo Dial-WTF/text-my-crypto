@@ -1,8 +1,11 @@
 // Deploys and activates dial_escrow (contracts/arbitrum-escrow) on Arbitrum Sepolia with this deployment's
-// attestor fixed in it, and prints the contract address. Production and staging each get their own contract,
-// since a contract only takes claims from the attestor it was deployed with.
+// attestor and the dollar fixed in it, and prints the contract address. Production and staging each get their
+// own contract, since a contract only takes claims from the attestor it was deployed with.
 //
-//   ARBITRUM_DEPLOYER_KEY=0x… pnpm escrow:deploy:arbitrum [--env staging] [--dry-run] [--rpc <url>]
+//   ARBITRUM_DEPLOYER_KEY=0x… pnpm escrow:deploy:arbitrum [--env staging] [--dry-run] [--rpc <url>] [--token <address>]
+//
+// The token is the registry's Arbitrum Sepolia USDC, the one the app sends. --token replaces it, for a chain
+// where that USDC doesn't exist (a local dev node with EscrowTestUSD); the contract refuses every other token.
 //
 // The deployer key comes from the shell, never a file in the repo; it only pays for the deploy. The attestor
 // is EVM_ESCROW_ATTESTOR_KEY in .env.production.local (or .env.<env>.local, or ENV_FILE); only its address is
@@ -12,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPublicClient, formatEther, http, parseAbi } from "viem";
+import { createPublicClient, formatEther, http, isAddress, isAddressEqual, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { REGISTRY, resolveRpc } from "../src/lib/settlement/registry.ts";
 import { parseDotenv } from "./dotenv.mjs";
@@ -27,7 +30,7 @@ const stop = (message, code = 1) => {
 };
 
 const ENV = arg("--env") ?? "production";
-if (!/^[a-z]+$/.test(ENV)) stop("usage: pnpm escrow:deploy:arbitrum [--env <name>] [--dry-run] [--rpc <url>]");
+if (!/^[a-z]+$/.test(ENV)) stop("usage: pnpm escrow:deploy:arbitrum [--env <name>] [--dry-run] [--rpc <url>] [--token <address>]");
 const DRY = process.argv.includes("--dry-run");
 const FILE = process.env.ENV_FILE ?? (ENV === "production" ? ".env.production.local" : `.env.${ENV}.local`);
 const CRATE = "contracts/arbitrum-escrow";
@@ -50,7 +53,10 @@ const rpcUrl = arg("--rpc") ?? resolveRpc(entry, { alchemyKey: file.ALCHEMY_API_
 const client = createPublicClient({ transport: http(rpcUrl) });
 const chainId = await client.getChainId();
 if (!arg("--rpc") && chainId !== entry.viem.id) stop(`The RPC is on chain ${chainId}, not ${entry.network} (${entry.viem.id}).`);
-console.log(`${ENV}: deploying to chain ${chainId}${arg("--rpc") ? "" : ` (${entry.network})`} with attestor ${attestor}`);
+const token = arg("--token") ?? entry.token;
+if (!isAddress(token)) stop(`--token ${token} is not an address.`);
+if (!(await client.getCode({ address: token }))) stop(`There is no contract at token ${token} on chain ${chainId}.`);
+console.log(`${ENV}: deploying to chain ${chainId}${arg("--rpc") ? "" : ` (${entry.network})`} with attestor ${attestor} and token ${token}`);
 
 // The Security Council paused activations on 2 Oct 2026 by setting the activation gas to 2^64 - 1.
 const arbWasm = parseAbi(["function activationGas() view returns (uint64)"]);
@@ -89,7 +95,7 @@ let deploy;
 try {
   // --constructor-args takes every value after it, so it goes last.
   const flags = ["deploy", "--endpoint", rpcUrl, "--private-key-path", keyFile, "--no-verify", ...(DRY ? ["--estimate-gas"] : [])];
-  deploy = run([...flags, "--constructor-args", attestor]);
+  deploy = run([...flags, "--constructor-args", attestor, token]);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
@@ -103,11 +109,13 @@ if (DRY) {
 // cargo-stylus colours its output; strip the escapes before looking for the address.
 const address = out.replace(/\x1b\[[0-9;]*m/g, "").match(/deployed code at address:?\s*(0x[0-9a-fA-F]{40})/i)?.[1];
 if (!address) stop(`Deployed, but couldn't find the address in cargo-stylus's output:\n${out}`);
-const escrowAbi = parseAbi(["function attestor() view returns (address)"]);
+const escrowAbi = parseAbi(["function attestor() view returns (address)", "function token() view returns (address)"]);
 const fixed = await client.readContract({ address, abi: escrowAbi, functionName: "attestor" });
 if (fixed !== attestor) stop(`The contract at ${address} names attestor ${fixed}, not ${attestor}.`);
+const fixedToken = await client.readContract({ address, abi: escrowAbi, functionName: "token" });
+if (!isAddressEqual(fixedToken, token)) stop(`The contract at ${address} holds token ${fixedToken}, not ${token}.`);
 
-console.log(`\ndial_escrow deployed and activated at ${address} (attestor ${attestor}).`);
+console.log(`\ndial_escrow deployed and activated at ${address} (attestor ${attestor}, token ${token}).`);
 console.log(
   ENV === "production"
     ? `Next: set escrowContract: "${address}" on arbitrum.testnet in src/lib/settlement/registry.ts.`

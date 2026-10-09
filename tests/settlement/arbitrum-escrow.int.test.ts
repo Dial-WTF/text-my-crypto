@@ -1,19 +1,18 @@
-import { readFileSync } from "node:fs";
-import { type Abi, type Address, bytesToHex, createPublicClient, createWalletClient, defineChain, type Hex, http, parseAbi } from "viem";
+import { type Address, bytesToHex, createPublicClient, createWalletClient, defineChain, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrumSepolia } from "viem/chains";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createEvmEscrow, viemEscrowRpc } from "@/lib/settlement/evm-escrow";
+import { createEvmEscrow, ESCROW_ABI, viemEscrowRpc } from "@/lib/settlement/evm-escrow";
 import type { EscrowProgram } from "@/lib/settlement/types";
 
 // One fund/claim and one fund/refund through the deployed dial_escrow contract, with fresh test wallets and
 // the app's own escrow client. Opt-in: ESCROW_INT=1 with
 //   ESCROW_RPC            the chain (default: a local `nitro-node --dev` on 8547)
 //   ESCROW_CONTRACT       the contract, deployed with pnpm escrow:deploy:arbitrum
-//   ESCROW_TREASURY_KEY   pays gas and holds the test dollars
+//   ESCROW_TREASURY_KEY   pays gas and holds the contract's dollar (Circle USDC on Arbitrum Sepolia; on a dev
+//                         node, the EscrowTestUSD that scripts/nitro-devnode.sh deploys and mints)
 //   ESCROW_ATTESTOR_KEY   the attestor the contract was deployed with
-//   ESCROW_TOKEN          the dollar (Circle USDC on Arbitrum Sepolia); unset, it deploys EscrowTestUSD
-// It prints the transaction hashes. Test wallets only, never real numbers or real money.
+// The dollar is the one the contract was deployed with, read from its token(). It prints the transaction hashes. Test wallets only, never real numbers or real money.
 const run = process.env.ESCROW_INT === "1";
 const env = (name: string): string => {
   const value = process.env[name];
@@ -41,16 +40,8 @@ describe.runIf(run)("dial_escrow on a real chain", () => {
     const treasuryKey = env("ESCROW_TREASURY_KEY") as Hex;
     const treasury = createWalletClient({ chain: viem, transport, account: privateKeyToAccount(treasuryKey) });
 
-    let token = process.env.ESCROW_TOKEN as Address | undefined;
-    if (!token) {
-      const artifact = JSON.parse(readFileSync("contracts/artifacts/EscrowTestUSD.json", "utf8")) as { abi: Abi; bytecode: Hex };
-      const deployed = await pub.waitForTransactionReceipt({ hash: await treasury.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode }) });
-      token = deployed.contractAddress as Address;
-      const mint = await treasury.writeContract({ address: token, abi: artifact.abi, functionName: "mint", args: [treasury.account.address, 10_000_000n] });
-      await pub.waitForTransactionReceipt({ hash: mint });
-    }
-    const tokenAddress = token;
     const contract = env("ESCROW_CONTRACT") as Address;
+    const tokenAddress = await pub.readContract({ address: contract, abi: ESCROW_ABI, functionName: "token" });
     const explorer = chainId === arbitrumSepolia.id ? (h: string) => `https://sepolia.arbiscan.io/tx/${h}` : (h: string) => h;
     escrow = createEvmEscrow({
       contract,

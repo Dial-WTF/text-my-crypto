@@ -2,10 +2,14 @@
 //! (solana/programs/dial_escrow):
 //!
 //! - `fund`: the sender's ERC-20 moves into this contract under the payment's id, with an expiry.
-//!   One fund per id, ever.
+//!   One fund per id, ever. The token is fixed at deploy; any other is refused.
 //! - `claim`: before expiry, the attestor fixed at deploy pays it to a recipient. The operator calls it
 //!   once the recipient proves they hold the phone (the code texted to it).
 //! - `refund`: from expiry on, the sender takes it back. Dial doesn't have to be up, and it can't stop it.
+//!
+//! Only the token proves that the sender agreed to a funding, which is why it is fixed: with a token the caller
+//! chose, a contract that skips the signature check could open an escrow in anyone's name, and the
+//! attestor's claim would pay out that token instead of the sender's dollars.
 //!
 //! There is no owner, no upgrade path and no admin withdraw. The attestor can only move an open escrow
 //! before its expiry, and only by paying it out; after expiry the money can only go back to the sender.
@@ -32,6 +36,7 @@ sol! {
 
     error ZeroAmount();
     error ZeroAddress();
+    error WrongToken(address token);
     error ExpiryInPast();
     error AlreadyFunded(bytes32 id);
     error NotOpen(bytes32 id);
@@ -63,6 +68,7 @@ sol! {
 pub enum EscrowError {
     ZeroAmount(ZeroAmount),
     ZeroAddress(ZeroAddress),
+    WrongToken(WrongToken),
     ExpiryInPast(ExpiryInPast),
     AlreadyFunded(AlreadyFunded),
     NotOpen(NotOpen),
@@ -95,6 +101,8 @@ sol_storage! {
     pub struct DialEscrow {
         /// The only address that can claim. Set once, at deploy.
         address attestor;
+        /// The only ERC-20 escrows hold. Set once, at deploy.
+        address token;
         bool locked;
         mapping(bytes32 => Escrow) escrows;
     }
@@ -104,7 +112,6 @@ sol_storage! {
         address sender;
         uint64 expiry;
         uint8 status;
-        address token;
         /// Arbitrum (L2) block numbers, so a client can find the transactions from the chain alone.
         uint64 funded_block;
         uint64 closed_block;
@@ -115,11 +122,16 @@ sol_storage! {
 #[public]
 impl DialEscrow {
     #[constructor]
-    pub fn constructor(&mut self, attestor: Address) -> Result<(), EscrowError> {
-        if attestor.is_zero() {
+    pub fn constructor(&mut self, attestor: Address, token: Address) -> Result<(), EscrowError> {
+        if attestor.is_zero() || token.is_zero() {
             return Err(EscrowError::ZeroAddress(ZeroAddress {}));
         }
+        // A wrong address here can't be changed later, so at least it must be a contract.
+        if self.vm().code_size(token) == 0 {
+            return Err(EscrowError::NoCode(NoCode { token }));
+        }
         self.attestor.set(attestor);
+        self.token.set(token);
         Ok(())
     }
 
@@ -127,16 +139,25 @@ impl DialEscrow {
         self.attestor.get()
     }
 
+    pub fn token(&self) -> Address {
+        self.token.get()
+    }
+
     /// (sender, token, amount, expiry, status, funded_block, closed_block). Status: 0 none, 1 open,
-    /// 2 claimed, 3 refunded.
+    /// 2 claimed, 3 refunded. `token` is the contract's token, or zero for an id never funded.
     pub fn escrow(&self, id: B256) -> (Address, Address, U256, u64, u8, u64, u64) {
         let e = self.escrows.getter(id);
+        let status: u8 = e.status.get().to();
         (
             e.sender.get(),
-            e.token.get(),
+            if status == NONE {
+                Address::ZERO
+            } else {
+                self.token.get()
+            },
             e.amount.get(),
             e.expiry.get().to(),
-            e.status.get().to(),
+            status,
             e.funded_block.get().to(),
             e.closed_block.get().to(),
         )
@@ -165,7 +186,8 @@ impl DialEscrow {
         keccak([&b"\x19\x01"[..], domain.as_slice(), message.as_slice()].concat())
     }
 
-    /// Pulls `amount` of `token` from the caller (who must have approved this contract) into escrow `id`.
+    /// Pulls `amount` of the token from the caller (who must have approved this contract) into escrow `id`.
+    /// `token` must be the contract's token; it is there so a caller states what they think they're sending.
     pub fn fund(
         &mut self,
         id: B256,
@@ -193,7 +215,7 @@ impl DialEscrow {
 
     /// Funds escrow `id` from `from` with their EIP-3009 authorization, in one transaction anyone can
     /// send. The authorization must name this contract as `to`, `validAfter` 0, and
-    /// `funding_nonce(id, expiry)` as its nonce.
+    /// `funding_nonce(id, expiry)` as its nonce. `token` must be the contract's token.
     #[allow(clippy::too_many_arguments)]
     pub fn fund_with_authorization(
         &mut self,
@@ -291,8 +313,11 @@ impl DialEscrow {
         if amount.is_zero() {
             return Err(EscrowError::ZeroAmount(ZeroAmount {}));
         }
-        if sender.is_zero() || token.is_zero() {
+        if sender.is_zero() {
             return Err(EscrowError::ZeroAddress(ZeroAddress {}));
+        }
+        if token != self.token.get() {
+            return Err(EscrowError::WrongToken(WrongToken { token }));
         }
         if expiry <= self.vm().block_timestamp() {
             return Err(EscrowError::ExpiryInPast(ExpiryInPast {}));
@@ -304,7 +329,6 @@ impl DialEscrow {
         {
             let mut e = self.escrows.setter(id);
             e.sender.set(sender);
-            e.token.set(token);
             e.amount.set(amount);
             e.expiry.set(U64::from(expiry));
             e.status.set(U8::from(OPEN));
@@ -320,12 +344,8 @@ impl DialEscrow {
         Ok(())
     }
 
-    /// Marks an open escrow closed before any token moves. Returns (sender, token, amount, expiry).
-    fn close(
-        &mut self,
-        id: B256,
-        outcome: u8,
-    ) -> Result<(Address, Address, U256, u64), EscrowError> {
+    /// Marks an open escrow closed before any token moves. Returns (sender, amount, expiry).
+    fn close(&mut self, id: B256, outcome: u8) -> Result<(Address, U256, u64), EscrowError> {
         if self.status(id) != OPEN {
             return Err(EscrowError::NotOpen(NotOpen { id }));
         }
@@ -333,12 +353,7 @@ impl DialEscrow {
         let mut e = self.escrows.setter(id);
         e.status.set(U8::from(outcome));
         e.closed_block.set(U64::from(block));
-        Ok((
-            e.sender.get(),
-            e.token.get(),
-            e.amount.get(),
-            e.expiry.get().to(),
-        ))
+        Ok((e.sender.get(), e.amount.get(), e.expiry.get().to()))
     }
 
     fn claim_inner(&mut self, id: B256, to: Address) -> Result<(), EscrowError> {
@@ -355,7 +370,8 @@ impl DialEscrow {
         if self.vm().block_timestamp() >= expiry {
             return Err(EscrowError::Expired(Expired {}));
         }
-        let (_, token, amount, _) = self.close(id, CLAIMED)?;
+        let (_, amount, _) = self.close(id, CLAIMED)?;
+        let token = self.token.get();
         self.call_token(
             token,
             &IERC20::transferCall { to, value: amount }.abi_encode(),
@@ -379,7 +395,8 @@ impl DialEscrow {
         if self.vm().block_timestamp() < expiry {
             return Err(EscrowError::NotExpired(NotExpired {}));
         }
-        let (_, token, amount, _) = self.close(id, REFUNDED)?;
+        let (_, amount, _) = self.close(id, REFUNDED)?;
+        let token = self.token.get();
         self.call_token(
             token,
             &IERC20::transferCall {
