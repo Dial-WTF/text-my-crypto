@@ -19,7 +19,9 @@ async function openIntent(intentId: string) {
 async function settle(intentId: string): Promise<ActionResult> {
   const r = await approveIntent(botDeps(), intentId);
   if (r.ok) return { ok: true, message: r.status === "escrowed" ? "Sent. It's waiting for them to claim." : "Sent." };
-  return { ok: false, message: r.reason === "not_claimable" ? CLOSED.message : "That payment didn't go through. No funds moved." };
+  if (r.reason === "not_claimable") return CLOSED;
+  if (r.reason === "unconfirmed") return { ok: false, message: "Sent, but the network hasn't confirmed it yet. We'll text you when it does." };
+  return { ok: false, message: "That payment didn't go through. No funds moved." };
 }
 
 export async function beginPasskeyApproval(intentId: string): Promise<PublicKeyCredentialRequestOptionsJSON | null> {

@@ -127,6 +127,10 @@ export const replies = {
     `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link}`,
   claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
+  claimFailed: (amount: string, from: string, code: string) =>
+    `Couldn't confirm your claim of the ${amount} from ${from} yet. Reply ${code} to finish it: if it already went through, you'll just get the receipt.`,
+  claimExpired: (amount: string, from: string) =>
+    `The ${amount} from ${from} wasn't claimed in time, so it can only go back to them now. Ask them to send it again.`,
   requestPaid: (who: string, amount: string, note: string | null, explorerUrl: string) =>
     `${who} paid you ${amount}${forNote(note)}. Receipt: ${explorerUrl}`,
   requestDeclined: (who: string, amount: string) => `${who} declined your request for ${amount}.`,
@@ -153,4 +157,6 @@ export const replies = {
   nothingToWithdraw: () => `Your balance is $0. Nothing to withdraw.`,
   chainDown: (chain: string) => `The ${chain} network isn't answering right now. Nothing moved. Try again in a minute.`,
   failed: () => `That payment didn't go through. No funds moved.`,
+  sendUnconfirmed: (amount: string, who: string) =>
+    `Your ${amount} to ${who} is taking longer than usual to confirm. I'll text you as soon as it does, so don't send it again.`,
 } as const;

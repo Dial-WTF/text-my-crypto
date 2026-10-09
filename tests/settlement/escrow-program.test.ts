@@ -30,6 +30,8 @@ import {
   decodeEscrowAccount,
   ESCROW_DISCRIMINATORS,
   ESCROW_ERRORS,
+  escrowErrorCode,
+  escrowErrorName,
   escrowEventsFromLogs,
   findEscrowAddress,
   findVaultAddress,
@@ -211,6 +213,18 @@ describe("dial_escrow program", () => {
     expect(disc(idl.events, "EscrowClaimed")).toEqual(ESCROW_DISCRIMINATORS.escrowClaimed);
     expect(disc(idl.events, "EscrowRefunded")).toEqual(ESCROW_DISCRIMINATORS.escrowRefunded);
     expect(Object.fromEntries(idl.errors.map((e) => [e.name, e.code]))).toEqual(ESCROW_ERRORS);
+  });
+
+  it("finds the program's error code inside a failed send", () => {
+    // The shape kit throws for a failed preflight: the instruction error sits in the cause.
+    const failed = Object.assign(new Error("Transaction simulation failed"), {
+      context: { __code: -32002 },
+      cause: Object.assign(new Error("Custom program error: #6002 (instruction #2)"), { context: { code: 6002, index: 1 } }),
+    });
+    expect(escrowErrorCode(failed)).toBe(ESCROW_ERRORS.Expired);
+    expect(escrowErrorName(6004)).toBe("WrongAttestor");
+    expect(escrowErrorCode(new Error("fetch failed"))).toBeNull();
+    expect(escrowErrorCode({ cause: { context: { code: 1 } } })).toBeNull();
   });
 
   describe("create_escrow", () => {

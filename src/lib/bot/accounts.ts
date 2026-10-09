@@ -1,6 +1,6 @@
 import { errorText } from "@/lib/settlement/types";
 import { type Chain, CHAINS } from "@/lib/chains";
-import type { User, Wallet } from "@/lib/db/schema";
+import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   claimUser,
   createUser,
@@ -119,21 +119,43 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
 }
 
+/** How much these escrows add up to and who sent them, for a claim text. */
+async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
+  const total = escrows.reduce((sum, i) => sum + i.amount, 0n);
+  const senders = new Set<string>();
+  for (const i of escrows) {
+    const s = await getUserById(deps.db, i.senderId);
+    if (s) senders.add(displayName(s));
+  }
+  return { amount: formatUsd(total), from: [...senders].join(", ") || "someone" };
+}
+
 /** Texts the person one code that claims every escrow waiting for them. */
 export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
-  const waiting = await escrowedTo(deps.db, user.id);
+  const waiting = await escrowedTo(deps.db, user.id, deps.now());
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
     deps.db,
     waiting.map((i) => i.id),
   );
-  const total = waiting.reduce((sum, i) => sum + i.amount, 0n);
-  const senders = new Set<string>();
-  for (const i of waiting) {
-    const s = await getUserById(deps.db, i.senderId);
-    if (s) senders.add(displayName(s));
-  }
-  await notify(deps, user.phone, replies.claimOffer(formatUsd(total), [...senders].join(", "), code));
+  const { amount, from } = await claimSummary(deps, waiting);
+  await notify(deps, user.phone, replies.claimOffer(amount, from, code));
+}
+
+/** A claim the chain refused or didn't answer: nothing moved, so a fresh code lets them try again. */
+export async function retryEscrowClaims(deps: BotDeps, failed: Intent[]): Promise<string> {
+  const code = await issueSharedCode(
+    deps.db,
+    failed.map((i) => i.id),
+  );
+  const { amount, from } = await claimSummary(deps, failed);
+  return replies.claimFailed(amount, from, code);
+}
+
+/** A claim that came too late: the escrow expired and can only go back to its sender. */
+export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<string> {
+  const { amount, from } = await claimSummary(deps, [escrow]);
+  return replies.claimExpired(amount, from);
 }
 
 /** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */

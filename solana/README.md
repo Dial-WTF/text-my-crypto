@@ -9,14 +9,17 @@ money sits in a vault the program owns, and only two things can happen to it:
 - **refund**: after expiry, anyone can send the transaction, and the money can only go back to the sender.
   Dial doesn't have to be up, and it can't stop the refund.
 
+Those guarantees hold for the program as deployed. On devnet the upgrade authority is one key Dial holds
+(below), so Dial could still replace the program; on mainnet it goes to a multisig or the program is frozen.
+
 | | |
 | --- | --- |
 | Program id (devnet) | [`4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3`](https://explorer.solana.com/address/4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3?cluster=devnet) |
 | Upgrade authority | `GFFmgkLxChrX3MdFQqbCZPHNcL1J4sda7c383fG5gs88` |
-| Attestor (signs claims) | `31v4m3n1VizQqjMQNBhiprgHDbBupzaaNGdWDrHMLxPf` |
+| Attestor (signs claims) | `31v4m3n1VizQqjMQNBhiprgHDbBupzaaNGdWDrHMLxPf` (production); staging uses its own, `Em8fB39k9LtwtdHQAHcvd78jDszQqEd6KHwrfxQmEAhx` |
 | On-chain IDL | `49DXJaP8ViXBe4McaSfjQSSWsTzvPPpFGdoacjDteGU4` (`anchor idl fetch 4YiZvo… --provider.cluster devnet`) |
 | Token | Devnet USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (classic SPL Token only) |
-| Deployed binary sha256 | `45f0af716ab75abf4dad7bbb553966039654a63dac08dd8a0ab99d9a15df0981` (= `artifacts/dial_escrow.so`) |
+| Deployed binary sha256 | `45f0af716ab75abf4dad7bbb553966039654a63dac08dd8a0ab99d9a15df0981` (= `artifacts/dial_escrow.so`; a clean `pnpm program:build` with the toolchain below reproduces it byte for byte. Not yet a docker `solana-verify` build) |
 
 The program is upgradeable on devnet while the hackathon runs. Before mainnet, either hand the upgrade
 authority to a multisig or make it immutable (`solana program set-upgrade-authority --final`).
@@ -51,9 +54,12 @@ All three keypairs are outside git, in `~/.config/solana/dial/` on the owner's m
 
 - `deploy-authority.json`: the upgrade authority. Back it up; losing it freezes the program as-is.
 - `dial_escrow-program.json`: the program id keypair. Only needed for the first deploy.
-- `attestor.json`: the claim signer. Its first 32 bytes, base64, are `SOLANA_ESCROW_ATTESTOR_SEED` in
-  `.env.production.local` and `.env.staging.local` (pushed with `pnpm secrets:push`). To rotate it, set a
-  new seed: escrows already open keep the attestor they recorded, so drain those first.
+- `attestor.json`: production's claim signer. Its first 32 bytes, base64, are `SOLANA_ESCROW_ATTESTOR_SEED`
+  in `.env.production.local` (pushed with `pnpm secrets:push`).
+- `attestor-staging.json`: staging's claim signer, the same way in `.env.staging.local`
+  (`pnpm secrets:push --env staging`). Staging never holds production's key.
+- To rotate an attestor, set a new seed: escrows already open keep the attestor they recorded, so drain
+  those first (or let them expire and refund).
 
 ## Build, test, deploy
 
@@ -83,7 +89,9 @@ solana program deploy -u devnet --keypair ~/.config/solana/dial/deploy-authority
 
 ## In the app
 
-`ESCROW_PROGRAM=on` (in `wrangler.jsonc`) plus `SOLANA_ESCROW_ATTESTOR_SEED` turns it on. A send to
+`ESCROW_PROGRAM=on` (in `wrangler.jsonc`) plus `SOLANA_ESCROW_ATTESTOR_SEED` turns it on. The
+deployment also needs the every-minute cron (production and staging both have it): it runs
+`reconcileEscrows`, which settles fundings that didn't confirm while we waited, from the escrow account. A send to
 someone not on Dial then records the program on the intent (`intents.escrow_program`) and the vault as its
 recipient address; approval runs `create_escrow`, the texted claim code runs `claim`, and `reclaim` runs
 `refund`. With the flag off, escrow falls back to a server-held wallet, and intents that already went

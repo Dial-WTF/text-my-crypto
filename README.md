@@ -36,7 +36,7 @@ SMS ──► Payphone line ──► /api/sms/<secret> (Cloudflare Worker)
 
 - **Any phone.** Signup is replying with a name. Every money movement is confirmed with a 6-digit code texted to the payer (bound to that one payment, 10 minutes, 5 tries). A forged inbound message can't confirm anything because the code only goes to the real phone.
 - **Smartphone upgrade.** Text `upgrade` to add a passkey. Payments over $20 then need it; the WebAuthn challenge is the payment's hash.
-- **Paying someone new.** Their phone number is enough. Funds wait in escrow; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days. On Solana the escrow is an on-chain program ([`solana/`](solana/README.md)): it pays the recipient only on the operator's attestation, and after expiry anyone can send the money back to the sender, with or without Dial.
+- **Paying someone new.** Their phone number is enough. Funds wait in escrow; only the holder of that number can claim (code texted to it). Unclaimed escrows come back with `reclaim` after 7 days. On Solana the escrow is an on-chain program ([`solana/`](solana/README.md)): it pays the recipient only on the operator's attestation, and after expiry anyone can send the money back to the sender, with or without Dial. On devnet Dial still holds the program's upgrade key; mainnet would put it behind a multisig or freeze the program.
 - **Exit anytime.** `withdraw all to <address>`.
 
 Names work like an operator's switchboard: reply with any name ("J. P. Meyer, crypto anarchist" becomes J. P. Meyer, `@jpmeyer`), find people with `411 <name>`, and pay a name: your contacts first, then the directory (one match connects, several ask you to pick, none asks for a number).

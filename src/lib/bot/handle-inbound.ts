@@ -8,7 +8,7 @@ import {
   type LoadedConversation,
   setConversation,
 } from "@/lib/conversations";
-import type { User } from "@/lib/db/schema";
+import type { Intent, User } from "@/lib/db/schema";
 import {
   createSignupToken,
   describe,
@@ -22,6 +22,7 @@ import {
 import {
   cancelUnapproved,
   codeCandidates,
+  expiredEscrowForCode,
   hasAwaitingApproval,
   hasLockedCode,
   latestSettledTo,
@@ -37,7 +38,7 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { isBurstRepeat, lastOutbound, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
-import { completeSignup, enabledChains, offerWaiting } from "./accounts";
+import { completeSignup, enabledChains, expiredClaimReply, offerWaiting, retryEscrowClaims } from "./accounts";
 import { connectAgentReply, revokeAgentsReply } from "./agents";
 import { endSessionsForUser } from "@/lib/web/sessions";
 import { walletLinkReply } from "./web";
@@ -246,7 +247,10 @@ async function chatReply(deps: BotDeps, user: User, body: string, modelReply: st
 
 async function welcome(deps: BotDeps, user: User | null): Promise<string> {
   if (user) {
-    const waiting = await latestSettledTo(deps.db, user.id);
+    const latest = await latestSettledTo(deps.db, user.id);
+    // An escrow that expired isn't waiting for them any more.
+    const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
+    const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
     if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender));
   }
@@ -259,6 +263,8 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
   const matches = await matchCode(deps.db, candidates, code);
   if (matches.length === 0) {
     if (await matchesExpiredCode(deps.db, user.id, code, deps.now())) return [replies.codeExpired()];
+    const lateClaim = await expiredEscrowForCode(deps.db, user.id, code, deps.now());
+    if (lateClaim) return [await expiredClaimReply(deps, lateClaim)];
     if (candidates.length === 0) {
       if (await hasLockedCode(deps.db, user.id, deps.now())) return [replies.codeMismatch(0)];
       // A late or repeated code: say what happened to their latest payment instead of a bare "nothing waiting".
@@ -269,11 +275,21 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
     return [replies.codeMismatch(Math.max(0, MAX_CODE_ATTEMPTS - used))];
   }
   const notes: string[] = [];
+  const retry: Intent[] = [];
   for (const intent of matches) {
-    const outcome =
-      intent.status === "escrowed" ? await releaseEscrow(deps, intent.id) : await approveIntent(deps, intent.id);
+    if (intent.status === "escrowed") {
+      const outcome = await releaseEscrow(deps, intent.id);
+      if (outcome.ok) continue;
+      if (outcome.reason === "not_claimable") notes.push(replies.codeMismatch());
+      else if (outcome.reason === "expired") notes.push(await expiredClaimReply(deps, intent));
+      else retry.push(intent);
+      continue;
+    }
+    const outcome = await approveIntent(deps, intent.id);
     if (!outcome.ok && outcome.reason === "not_claimable") notes.push(replies.codeMismatch());
   }
+  // The claim code was used up when the claim started; a failed one gets a fresh code.
+  if (retry.length > 0) notes.push(await retryEscrowClaims(deps, retry));
   return notes;
 }
 
