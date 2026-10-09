@@ -7,6 +7,12 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "text-my-crypto" }],
   "observability": { "enabled": true },
+  // Production's own domain. The workers.dev address stays on: Payphone's inbound webhook and texted links point there.
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "dialoperator.cc", "custom_domain": true },
+    { "pattern": "www.dialoperator.cc", "custom_domain": true }
+  ],
   // Workers AI: the operator's plain-English understanding. A binding, so no API key.
   "ai": { "binding": "AI" },
   "vars": {
