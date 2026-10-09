@@ -158,7 +158,7 @@ export function escrowContractOverrides(source: Record<string, string | undefine
 }
 
 const publicSchema = z.object({
-  APP_URL: z.url().default("https://text-my-crypto.raspy-thunder-20d2.workers.dev"),
+  APP_URL: z.url().default("https://dialoperator.cc"),
   DIAL_OPERATOR_NUMBER: z
     .string()
     .regex(/^\+[1-9]\d{7,14}$/)

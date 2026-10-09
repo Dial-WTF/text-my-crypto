@@ -16,7 +16,7 @@
   // Workers AI: the operator's plain-English understanding. A binding, so no API key.
   "ai": { "binding": "AI" },
   "vars": {
-    "APP_URL": "https://text-my-crypto.raspy-thunder-20d2.workers.dev",
+    "APP_URL": "https://dialoperator.cc",
     "DIAL_OPERATOR_NUMBER": "+18066071387",
     "PAYPHONE_BASE_URL": "https://payphone.wtf",
     "SMS_MODE": "payphone",
@@ -63,6 +63,8 @@
     "staging": {
       "name": "text-my-crypto-staging",
       "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "text-my-crypto-staging" }],
+      // Routes are inherited, and a staging deploy would take production's custom domains. Staging has none.
+      "routes": [],
       // Every minute, for the escrow reconciler (it settles program escrow fundings that didn't confirm in
       // time; the program is on here). The watchdog runs too, but SMS_MODE=log means nothing is texted:
       // its alerts and the reconciler's texts only land in the SMS log.
