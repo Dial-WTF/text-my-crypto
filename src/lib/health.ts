@@ -20,11 +20,12 @@ const EVM_PROBE = "0x000000000000000000000000000000000000dEaD";
 
 /**
  * Read-only dependency checks: D1 answers, the Payphone key works, and every chain's RPC returns a
- * balance. Never sends a text and never moves money. Keys: d1, payphoneAuth, <chain>Balance.
+ * balance. Never sends a text and never moves money. Keys: d1, payphoneAuth (only with a key),
+ * <chain>Balance.
  */
 export async function dependencyChecks(deps: {
   db: Db;
-  payphone: { baseUrl: string; apiKey: string };
+  payphone: { baseUrl: string; apiKey?: string };
   adapters: Adapters;
   fetchImpl?: typeof fetch;
 }): Promise<Record<string, Check>> {
@@ -34,14 +35,17 @@ export async function dependencyChecks(deps: {
       await deps.db.run(sql`select 1`);
       return undefined;
     }),
-    payphoneAuth: await timed(async () => {
+  };
+  const apiKey = deps.payphone.apiKey;
+  if (apiKey) {
+    checks.payphoneAuth = await timed(async () => {
       const res = await fetchImpl(`${deps.payphone.baseUrl}/api/v1/numbers/mine`, {
-        headers: { authorization: `Bearer ${deps.payphone.apiKey}` },
+        headers: { authorization: `Bearer ${apiKey}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return undefined;
-    }),
-  };
+    });
+  }
   for (const [chain, adapter] of Object.entries(deps.adapters)) {
     if (!adapter) continue;
     const address = chain === "solana" ? SOLANA_PROBE : EVM_PROBE;

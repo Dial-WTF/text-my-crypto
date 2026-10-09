@@ -8,8 +8,10 @@ import { normalizePhone } from "@/lib/phone";
 export const UNANSWERED_AFTER_MS = 60_000;
 /** How long Payphone may hold a text before it counts as never delivered to the webhook. */
 export const MISSING_AFTER_MS = 2 * 60_000;
-/** Both checks look this far back. Older problems drop out (and clear) instead of alerting forever. */
+/** Both checks alert on this far back. Older items drop out instead of alerting forever. */
 export const LOOKBACK_MS = 60 * 60_000;
+/** How far back the runner looks for items that aged out of the lookback, so it can say so instead of "Cleared". */
+export const AGED_LOOKBACK_MS = 24 * 60 * 60_000;
 
 /** A phone number reduced to its last four digits, the most any alert or log line shows. */
 export const tail = (phone: string) => `…${phone.replace(/\D/g, "").slice(-4)}`;
@@ -23,9 +25,9 @@ export type Unanswered = { id: string; phone: string; createdAt: Date };
  * no outbound text to the same phone after them. Handled texts the bot chose not to answer (STOP,
  * double-taps) have handled_at set; a text still mid-payment already got "Sending…".
  */
-export async function findUnanswered(db: Db, now: Date): Promise<Unanswered[]> {
+export async function findUnanswered(db: Db, now: Date, lookbackMs = LOOKBACK_MS): Promise<Unanswered[]> {
   const cutoff = new Date(now.getTime() - UNANSWERED_AFTER_MS);
-  const since = new Date(now.getTime() - LOOKBACK_MS);
+  const since = new Date(now.getTime() - lookbackMs);
   return db
     .select({ id: smsLog.id, phone: smsLog.phone, createdAt: smsLog.createdAt })
     .from(smsLog)
@@ -89,8 +91,8 @@ const EARLY_SLACK_MS = 60_000;
  * Inbound texts Payphone received more than two minutes ago (inside the lookback) that never reached
  * sms_log. Matched on phone and body, each log row used once, so a repeated text counts twice.
  */
-export async function findMissing(db: Db, inbox: InboxText[], now: Date): Promise<InboxText[]> {
-  const since = new Date(now.getTime() - LOOKBACK_MS);
+export async function findMissing(db: Db, inbox: InboxText[], now: Date, lookbackMs = LOOKBACK_MS): Promise<InboxText[]> {
+  const since = new Date(now.getTime() - lookbackMs);
   const due = inbox
     .filter((m) => m.at >= since && now.getTime() - m.at.getTime() >= MISSING_AFTER_MS)
     .sort((a, b) => a.at.getTime() - b.at.getTime());

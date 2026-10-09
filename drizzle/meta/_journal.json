@@ -57,6 +57,13 @@
       "when": 1791510777081,
       "tag": "0007_watchdog",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791512756290,
+      "tag": "0010_watchdog_resolved",
+      "breakpoints": true
     }
   ]
 }
