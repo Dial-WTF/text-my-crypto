@@ -20,7 +20,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { hyperliquidEvmTestnet } from "viem/chains";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { authorizationNonce, createEvmAdapter } from "@/lib/settlement/evm";
+import { authorizationNonce, CORE_USER_EXISTS, createEvmAdapter } from "@/lib/settlement/evm";
 import { REGISTRY } from "@/lib/settlement/registry";
 
 // Proves DialCoreDeposit against Circle's real USDC and CoreDepositWallet, on a local fork of HyperEVM testnet:
@@ -73,6 +73,11 @@ describe.runIf(run)("DialCoreDeposit on a HyperEVM testnet fork (anvil)", () => 
     await waitForRpc();
     const treasury = createWalletClient({ chain: hyperliquidEvmTestnet, transport: http(RPC), account: privateKeyToAccount(TREASURY_KEY) });
     const hash = await treasury.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode, args: [USDC, CDW] });
+    // anvil has no HyperCore precompiles: coreUserExists answers true for everyone here (PUSH1 1, MSTORE, RETURN 32 bytes).
+    await createTestClient({ chain: hyperliquidEvmTestnet, mode: "anvil", transport: http(RPC) }).setCode({
+      address: CORE_USER_EXISTS,
+      bytecode: "0x600160005260206000f3",
+    });
     contract = (await pub.waitForTransactionReceipt({ hash })).contractAddress as Address;
   }, 60_000);
 

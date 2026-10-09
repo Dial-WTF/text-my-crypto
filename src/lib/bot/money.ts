@@ -73,6 +73,7 @@ export type MoneyError = {
     | "bad_address"
     | "nothing_to_withdraw"
     | "which_chain"
+    | "venue_account_missing"
     | "unknown_name"
     | "name_lookup_failed"
     | "duplicate";

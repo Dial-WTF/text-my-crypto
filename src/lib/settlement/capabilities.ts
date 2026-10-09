@@ -68,6 +68,19 @@ export interface VenueTransfer {
   deposit(args: { fromSecret: Uint8Array<ArrayBuffer>; to: string; amount: bigint; memo: string }): Promise<SettleResult>;
   /** `address`'s stablecoin balance on the venue. */
   balance(address: string): Promise<bigint>;
+  /**
+   * True when the venue will credit a deposit to `address` now. HyperCore only credits accounts that already
+   * exist there: a deposit to one it hasn't seen is taken and never credited (seen on testnet, Oct 2026).
+   */
+  accepts(address: string): Promise<boolean>;
+}
+
+/** The venue won't credit this address (no account there yet), so nothing was sent. */
+export class VenueAccountMissingError extends Error {
+  constructor(readonly address: string) {
+    super(`No venue account for ${address}; nothing sent`);
+    this.name = "VenueAccountMissingError";
+  }
 }
 
 export type Asset = { symbol: string; name: string; address: string; decimals: number };

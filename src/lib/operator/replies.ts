@@ -212,6 +212,11 @@ export const replies = {
   hyperCoreUnconfirmed: (amount: string) =>
     `Your ${amount} to Hyperliquid is taking longer than usual to confirm. Don't send it again: text "hl balance" in a few minutes.`,
   hyperCoreWho: (raw: string) => `Which "${raw}"? Use their Dial @handle, like "send @alex $5 to hyperliquid".`,
+  /** `who` null: the sender's own account. */
+  hyperCoreNotOpen: (who: string | null) =>
+    who
+      ? `${who}'s Hyperliquid account isn't open yet, and a deposit from HyperEVM can't open one. Nothing moved.`
+      : `Your Hyperliquid account isn't open yet, and a deposit from HyperEVM can't open one. Nothing moved.`,
   hyperCoreOff: () => `Hyperliquid transfers aren't switched on yet.`,
   hyperCoreNotOnDial: (who: string) =>
     `${who} isn't on Dial yet, so there's no Hyperliquid balance to send to. Send it to them normally instead.`,

@@ -101,6 +101,10 @@ export async function createVenueIntent(
   if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
   const recipientAddress = other.id === user.id ? mine.address : (await ensureWallet(deps, other.id, chain, adapter)).address;
+  // The venue keeps deposits to accounts it hasn't seen: offer only what it will credit.
+  if (!(await on.found.venue.accepts(recipientAddress))) {
+    return fail("venue_account_missing", replies.hyperCoreNotOpen(other.id === user.id ? null : describe(other)));
+  }
   const intent = await createIntent(
     deps.db,
     {

@@ -8,7 +8,18 @@
 //
 // DEPOSIT_CONTRACT overrides the registry address (to try a fresh deploy before committing it).
 import { readFileSync } from "node:fs";
-import { createPublicClient, createWalletClient, formatUnits, http, keccak256, parseAbi, parseSignature, stringToHex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  encodeAbiParameters,
+  formatUnits,
+  hexToBigInt,
+  http,
+  keccak256,
+  parseAbi,
+  parseSignature,
+  stringToHex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { errorText } from "../src/lib/settlement/redact.ts";
 import { REGISTRY, resolveRpc } from "../src/lib/settlement/registry.ts";
@@ -50,6 +61,12 @@ async function coreUsdc(user) {
   return usdcRow ? usdcRow.total : "0";
 }
 
+/** HyperEVM's coreUserExists precompile: HyperCore only credits deposits to accounts it already has. */
+async function onHyperCore(user) {
+  const { data } = await pub.call({ to: "0x0000000000000000000000000000000000000810", data: encodeAbiParameters([{ type: "address" }], [user]) });
+  return Boolean(data && data !== "0x" && hexToBigInt(data) !== 0n);
+}
+
 async function status() {
   const [gas, usd, spot] = await Promise.all([
     pub.getBalance({ address: treasury.address }),
@@ -61,6 +78,7 @@ async function status() {
   console.log(`  gas                ${formatUnits(gas, 18)} ${entry.viem.nativeCurrency.symbol}`);
   console.log(`  USDC on HyperEVM   $${formatUnits(usd, 6)}`);
   console.log(`  USDC on ${core.network}  $${spot} (${core.explorerAddress(treasury.address)})`);
+  console.log(`  ${core.network} account ${(await onHyperCore(treasury.address)) ? "open" : "not open: deposits to it are never credited"}`);
   console.log(`  CoreDepositWallet  ${core.coreDepositWallet}`);
   console.log(`  DialCoreDeposit    ${depositContract ?? "not deployed (pnpm hypercore deploy)"}`);
   return { gas, usd };
@@ -87,6 +105,9 @@ async function deposit() {
   if (gas === 0n) stop(`\nThe treasury has no ${entry.viem.nativeCurrency.symbol} for gas.`);
   if (usd < amount) stop(`\nThe treasury has $${formatUnits(usd, 6)} USDC on ${entry.network}, less than $${usdArg}.`);
 
+  if (!(await onHyperCore(treasury.address))) {
+    stop(`\nThe treasury has no ${core.network} account, and HyperCore keeps deposits to accounts it hasn't seen. Open it first: send it USDC on ${core.network}.`);
+  }
   const before = await coreUsdc(treasury.address);
   const memo = `hypercore-live-${Date.now()}`;
   const nonce = keccak256(stringToHex(memo));

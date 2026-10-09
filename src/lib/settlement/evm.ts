@@ -3,7 +3,9 @@ import {
   bytesToHex,
   createPublicClient,
   createWalletClient,
+  encodeAbiParameters,
   type Hex,
+  hexToBigInt,
   hexToBytes,
   http,
   isAddress,
@@ -16,7 +18,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
 import type { EvmNetwork } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
-import type { VenueTransfer } from "./capabilities";
+import { type VenueTransfer, VenueAccountMissingError } from "./capabilities";
 import { spotUsdc } from "./hypercore";
 import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
@@ -40,6 +42,9 @@ const AUTH_FIELDS = [
 
 /** Transfer: anyone may submit it. Receive: only `to` may, which is how a contract like DialCoreDeposit pulls. */
 const AUTH_TYPES = { TransferWithAuthorization: AUTH_FIELDS, ReceiveWithAuthorization: AUTH_FIELDS } as const;
+
+/** HyperEVM's read precompile for "does this address exist on HyperCore?" (coreUserExists, hyper-evm-lib PrecompileLib). */
+export const CORE_USER_EXISTS: Address = "0x0000000000000000000000000000000000000810";
 
 const CORE_DEPOSIT = parseAbi([
   "function deposit(address from, address recipient, uint256 amount, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
@@ -134,10 +139,19 @@ export function createEvmAdapter(
 
   /** The user signs, the treasury submits, DialCoreDeposit pulls the USDC and deposits it on HyperCore: one transaction. */
   const hyperCoreVenue = (name: string, infoUrl: string, contract: Address): VenueTransfer => {
+    const accepts = async (address: string): Promise<boolean> => {
+      const { data } = await rl(() =>
+        publicClient.call({ to: CORE_USER_EXISTS, data: encodeAbiParameters([{ type: "address" }], [address as Address]) }),
+      );
+      return data !== undefined && data !== "0x" && hexToBigInt(data) !== 0n;
+    };
     return {
       name,
       balance: (address) => spotUsdc(infoUrl, address),
+      accepts,
       async deposit({ fromSecret, to, amount, memo }) {
+        // Checked again here, right before money moves: HyperCore keeps deposits to accounts it hasn't seen.
+        if (!(await accepts(to))) throw new VenueAccountMissingError(to);
         const { name, version } = await tokenDomain();
         const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
         const { from, nonce, signature } = await signTransferAuthorization({

@@ -21,18 +21,22 @@ const JEREMY = "+15550000011";
 const NEWBIE = "+15550000099";
 
 type Deposit = { to: string; amount: bigint; memo: string };
-type FakeHyperCore = VenueTransfer & { deposits: Deposit[]; fail: { next: Error | null }; spot: Map<string, bigint> };
+/** `closed`: addresses HyperCore has no account for. */
+type FakeHyperCore = VenueTransfer & { deposits: Deposit[]; fail: { next: Error | null }; spot: Map<string, bigint>; closed: Set<string> };
 
 function fakeHyperCore(): FakeHyperCore {
   const deposits: Deposit[] = [];
   const fail: FakeHyperCore["fail"] = { next: null };
   const spot = new Map<string, bigint>();
+  const closed = new Set<string>();
   return {
     name: "HyperCore",
     deposits,
     fail,
     spot,
+    closed,
     balance: async (address) => spot.get(address) ?? 0n,
+    accepts: async (address) => !closed.has(address),
     deposit: async ({ to, amount, memo }) => {
       if (fail.next) {
         const e = fail.next;
@@ -140,6 +144,21 @@ describe("move $5 to hyperliquid", () => {
     expect(venueNamed(deps.adapters, "hyperevm")?.chain).toBe("hyperevm");
     expect(venueNamed(deps.adapters, "solana")).toBeNull();
     expect(await say(ALEX, "move $1 to hypercore")).toMatch(/^Move \$1 USDC from HyperEVM to your Hyperliquid spot balance\?/);
+  });
+
+  it("won't offer a deposit to an account HyperCore hasn't opened, since it would never be credited", async () => {
+    const accepts = core.accepts;
+    core.accepts = async () => false;
+    expect(await say(ALEX, "move $5 to hyperliquid")).toBe(
+      "Your Hyperliquid account isn't open yet, and a deposit from HyperEVM can't open one. Nothing moved.",
+    );
+    core.accepts = accepts;
+    expect(await say(ALEX, "send @jeremy $5 to hyperliquid")).toMatch(/^Send \$5 USDC to @jeremy's Hyperliquid/);
+    core.closed.add(await hyperevmAddress(JEREMY));
+    expect(await say(ALEX, "send @jeremy $6 to hyperliquid")).toBe(
+      "@jeremy's Hyperliquid account isn't open yet, and a deposit from HyperEVM can't open one. Nothing moved.",
+    );
+    expect(core.deposits).toHaveLength(0);
   });
 
   it("says so when deposits are off, and moves nothing", async () => {
