@@ -27,6 +27,7 @@ import {
 } from "@/lib/identity";
 import { getIntent, intentsFor } from "@/lib/intents";
 import { formatUsd, isUsdAmount } from "@/lib/money";
+import { assetOf, money } from "@/lib/settlement/amounts";
 import type { MoneyKind } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
@@ -152,7 +153,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     status,
     statusLabel: view.status.label,
     amountUsd: usd(i.amount),
-    asset: "USDC",
+    asset: assetOf(i.chain, deps.network),
     from: view.from,
     to: view.to,
     chain: i.chain,
@@ -184,7 +185,7 @@ async function created(deps: BotDeps, agent: Agent, p: PreparedIntent): Promise<
     approveBy: i.expiresAt.toISOString(),
     kind: i.kind,
     amountUsd: usd(i.amount),
-    asset: "USDC",
+    asset: assetOf(i.chain, deps.network),
     chain: i.chain,
     message: payerIsOwner && !ownerTexted
       ? paused
@@ -223,8 +224,10 @@ async function getBalance(deps: BotDeps, agent: Agent): Promise<ToolResult> {
     const w = await getWallet(deps.db, agent.user.id, c);
     if (!w) continue;
     const amount = await adapter.getBalance(w.address);
-    total += amount;
-    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset: "USDC" });
+    const asset = assetOf(c, deps.network);
+    // Testnet ZEC converts at a demo rate, so it's listed but not added to the dollar total.
+    if (asset === "USDC") total += amount;
+    balances.push({ chain: c, network: chainLabel(c), amountUsd: usd(amount), asset, display: money(amount, c, deps.network) });
   }
   return ok({ balances, totalUsd: usd(total) });
 }
@@ -235,7 +238,7 @@ async function getReceiveAddress(deps: BotDeps, agent: Agent): Promise<ToolResul
   const addresses: Array<Record<string, string>> = [];
   for (const [c] of enabledChains(deps)) {
     const w = await getWallet(deps.db, user.id, c);
-    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: "USDC" });
+    if (w) addresses.push({ chain: c, network: chainLabel(c), address: w.address, asset: assetOf(c, deps.network) });
   }
   return ok({ handle, byText: `Anyone can text the Dial operator "send ${handle} $5".`, addresses });
 }

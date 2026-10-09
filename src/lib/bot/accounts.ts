@@ -13,6 +13,7 @@ import {
 import { randomBase32 } from "@/lib/ids";
 import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
 import type { SettlementAdapter } from "@/lib/settlement/types";
@@ -122,12 +123,15 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
 /** How much these escrows add up to and who sent them, for a claim text. */
 async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
   const total = escrows.reduce((sum, i) => sum + i.amount, 0n);
+  // One chain: say it the way that chain reads ("$5 (0.1 TAZ)" on Zcash). Mixed: plain dollars.
+  const [only, ...others] = new Set(escrows.map((i) => i.chain));
   const senders = new Set<string>();
   for (const i of escrows) {
     const s = await getUserById(deps.db, i.senderId);
     if (s) senders.add(displayName(s));
   }
-  return { amount: formatUsd(total), from: [...senders].join(", ") || "someone" };
+  const amount = only && others.length === 0 ? money(total, only, deps.network) : formatUsd(total);
+  return { amount, from: [...senders].join(", ") || "someone" };
 }
 
 /** Texts the person one code that claims every escrow waiting for them. */
@@ -165,7 +169,7 @@ export async function offerPendingRequests(deps: BotDeps, user: User): Promise<v
     if (!requester) continue;
     const code = await issueCode(deps.db, intent.id);
     const link = `${deps.appUrl}/a/${intent.id}`;
-    const amount = formatUsd(intent.amount);
+    const amount = money(intent.amount, intent.chain, deps.network);
     const body =
       intent.kind === "invoice"
         ? replies.payInvoice(displayName(requester), amount, intent.note, code, link)

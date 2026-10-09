@@ -19,6 +19,7 @@ import {
   unconfirmedEscrowFunding,
 } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
 import { open } from "@/lib/secretbox";
 import {
@@ -71,11 +72,11 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     const balance = await adapter.getBalance(wallet.address);
     if (balance < intent.amount) {
       await markFailed(deps.db, intent.id, "Insufficient balance at approval");
-      await notify(deps, sender.phone, replies.insufficientNow(formatUsd(balance)));
+      await notify(deps, sender.phone, replies.insufficientNow(money(balance, intent.chain, deps.network)));
       return { ok: false, reason: "failed", error: "Insufficient balance at approval" };
     }
     const target = intent.kind === "withdraw" ? `${intent.recipientAddress.slice(0, 4)}…${intent.recipientAddress.slice(-4)}` : describe(recipient);
-    await notify(deps, sender.phone, replies.sending(formatUsd(intent.amount), target, chainLabel(intent.chain)));
+    await notify(deps, sender.phone, replies.sending(money(intent.amount, intent.chain, deps.network), target, chainLabel(intent.chain)));
     const fromSecret = await unsealWallet(wallet, deps.walletKey);
     result = intent.escrowProgram
       ? await escrowProgramFor(deps, intent).create({ fromSecret, intentId: intent.id, amount: intent.amount, expiresAt: escrowExpiresAt })
@@ -93,7 +94,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     return { ok: false, reason: "failed", error };
   }
 
-  const amount = formatUsd(intent.amount);
+  const amount = money(intent.amount, intent.chain, deps.network);
   const chain = chainLabel(intent.chain);
 
   if (intent.escrowSecretEnc || intent.escrowProgram) {
@@ -183,7 +184,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
   try {
     const result = await moveEscrow(deps, intent, "recipient");
     await markReleased(deps.db, intent.id, "settled", result, deps.now());
-    const amount = formatUsd(intent.amount);
+    const amount = money(intent.amount, intent.chain, deps.network);
     await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), result.explorerUrl));
     await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
     return { ok: true, status: "settled", ...result };
@@ -292,7 +293,7 @@ export async function declineLatest(deps: BotDeps, payerId: string): Promise<str
     getUserById(deps.db, intent.recipientId),
   ]);
   if (payer && requester) {
-    await notify(deps, requester.phone, replies.requestDeclined(displayName(payer), formatUsd(intent.amount)));
+    await notify(deps, requester.phone, replies.requestDeclined(displayName(payer), money(intent.amount, intent.chain, deps.network)));
   }
   return replies.declined();
 }

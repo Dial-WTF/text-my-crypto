@@ -1,7 +1,7 @@
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { replies } from "@/lib/operator/replies";
 import { codeFor } from "./money";
 import type { BotDeps } from "./types";
@@ -51,7 +51,7 @@ export async function statusReply(
   const i = latest === undefined ? await latestRecent(deps, user) : latest;
   if (!i) return replies.nothingInFlight();
   const now = deps.now();
-  const amount = formatUsd(i.amount);
+  const amount = money(i.amount, i.chain, deps.network);
   const outgoing = i.senderId === user.id;
   const otherId = outgoing ? i.recipientId : i.senderId;
   const other = await getUserById(deps.db, otherId);
