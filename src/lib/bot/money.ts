@@ -370,7 +370,7 @@ async function resolveDestination(deps: BotDeps, cmd: WithdrawCommand): Promise<
     return { ok: false, error: { code: "name_lookup_failed", message: replies.nameLookupDown(name) } };
   }
   if (service && address) return { ok: true, cmd: { ...cmd, address, chain: cmd.chain ?? service.chain }, name };
-  const network = REGISTRY[service?.chain ?? "ethereum"][deps.network]?.network ?? "this network";
+  const network = service ? (REGISTRY[service.chain][deps.network]?.network ?? chainLabel(service.chain)) : null;
   const testBasename = deps.network === "testnet" && wrongNetworkBasename(name, deps.network);
   const message = replies.unknownName(name, network, testBasename);
   return { ok: false, error: { code: "unknown_name", message } };

@@ -185,10 +185,11 @@ export const replies = {
   withdrew: (amount: string, address: string, explorerUrl: string) =>
     `Withdrew ${amount} to ${address}. Receipt: ${explorerUrl}`,
   /** `testBasenames`: they gave a base.eth name on testnet, where Basenames end in .basetest.eth. */
-  unknownName: (name: string, network: string, testBasenames = false) =>
+  /** `network` is where the name was looked up, or null when no name service answers for its ending. */
+  unknownName: (name: string, network: string | null, testBasenames = false) =>
     testBasenames
-      ? `${name} doesn't resolve on ${network}. Test Basenames end in .basetest.eth.`
-      : `${name} doesn't point to an address on ${network}. Check the name and try again.`,
+      ? `${name} doesn't resolve${network ? ` on ${network}` : ""}. Test Basenames end in .basetest.eth.`
+      : `${name} doesn't point to an address${network ? ` on ${network}` : ""}. Check the name and try again.`,
   nameLookupDown: (name: string) => `I couldn't look up ${name} right now. Nothing moved. Try again in a minute.`,
   badAddress: (chain: string) => `That doesn't look like a ${chain} address. Check it and try again.`,
   /** `chains` are words people can type back, like "ethereum". */
