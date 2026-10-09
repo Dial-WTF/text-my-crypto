@@ -30,7 +30,9 @@ import type { MoneyKind } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasPasskey } from "@/lib/passkeys";
 import { normalizePhone } from "@/lib/phone";
+import { cleanAsk, payProfile } from "@/lib/views/pay";
 import { buildPaymentView } from "@/lib/views/payment";
+import { walletJson, walletView } from "@/lib/views/wallet";
 import { getWallet } from "@/lib/wallets";
 import type { Agent } from "./keys";
 
@@ -81,6 +83,17 @@ export const toolInputs = {
   list_payments: z.object({
     limit: z.number().int().min(1).max(50).optional().describe("How many to return, newest first. Default 10."),
   }),
+  get_pay_link: z.object({
+    handle: z
+      .string()
+      .trim()
+      .regex(/^@?[A-Za-z0-9_]{1,32}$/, "A Dial handle like @alex")
+      .optional()
+      .describe("Whose pay link: a Dial @handle. Leave out for the owner's own link (to get paid)."),
+    amountUsd: amountUsd.optional(),
+    note,
+  }),
+  get_wallet: z.object({}),
 } as const;
 
 export type ToolName = keyof typeof toolInputs;
@@ -312,6 +325,19 @@ async function listPayments(deps: BotDeps, agent: Agent, input: ToolInput<"list_
   return ok({ payments });
 }
 
+async function getPayLink(deps: BotDeps, agent: Agent, input: ToolInput<"get_pay_link">): Promise<ToolResult> {
+  const handle = input.handle?.replace(/^@/, "").toLowerCase();
+  const target = handle ? await findUserByHandle(deps.db, handle) : agent.user;
+  if (!target || !isClaimed(target) || !target.handle) {
+    return err("not_found", `No Dial user @${handle}. To pay a phone number, use send_payment.`);
+  }
+  return ok(await payProfile(deps, target, cleanAsk(deps, { amount: input.amountUsd, note: input.note })));
+}
+
+async function walletTool(deps: BotDeps, agent: Agent): Promise<ToolResult> {
+  return ok(walletJson(await walletView(deps, agent.user)));
+}
+
 function withInput<S extends z.ZodType>(
   schema: S,
   raw: unknown,
@@ -350,6 +376,10 @@ export function runTool(deps: BotDeps, agent: Agent, name: ToolName, raw: unknow
       return withInput(toolInputs.get_payment, raw, (i) => getPayment(deps, agent, i));
     case "list_payments":
       return withInput(toolInputs.list_payments, raw, (i) => listPayments(deps, agent, i));
+    case "get_pay_link":
+      return withInput(toolInputs.get_pay_link, raw, (i) => getPayLink(deps, agent, i));
+    case "get_wallet":
+      return walletTool(deps, agent);
   }
 }
 
@@ -394,4 +424,14 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
       "Status of one payment: awaiting_approval, expired, settling, escrowed (waiting for the recipient to claim), settled, refunded, failed or declined, with the on-chain receipt once settled.",
   },
   list_payments: { title: "List payments", description: "Recent payments, requests and invoices on this account, newest first." },
+  get_pay_link: {
+    title: "Pay link",
+    description:
+      "A shareable pay page (crypto Zelle) for the owner or any Dial @handle, optionally for a set amount and note. Returns the page URL, the text to send the operator, and a wallet link per chain (Solana Pay, EIP-681). Share the owner's link to get paid; read someone else's to pay them. Read-only.",
+  },
+  get_wallet: {
+    title: "Wallet",
+    description:
+      "The owner's wallet: balance and deposit address per chain, their pay link, recent activity and connected agents. Read-only.",
+  },
 };

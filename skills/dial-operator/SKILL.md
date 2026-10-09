@@ -45,8 +45,14 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `withdraw` | `{ amountUsd \| "all", address, chain? }` Move the owner's USDC to an outside address |
 | `get_payment` | `{ intentId }` Current status and receipt |
 | `list_payments` | `{ limit? }` Recent payments, newest first |
+| `get_pay_link` | `{ handle?, amountUsd?, note? }` A pay page (crypto Zelle) for the owner or any @handle: URL, text to send the operator, and a wallet link per chain. Share the owner's to get paid; read someone else's to pay them. Read-only |
+| `get_wallet` | Balances and deposit address per chain, pay link, recent activity, connected agents. Read-only |
 
 Full arguments, statuses and error codes: [references/tools.md](references/tools.md).
+
+## How to get paid
+
+Call `get_pay_link` (with `amountUsd` and `note` if there's a set price) and hand the person the `url`. It opens a page where they pay by text from any phone, or scan a QR code with any wallet app (Solana Pay or EIP-681). The same page is JSON at `<url>.json` (before the query string), and `GET /api/wallet` with your key returns the owner's wallet.
 
 ## How to make a payment
 

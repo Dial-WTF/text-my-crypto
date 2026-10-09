@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import { type AgentKey, agentKeys, agentLinks, agentRate, type User, users } from "@/lib/db/schema";
@@ -148,6 +148,25 @@ export async function revokeAgentKeys(db: Db, userId: string, now: Date): Promis
     .set({ usedAt: now })
     .where(and(eq(agentLinks.userId, userId), isNull(agentLinks.usedAt)));
   return revoked.length;
+}
+
+/** The account's live agent keys, newest first. Labels and timestamps only; keys are never stored. */
+export async function listAgentKeys(db: Db, userId: string): Promise<AgentKey[]> {
+  return db
+    .select()
+    .from(agentKeys)
+    .where(and(eq(agentKeys.userId, userId), isNull(agentKeys.revokedAt)))
+    .orderBy(desc(agentKeys.createdAt));
+}
+
+/** Turns off one agent key. Only its owner can; returns false if it wasn't theirs or was already off. */
+export async function revokeAgentKey(db: Db, userId: string, keyId: string, now: Date): Promise<boolean> {
+  const revoked = await db
+    .update(agentKeys)
+    .set({ revokedAt: now })
+    .where(and(eq(agentKeys.id, keyId), eq(agentKeys.userId, userId), isNull(agentKeys.revokedAt)))
+    .returning({ id: agentKeys.id });
+  return revoked.length > 0;
 }
 
 export type RateLimit = { bucket: string; limit: number; windowMs: number };

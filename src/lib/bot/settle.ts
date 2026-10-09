@@ -80,7 +80,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     if (await isOptedOut(deps.db, recipient.phone)) {
       await notify(deps, sender.phone, replies.recipientOptedOut(displayName(recipient), deps.escrowTtlDays));
     } else {
-      await notify(deps, recipient.phone, replies.receivedUnclaimed(amount, displayName(sender), intent.note));
+      await notify(deps, recipient.phone, replies.receivedUnclaimed(amount, displayName(sender), intent.note, `${deps.appUrl}/a/${intent.id}`));
     }
     return { ok: true, status: "escrowed", ...result };
   }
@@ -96,7 +96,7 @@ export async function approveIntent(deps: BotDeps, intentId: string): Promise<Se
     await notify(
       deps,
       recipient.phone,
-      replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note),
+      replies.received(displayName(recipient), amount, displayName(sender), chain, intent.note, result.explorerUrl),
     );
   } else {
     await notify(deps, recipient.phone, replies.requestPaid(displayName(sender), amount, intent.note, result.explorerUrl));

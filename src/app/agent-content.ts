@@ -22,6 +22,8 @@ export function agentFacts() {
       ["withdraw", "move USDC to any address"],
       ["resolve_recipient", "contacts → directory lookup"],
       ["list_payments", "recent history"],
+      ["get_pay_link", "crypto Zelle: a pay page for you or any @handle"],
+      ["get_wallet", "balances, deposit addresses, activity"],
     ] as const,
     rule: "Agents start payments. A human approves every one, by a code texted to their phone or a passkey.",
   };

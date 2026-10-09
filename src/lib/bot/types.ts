@@ -1,3 +1,4 @@
+import type { Network } from "@/lib/settlement/registry";
 import type { Db } from "@/lib/db/client";
 import type { LlmInterpreter } from "@/lib/operator/brain";
 import type { Adapters } from "@/lib/settlement/types";
@@ -18,4 +19,6 @@ export type BotDeps = {
   passkeyThreshold: bigint;
   escrowTtlDays: number;
   dripAmount: bigint;
+  /** Which column of the chain registry is live: testnet or mainnet. */
+  network: Network;
 };

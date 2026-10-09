@@ -158,6 +158,30 @@ export const agentLinks = sqliteTable("agent_links", {
   usedAt: ts("used_at"),
 });
 
+/** One-time sign-in links texted after "wallet". Redeemed with the code from the same text to start a web session. */
+export const loginLinks = sqliteTable("login_links", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  codeHash: text("code_hash").notNull(),
+  codeAttempts: integer("code_attempts").notNull().default(0),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+});
+
+/** Signed-in wallet page sessions. The cookie holds the token; only its hash is stored. */
+export const webSessions = sqliteTable("web_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  via: text("via", { enum: ["text", "passkey"] }).notNull(),
+  createdAt: ts("created_at").notNull().default(now),
+  expiresAt: ts("expires_at").notNull(),
+  revokedAt: ts("revoked_at"),
+});
+
 /** Fixed-window call counters per agent key and bucket. */
 export const agentRate = sqliteTable(
   "agent_rate",

@@ -7,7 +7,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 
 | Tool | Arguments |
 |---|---|
-| `whoami`, `get_balance`, `get_receive_address` | none |
+| `whoami`, `get_balance`, `get_receive_address`, `get_wallet` | none |
 | `resolve_recipient` | `to` |
 | `send_payment` | `to`, `amountUsd`, `note?`, `chain?` |
 | `request_payment` | `from`, `amountUsd`, `note?`, `chain?` |
@@ -15,6 +15,7 @@ Streamable HTTP, stateless, JSON responses. Both the 2025 `initialize` handshake
 | `withdraw` | `amountUsd` (or `"all"`), `address`, `chain?` |
 | `get_payment` | `intentId` (`pi_…`) |
 | `list_payments` | `limit?` (1 to 50, default 10) |
+| `get_pay_link` | `handle?` (`@alex`; omit for the owner), `amountUsd?`, `note?` (up to 60 characters on the page) |
 
 - `to` / `from`: phone number in any common format, `@handle`, or a name (owner's contacts first, then the Dial directory). 2 to 64 characters.
 - `amountUsd`: decimal string, up to 2 decimals, no `$`. Settles as USDC.

@@ -117,9 +117,20 @@ export async function verifyApproval(
     .where(and(eq(passkeys.id, response.id), eq(passkeys.userId, intent.senderId)))
     .limit(1);
   if (!key) return false;
+  return verifyAssertion(db, rp, key, response, isoBase64URL.fromBuffer(await intentChallenge(intent)));
+}
+
+/** Checks one assertion by a stored passkey against the expected challenge, and bumps its counter. */
+async function verifyAssertion(
+  db: Db,
+  rp: RelyingParty,
+  key: Passkey,
+  response: AuthenticationResponseJSON,
+  expectedChallenge: string,
+): Promise<boolean> {
   const verification = await verifyAuthenticationResponse({
     response,
-    expectedChallenge: isoBase64URL.fromBuffer(await intentChallenge(intent)),
+    expectedChallenge,
     expectedOrigin: rp.origin,
     expectedRPID: rp.rpID,
     requireUserVerification: true,
@@ -129,11 +140,31 @@ export async function verifyApproval(
       counter: key.counter,
       transports: transportsSchema.parse(JSON.parse(key.transports)),
     },
-  });
-  if (!verification.verified) return false;
+  }).catch(() => ({ verified: false as const, authenticationInfo: undefined }));
+  if (!verification.verified || !verification.authenticationInfo) return false;
   await db
     .update(passkeys)
     .set({ counter: verification.authenticationInfo.newCounter })
     .where(eq(passkeys.id, key.id));
   return true;
+}
+
+/**
+ * Options for signing in with whichever passkey this device offers. The challenge is random; the
+ * caller keeps it (a short-lived cookie) and hands it back to verifyPasskeyLogin.
+ */
+export function startPasskeyLogin(rp: RelyingParty): Promise<PublicKeyCredentialRequestOptionsJSON> {
+  return generateAuthenticationOptions({ rpID: rp.rpID, userVerification: "required", allowCredentials: [] });
+}
+
+/** The account that owns the passkey behind a valid sign-in assertion, or null. */
+export async function verifyPasskeyLogin(
+  db: Db,
+  rp: RelyingParty,
+  challenge: string,
+  response: AuthenticationResponseJSON,
+): Promise<string | null> {
+  const [key] = await db.select().from(passkeys).where(eq(passkeys.id, response.id)).limit(1);
+  if (!key) return null;
+  return (await verifyAssertion(db, rp, key, response, challenge)) ? key.userId : null;
 }

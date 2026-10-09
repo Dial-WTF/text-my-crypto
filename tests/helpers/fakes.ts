@@ -68,6 +68,7 @@ export function testDeps(db: Db, overrides: Partial<BotDeps> = {}): BotDeps {
     passkeyThreshold: 20_000_000n,
     escrowTtlDays: 7,
     dripAmount: 25_000_000n,
+    network: "testnet",
     ...overrides,
   };
 }

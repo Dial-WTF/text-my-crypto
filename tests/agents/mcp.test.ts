@@ -100,8 +100,10 @@ describe("MCP over Streamable HTTP", () => {
       [
         "create_invoice",
         "get_balance",
+        "get_pay_link",
         "get_payment",
         "get_receive_address",
+        "get_wallet",
         "list_payments",
         "request_payment",
         "resolve_recipient",
@@ -210,6 +212,19 @@ describe("MCP over Streamable HTTP", () => {
     });
     const recv = await call(key, "get_receive_address");
     expect(recv.data).toMatchObject({ handle: "alex", addresses: [{ chain: "solana" }] });
+  });
+
+  it("hands out pay links for the owner or anyone on Dial, and the owner's wallet", async () => {
+    const key = await connectAgent(ALEX);
+    expect((await call(key, "get_pay_link", { handle: "@jeremy", amountUsd: "5", note: "pizza" })).data).toMatchObject({
+      handle: "jeremy",
+      url: "https://tmc.test/@jeremy?amount=5&note=pizza",
+      byText: { body: "send @jeremy $5 for pizza" },
+      chains: [{ chain: "solana" }],
+    });
+    expect((await call(key, "get_pay_link")).data).toMatchObject({ handle: "alex", url: "https://tmc.test/@alex" });
+    expect((await call(key, "get_pay_link", { handle: "@nobody" })).data).toMatchObject({ error: "not_found" });
+    expect((await call(key, "get_wallet")).data).toMatchObject({ handle: "alex", chains: [{ chain: "solana", balanceUsd: "100" }] });
   });
 
   it("resolve_recipient reads without creating accounts", async () => {

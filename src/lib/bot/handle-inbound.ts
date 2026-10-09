@@ -39,6 +39,7 @@ import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains, offerWaiting } from "./accounts";
 import { connectAgentReply, revokeAgentsReply } from "./agents";
+import { walletLinkReply } from "./web";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
@@ -209,6 +210,8 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await connectAgentReply(deps, user, cmd.label));
     case "revoke_agents":
       return reply(await revokeAgentsReply(deps, user));
+    case "wallet":
+      return reply(await walletLinkReply(deps, user));
     case "send":
     case "request":
     case "invoice":
@@ -263,5 +266,6 @@ async function receiveReply(deps: BotDeps, user: User): Promise<string> {
     const w = await getWallet(deps.db, user.id, chain);
     if (w) addresses.push(`${chainLabel(chain)}: ${w.address}`);
   }
-  return replies.receive(user.handle ?? displayName(user), addresses);
+  const handle = user.handle ?? displayName(user);
+  return replies.receive(handle, `${deps.appUrl}/@${handle}`, addresses);
 }

@@ -93,7 +93,7 @@ describe("send to someone on Dial", () => {
 
     await say(ALEX, codeIn(confirm));
     expect(sms.last(ALEX)).toMatch(/^Sent \$10 to jeremy on Solana\. Receipt: https:\/\/explorer\.test\//);
-    expect(sms.last(JEREMY)).toBe('jeremy, you got $10 from alex (pizza) on Solana. Text "balance" anytime.');
+    expect(sms.last(JEREMY)).toMatch(/^jeremy, you got \$10 from alex \(pizza\) on Solana\. Receipt: https:\/\/explorer\.test\/sig_pi_/);
     const jeremy = await findUserByPhone(db, JEREMY);
     const jw = await getWallet(db, jeremy!.id, "solana");
     expect(sol.settled.at(-1)).toMatchObject({ to: jw!.address, amount: 10_000_000n, closeSource: false });
@@ -160,7 +160,7 @@ describe("send to someone not on Dial (escrow)", () => {
     expect(intent?.status).toBe("escrowed");
     expect(sol.settled.at(-1)).toMatchObject({ to: intent?.recipientAddress, amount: 5_000_000n });
     expect(sms.last(ALEX)).toBe('Sent $5 to +•••••••0099. They have 7 days to claim it. If they don\'t, text "reclaim" to get it back.');
-    expect(sms.last(NEWBIE)).toBe("alex sent you $5 USDC on Dial. Reply to this text to claim it.");
+    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\. Reply to this text to claim it\. See it: https:\/\/tmc\.test\/a\/pi_/);
 
     expect(await say(NEWBIE, "hey")).toBe(
       "hi, I'm the Dial operator. alex sent you $5 USDC and it's waiting for you. What name should people use to pay you?",
@@ -300,7 +300,14 @@ describe("balance, receive, upgrade, chat", () => {
 
   it("answers balance and receive", async () => {
     expect(await say(ALEX, "balance")).toBe("You have $100 USDC on Solana.");
-    expect(await say(ALEX, "receive")).toBe('People can text me "send alex $5". Or send USDC to Solana: solanaAddr1');
+    expect(await say(ALEX, "receive")).toBe(
+      'Your pay link: https://tmc.test/@alex Anyone can pay you there, or text me "send alex $5". To deposit, send USDC to Solana: solanaAddr1',
+    );
+  });
+
+  it("texts a one-time wallet link and code", async () => {
+    const reply = await say(ALEX, "wallet");
+    expect(reply).toMatch(/^Your wallet: https:\/\/tmc\.test\/wallet\/in\/[\w-]{32} Enter \d{6} there to open it\./);
   });
 
   it("offers a passkey upgrade link", async () => {

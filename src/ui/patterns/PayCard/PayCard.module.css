@@ -1,0 +1,10 @@
+.ask {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-sm);
+}
+
+.link {
+  color: var(--color-on-card);
+  text-underline-offset: 3px;
+}

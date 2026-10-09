@@ -1,0 +1,14 @@
+.fine {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-on-card-muted);
+}
+
+.caps {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-on-card-muted);
+}

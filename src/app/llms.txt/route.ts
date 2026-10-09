@@ -15,12 +15,15 @@ export function GET(): Response {
 ## For people
 - Text "hi" to ${s.phone}, reply with a name, then text things like "send @jeremy $5", "request $25 from adam", "411 jeremy", "balance".
 - Every payment is approved by a one-time code texted to the payer (or a passkey). Reply STOP to stop texts.
+- Pay pages, crypto Zelle style: ${s.url}/@<handle> (add ?amount=5&note=pizza). Pay by text or scan with any wallet. JSON for agents at ${s.url}/@<handle>.json.
+- Wallet: text "wallet" for a one-time link to ${s.url}/wallet (balances, deposit addresses, pay link, agents).
 
 ## For agents (MCP)
 - Endpoint: ${a.mcpUrl} (Streamable HTTP, bearer auth)
 - Get a key: ${a.connect}
 - Skill: ${a.skillInstall}
 - Rule: ${a.rule}
+- Wallet JSON: GET ${s.url}/api/wallet with the same bearer key (read-only)
 
 ### Tools
 ${a.tools.map(([name, what]) => `- ${name}: ${what}`).join("\n")}

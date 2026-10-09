@@ -79,16 +79,18 @@ export const replies = {
         ? `That code didn't match. ${plural(triesLeft, "try")} left.`
         : `That code didn't match and that was the last try. Text the payment again for a new code.`,
   balance: (lines: string[]) => `You have ${lines.join(", ")}.`,
-  receive: (handle: string, addresses: string[]) =>
-    `People can text me "send ${handle} $5". Or send USDC to ${addresses.join(" | ")}`,
+  walletLink: (link: string, code: string) =>
+    `Your wallet: ${link} Enter ${code} there to open it. The link works once, for 15 minutes.`,
+  receive: (handle: string, payUrl: string, addresses: string[]) =>
+    `Your pay link: ${payUrl} Anyone can pay you there, or text me "send ${handle} $5". To deposit, send USDC to ${addresses.join(" | ")}`,
   sent: (amount: string, who: string, chain: string, explorerUrl: string) =>
     `Sent ${amount} to ${who} on ${chain}. Receipt: ${explorerUrl}`,
   sentToEscrow: (amount: string, who: string, days: number) =>
     `Sent ${amount} to ${who}. They have ${plural(days, "day")} to claim it. If they don't, text "reclaim" to get it back.`,
-  received: (who: string, amount: string, from: string, chain: string, note: string | null) =>
-    `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Text "balance" anytime.`,
-  receivedUnclaimed: (amount: string, from: string, note: string | null) =>
-    `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it.`,
+  received: (who: string, amount: string, from: string, chain: string, note: string | null, explorerUrl: string) =>
+    `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Receipt: ${explorerUrl}`,
+  receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
+    `${from} sent you ${amount} USDC${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link}`,
   claimed: (amount: string, from: string, explorerUrl: string) => `Claimed ${amount} from ${from}. Receipt: ${explorerUrl}`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
   requestPaid: (who: string, amount: string, note: string | null, explorerUrl: string) =>

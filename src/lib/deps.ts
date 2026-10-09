@@ -25,5 +25,6 @@ export function botDeps(): BotDeps {
     passkeyThreshold: usdToBaseUnits(e.PASSKEY_THRESHOLD_USD),
     escrowTtlDays: e.ESCROW_TTL_DAYS,
     dripAmount: usdToBaseUnits(e.SIGNUP_DRIP_USD),
+    network: e.NETWORK,
   };
 }

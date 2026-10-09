@@ -15,9 +15,17 @@ export type FeedEntry = {
 };
 
 /** Recent on-chain payments, printed as one long receipt. Handles and payment ids only, never numbers. */
-export function PaymentFeed({ entries, emptyText }: { entries: FeedEntry[]; emptyText: string }) {
+export function PaymentFeed({
+  entries,
+  emptyText,
+  title = "Live · recent payments",
+}: {
+  entries: FeedEntry[];
+  emptyText: string;
+  title?: string;
+}) {
   return (
-    <Receipt title="Live · recent payments">
+    <Receipt title={title}>
       {entries.length === 0 ? (
         <p className={styles.empty}>{emptyText}</p>
       ) : (

@@ -26,6 +26,7 @@ export type Command =
   | { kind: "whoami" }
   | { kind: "connect_agent"; label?: string }
   | { kind: "revoke_agents" }
+  | { kind: "wallet" }
   | { kind: "help" }
   | { kind: "chat" };
 
@@ -68,7 +69,8 @@ const WITHDRAW = new RegExp(
 );
 
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
-const RECEIVE = /^(?:receive|my address|address|deposit|wallet)\??$/i;
+const RECEIVE = /^(?:receive|my address|address|deposit|pay link|my pay link)\??$/i;
+const WALLET = /^(?:wallet|my wallet|open wallet|log ?in|sign ?in)\??$/i;
 const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
@@ -103,6 +105,7 @@ export function parseCommand(text: string): Command {
   const t = text.trim().replace(/\s+/g, " ");
   if (BALANCE.test(t)) return { kind: "balance" };
   if (RECEIVE.test(t)) return { kind: "receive" };
+  if (WALLET.test(t)) return { kind: "wallet" };
   if (HELP.test(t)) return { kind: "help" };
   if (RECLAIM.test(t)) return { kind: "reclaim" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
