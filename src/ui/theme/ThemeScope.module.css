@@ -1,0 +1,11 @@
+.scope {
+  min-width: 0;
+}
+
+/* A scope with its own mode paints its own canvas: the body behind it still has the page's. */
+.themed {
+  background: var(--color-canvas);
+  color: var(--color-on-canvas);
+  font-family: var(--font-body);
+  text-shadow: var(--text-glow);
+}

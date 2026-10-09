@@ -23,12 +23,13 @@ export function payActionUrl(appUrl: string, handle: string, ask: { amountUsd?: 
 }
 
 /**
- * A Solana Action (Blink) for an action URL: the solana-action: URI wallets and Blink clients open, and
- * a dial.to page that renders it anywhere. On testnet dial.to is told to use devnet.
+ * A pay link as a Solana Action (Blink): the action URL, the solana-action: URI that wallets and Blink
+ * clients open, and Dial's own checkout page (/@handle/blink) that renders it with a browser wallet.
  */
-export function solanaActionLinks(actionUrl: string, testnet: boolean): { uri: string; blink: string } {
-  const uri = `solana-action:${actionUrl}`;
-  return { uri, blink: `https://dial.to/?action=${enc(uri)}${testnet ? "&cluster=devnet" : ""}` };
+export function solanaActionLinks(appUrl: string, handle: string, ask: { amountUsd?: string; note?: string } = {}): { url: string; uri: string; blink: string } {
+  const url = payActionUrl(appUrl, handle, ask);
+  const search = new URL(url).search;
+  return { url, uri: `solana-action:${url}`, blink: `${appUrl}/@${handle}/blink${search}` };
 }
 
 /** ethereum:<token>@<chainId>/transfer?address=<recipient>&uint256=<base units> (EIP-681). */

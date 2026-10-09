@@ -68,6 +68,9 @@ describe("intents", () => {
     const i = await createIntent(db, base, now);
     const [a, b] = await Promise.all([claimForSettlement(db, i.id, now), claimForSettlement(db, i.id, now)]);
     expect([a, b].filter(Boolean)).toHaveLength(1);
+    // The approval time is what the escrow reconciler measures its lease from.
+    expect((a ?? b)?.approvedAt?.getTime()).toBe(now.getTime());
+    expect((await getIntent(db, i.id))?.approvedAt?.getTime()).toBe(now.getTime());
     const late = await createIntent(db, base, now);
     expect(await claimForSettlement(db, late.id, new Date(now.getTime() + 11 * 60_000))).toBeNull();
   });

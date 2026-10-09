@@ -96,3 +96,59 @@
 .next {
   color: var(--color-on-canvas-muted);
 }
+
+/* A linked tile: the name is the link, stretched over the whole tile so all of it is a target. */
+.linked {
+  position: relative;
+}
+
+.link {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.large.strip .long .name {
+  font-size: min(var(--text-2xl), 8cqi);
+}
+
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.linked:hover,
+.linked:has(.link:focus-visible) {
+  background-color: var(--color-canvas-2);
+}
+
+.linked:hover .name,
+.linked:hover .wordmark,
+.linked:has(.link:focus-visible) .name,
+.linked:has(.link:focus-visible) .wordmark {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.link:focus-visible {
+  outline: none;
+}
+
+.linked:has(.link:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* A branded tile (a ThemeScope brand): the logo in the brand's accent over a band of its fill. */
+.branded {
+  background-image: var(--fill-brand);
+  background-size: 100% var(--rule-thick);
+  background-repeat: no-repeat;
+}
+
+.branded .mark > svg {
+  color: var(--color-accent);
+}
