@@ -90,7 +90,8 @@ export async function resolveCounterparty(deps: BotDeps, owner: User, raw: strin
 }
 
 /** Over the threshold, an account with a passkey must use it: no SMS code is issued. */
-async function codeFor(deps: BotDeps, payerId: string, intentId: string, amount: bigint): Promise<string | null> {
+/** A fresh code for the payer, or null when this payment needs their passkey instead. */
+export async function codeFor(deps: BotDeps, payerId: string, intentId: string, amount: bigint): Promise<string | null> {
   if (amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
   return issueCode(deps.db, intentId);
 }

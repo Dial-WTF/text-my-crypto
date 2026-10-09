@@ -50,6 +50,33 @@ export const replies = {
   didntCatch: () =>
     `I didn't catch who or how much. Try "send @jeremy $5", "send $5 to +1 555 123 4567" or "request $10 from alex".`,
   chatFallback: () => `I'm the Dial operator. I move money by text. Try "send jeremy $10".`,
+  /** Said instead of chatFallback when that was the last thing sent: never the same canned line twice. */
+  notSure: () => `Not sure what you mean. Try "balance", "send @name $5", "request $5 from @name" or "wallet".`,
+  thanks: () => `Anytime.`,
+  statusWaitingOnYou: (amount: string, who: string, code: string | null, link: string) =>
+    code
+      ? `Still waiting on you: ${amount} to ${who}. I didn't get your code. New code: reply ${code} to confirm, or "nevermind" to cancel.`
+      : `Still waiting on you: ${amount} to ${who}. Approve with your passkey: ${link}`,
+  statusReminder: (amount: string, who: string) =>
+    `Still waiting on you: ${amount} to ${who}. Reply with the code from my text, or text "status" for a new one.`,
+  statusAskedToPay: (amount: string, from: string, code: string | null, link: string) =>
+    code
+      ? `${from} is still waiting for your ${amount}. New code: reply ${code} to pay, or NO to decline.`
+      : `${from} is still waiting for your ${amount}. Pay with your passkey: ${link}`,
+  statusWaitingOnThem: (amount: string, who: string) => `Still waiting for ${who} to pay your ${amount} request. I'll text you when they do.`,
+  statusExpired: (amount: string, who: string) =>
+    `Your ${amount} to ${who} expired before I got a code, so nothing moved. Text it again to retry.`,
+  statusSending: (amount: string, who: string) => `Sending ${amount} to ${who} now. I'll text you the receipt.`,
+  statusSent: (amount: string, who: string, url: string | null) =>
+    `Yes, it went through: ${amount} to ${who}.${url ? ` Receipt: ${url}` : ""}`,
+  statusReceived: (amount: string, from: string, url: string | null) =>
+    `Yes: you got ${amount} from ${from}.${url ? ` Receipt: ${url}` : ""}`,
+  statusEscrowed: (amount: string, who: string, until: string) =>
+    `Sent. ${amount} is waiting for ${who} to claim it until ${until}. If they don't, text "reclaim".`,
+  statusRefunded: (amount: string, url: string | null) => `That ${amount} came back to you.${url ? ` Receipt: ${url}` : ""}`,
+  statusFailed: (amount: string, who: string) => `Your ${amount} to ${who} didn't go through, and nothing moved. Text it again to retry.`,
+  statusCancelled: (amount: string, who: string) => `Your ${amount} with ${who} was cancelled. Nothing moved.`,
+  nothingInFlight: () => `Nothing in flight right now. Text "balance", "wallet" or "send @name $5".`,
   askNumber: (name: string) => `What's ${name}'s number?`,
   unknownHandle: (handle: string) => `There's no Dial user called ${handle}. Send their phone number instead.`,
   selfSend: () => `That's you. Pick someone else.`,

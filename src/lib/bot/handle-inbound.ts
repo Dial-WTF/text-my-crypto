@@ -34,7 +34,7 @@ import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
 import { ChainDownError } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
-import { isBurstRepeat, logInbound, recentHistory } from "@/lib/sms/log";
+import { isBurstRepeat, lastOutbound, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
 import { completeSignup, enabledChains, offerWaiting } from "./accounts";
@@ -44,6 +44,7 @@ import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { latestRecent, needsMention, statusReply } from "./status";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -147,6 +148,10 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       return;
     case "codeHint":
       return reply(replies.codeHint());
+    case "status":
+      return reply(await statusReply(deps, user));
+    case "thanks":
+      return reply(replies.thanks());
     case "nevermind":
       return reply(replies.cancelled(await cancelUnapproved(deps.db, user.id, deps.now())));
     case "confirmNew":
@@ -184,7 +189,7 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     case "help":
       return reply(replies.help());
     case "chat":
-      return reply(turn.reply ?? (MONEY_VERB.test(body) ? replies.didntCatch() : replies.chatFallback()));
+      return reply(await chatReply(deps, user, body, turn.reply));
     case "balance":
       return reply(await balanceReply(deps, user));
     case "receive":
@@ -221,6 +226,18 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
   }
 }
 
+/**
+ * Anything the operator can't act on. A payment waiting on them comes first (that's usually why
+ * they're texting); then the model's reply if there is one; and never the same canned line twice.
+ */
+async function chatReply(deps: BotDeps, user: User, body: string, modelReply: string | undefined): Promise<string> {
+  const latest = await latestRecent(deps, user);
+  if (needsMention(latest, user.id, deps.now())) return statusReply(deps, user, latest, { freshCode: false });
+  if (modelReply) return modelReply;
+  if (MONEY_VERB.test(body)) return replies.didntCatch();
+  return (await lastOutbound(deps.db, user.phone)) === replies.chatFallback() ? replies.notSure() : replies.chatFallback();
+}
+
 async function welcome(deps: BotDeps, user: User | null): Promise<string> {
   if (user) {
     const waiting = await latestSettledTo(deps.db, user.id);
@@ -237,7 +254,10 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
   if (matches.length === 0) {
     if (await matchesExpiredCode(deps.db, user.id, code, deps.now())) return [replies.codeExpired()];
     if (candidates.length === 0) {
-      return [(await hasLockedCode(deps.db, user.id, deps.now())) ? replies.codeMismatch(0) : replies.noCodePending()];
+      if (await hasLockedCode(deps.db, user.id, deps.now())) return [replies.codeMismatch(0)];
+      // A late or repeated code: say what happened to their latest payment instead of a bare "nothing waiting".
+      const latest = await latestRecent(deps, user);
+      return [latest && latest.status !== "pending" ? await statusReply(deps, user, latest) : replies.noCodePending()];
     }
     const used = Math.max(...candidates.map((c) => c.codeAttempts)) + 1;
     return [replies.codeMismatch(Math.max(0, MAX_CODE_ATTEMPTS - used))];

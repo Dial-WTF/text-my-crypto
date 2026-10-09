@@ -125,6 +125,17 @@ export async function recentHistory(db: Db, phone: string, limit = 6): Promise<s
   return rows.reverse().map((r) => `${r.direction === "in" ? "them" : "operator"}: ${r.body.slice(0, 200)}`);
 }
 
+/** The last thing the operator texted this phone, if anything. */
+export async function lastOutbound(db: Db, phone: string): Promise<string | null> {
+  const [row] = await db
+    .select({ body: smsLog.body })
+    .from(smsLog)
+    .where(and(eq(smsLog.phone, phone), eq(smsLog.direction, "out")))
+    .orderBy(desc(inserted))
+    .limit(1);
+  return row?.body ?? null;
+}
+
 /** Has the operator texted this phone at or after `since`? */
 export async function hasOutboundSince(db: Db, phone: string, since: Date): Promise<boolean> {
   const [row] = await db

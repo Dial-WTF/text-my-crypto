@@ -132,7 +132,7 @@ describe("cancelling and bad targets", () => {
     const confirm = await say(ALEX, "send @jeremy $4");
     expect(await say(ALEX, "nevermind")).toBe("OK, cancelled. Nothing was sent.");
     expect((await getIntent(db, intentIdIn(confirm)))?.status).toBe("declined");
-    expect(await say(ALEX, codeIn(confirm))).toBe("Nothing is waiting on a code right now.");
+    expect(await say(ALEX, codeIn(confirm))).toBe("Your $4 with Jeremy was cancelled. Nothing moved.");
   });
 
   it("nevermind drops a pending question", async () => {

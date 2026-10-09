@@ -9,6 +9,8 @@ export type Input =
   | { kind: "nevermind" }
   | { kind: "new" }
   | { kind: "affirm" }
+  | { kind: "status" }
+  | { kind: "thanks" }
   | { kind: "code"; code: string }
   | { kind: "pick"; index: number }
   | { kind: "phone"; phone: string }
@@ -22,6 +24,10 @@ const NEVERMIND = /^(nevermind|never mind|nvm|forget it|scratch that|abort|undo)
 const NEW = /^(new|another|again|send another|yes new)$/i;
 const AFFIRM = /^(y|ya|ye|yes|yeah|yep|yup|ok|okay|k|kk|sure|confirm|confirmed|approve|approved|do it|go|send it|👍|✅)$/iu;
 const CODE = /^[\s-]*(\d[\s-]*){6}$/;
+// "Did it work?" in the ways people actually ask it.
+const STATUS =
+  /^(?:status|update|any update|any news|\?{2,}|what happened|whats happening|what's happening|is it done|is it sent|did it (?:work|go through|go|send|land)|did that (?:work|go through|go|send)|did my (?:payment|money|code|text) (?:work|go through|go|send|land)|did you get (?:it|that|my code|the code|my text)|where(?:'s| is) my (?:money|payment))\??$/i;
+const THANKS = /^(?:thanks|thank you|thx|ty|tysm|thanks!|cheers|appreciate it|🙏)$/iu;
 const PICK = /^[1-5]$/;
 const PHONE_SHAPED = /^[+\d\s().-]{7,}$/;
 
@@ -34,6 +40,8 @@ export function classify(raw: string): Input {
   if (NEVERMIND.test(text)) return { kind: "nevermind" };
   if (NEW.test(text)) return { kind: "new" };
   if (AFFIRM.test(text)) return { kind: "affirm" };
+  if (STATUS.test(text)) return { kind: "status" };
+  if (THANKS.test(text)) return { kind: "thanks" };
   if (CODE.test(text)) return { kind: "code", code: text.replace(/\D/g, "") };
   if (PICK.test(text)) return { kind: "pick", index: Number(text) - 1 };
   if (PHONE_SHAPED.test(text)) {

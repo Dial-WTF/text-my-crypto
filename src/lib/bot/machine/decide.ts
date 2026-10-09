@@ -23,6 +23,8 @@ export type Action =
   | { do: "badName" }
   | { do: "approve"; code: string }
   | { do: "codeHint" }
+  | { do: "status" }
+  | { do: "thanks" }
   | { do: "nevermind" }
   | { do: "confirmNew" }
   | { do: "pick"; index: number }
@@ -61,6 +63,9 @@ export function decide(s: Session, input: Input): Action {
     return { do: "confirmNew" };
   }
   if (input.kind === "affirm" && s.awaitingApproval) return { do: "codeHint" };
+  // Questions about a payment, and thanks, never drop a pending question or start anything.
+  if (input.kind === "status") return { do: "status" };
+  if (input.kind === "thanks") return { do: "thanks" };
 
   // 4. Everything else is a fresh request; any pending prompt is dropped.
   const text = input.kind === "text" ? input.text : input.kind === "phone" ? input.phone : rawOf(input);
@@ -75,6 +80,10 @@ function rawOf(input: Input): string {
       return "new";
     case "affirm":
       return "yes";
+    case "status":
+      return "status";
+    case "thanks":
+      return "thanks";
     default:
       return "";
   }

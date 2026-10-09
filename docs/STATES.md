@@ -22,7 +22,7 @@ flowchart LR
   F --> G[act + reply]
 ```
 
-`classify` turns any text into exactly one input: `stop`, `start`, `help`, `nevermind`, `new`, `affirm`, `code` (spaces and dashes allowed), `pick` (1–5), `phone`, `empty`, or free `text`.
+`classify` turns any text into exactly one input: `stop`, `start`, `help`, `nevermind`, `new`, `affirm`, `status`, `thanks`, `code` (spaces and dashes allowed), `pick` (1–5), `phone`, `empty`, or free `text`.
 
 `decide` applies these rules in order:
 
@@ -104,3 +104,8 @@ Every arrow is a conditional UPDATE, so a payment moves at most once even if two
 | Request or payment to someone not on Dial | Escrow / request waits; offered again with a fresh code after they join, after their welcome | Nothing gets stuck or lost |
 | Any name format ("J. P. Meyer, crypto anarchist") | Becomes "J. P. Meyer", @jpmeyer | Accept people as they type |
 | Free-form chat | Language model replies with the last few lines as context | Conversational, never invents balances |
+| "Did it work?", "status", "any update?", "??" | The latest payment in one text: sent with receipt, sending, escrowed until a date, expired, cancelled, or waiting. If it is waiting on them, a fresh code | People ask when a reply goes missing; give the answer and the way forward |
+| Small talk ("yo", "hello?") while a payment waits on them | "Still waiting on you: $X to Y. Reply with the code, or text status for a new one." The old code keeps working | The likely reason they're texting; a nudge must not cancel a code still in transit |
+| A code arriving for a payment that already settled or was cancelled | What happened to that payment, instead of "nothing waiting" | Late or repeated codes get context |
+| The canned "I'm the Dial operator…" line would repeat | A different, specific hint instead | Never the same canned reply twice in a row |
+| "thanks" | "Anytime." | Small talk gets a human answer |
