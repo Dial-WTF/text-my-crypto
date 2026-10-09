@@ -46,7 +46,9 @@ export async function ShieldedDemo({ chain, network, name, adapter }: DemoProps)
         <Fine>Open the transaction: the explorer can confirm it exists, but not who paid whom or how much.</Fine>
       </Receipt>
       <Receipt title="What the Dial receipt shows">
-        <ReceiptLine label={`${payment.from} → ${payment.to}`}>{money(payment.amount, chain, network)}</ReceiptLine>
+        <ReceiptLine label={`${payment.from} → ${payment.to}`}>
+          {payment.amount === null ? "shielded" : money(payment.amount, chain, network)}
+        </ReceiptLine>
         <ReceiptLine label="State">{stateLabel(payment.status, null, now)}</ReceiptLine>
         <ReceiptLine label="When">{timeAgo(payment.at, now)}</ReceiptLine>
         <ReceiptRule />

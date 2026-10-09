@@ -145,6 +145,20 @@ describe("chain tiles", () => {
     expect(html).toContain('data-brand="zcash"');
     expect(html.match(/<a /g)).toHaveLength(8);
   });
+
+  it("give every chain tile its brand for hover, and wear it at rest only when asked (/judges)", () => {
+    const statuses = chainStatuses("solana,tempo", "testnet", new Set());
+    const landing = renderToStaticMarkup(createElement(ChainStrip, { heading: "Settles on", items: settlesOn(statuses) }));
+    const judges = renderToStaticMarkup(createElement(ChainStrip, { heading: "Chains", items: settlesOn(statuses, { branded: true }) }));
+    for (const html of [landing, judges]) {
+      expect(html.match(/data-brand="/g)).toHaveLength(8);
+      // The visible cue is decoration; the link's own name already says where it goes.
+      expect(html).toMatch(/aria-hidden="true">How Dial uses Solana<span[^>]*>→<\/span><\/span>/);
+      expect(html).not.toContain("data-brand-extent");
+    }
+    expect(settlesOn(statuses).some((t) => t.brandAtRest)).toBe(false);
+    expect(settlesOn(statuses, { branded: true }).every((t) => t.brandAtRest)).toBe(true);
+  });
 });
 
 describe("latestSplit", () => {
@@ -184,7 +198,7 @@ describe("latestSplit", () => {
 });
 
 describe("pay-link Blink", () => {
-  it("shows only the configured demo handle, once claimed, and builds the dial.to link and solana-action URI for it", async () => {
+  it("shows only the configured demo handle, once claimed, and builds its checkout link and solana-action URI", async () => {
     const db = await createTestDb();
     expect(await demoHandle(db, "sam")).toBeNull();
     await createUser(db, { phone: "+15550000050", handle: "alex" }, new Date("2026-10-01T00:00:00Z"));
@@ -193,10 +207,10 @@ describe("pay-link Blink", () => {
     expect(await demoHandle(db, "sam")).toBe("sam");
     expect(await demoHandle(db, "nobody")).toBeNull();
 
-    expect(blinkFor("https://dial.example", "sam", true)).toEqual({
+    expect(blinkFor("https://dial.example", "sam")).toEqual({
       actionUrl: "https://dial.example/api/actions/pay/sam",
       uri: "solana-action:https://dial.example/api/actions/pay/sam",
-      blink: "https://dial.to/?action=solana-action%3Ahttps%3A%2F%2Fdial.example%2Fapi%2Factions%2Fpay%2Fsam&cluster=devnet",
+      blink: "https://dial.example/@sam/blink",
     });
   });
 });

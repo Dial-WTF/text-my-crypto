@@ -113,6 +113,13 @@
       "when": 1791519835634,
       "tag": "0015_action_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791519940827,
+      "tag": "0016_private_sends",
+      "breakpoints": true
     }
   ]
 }

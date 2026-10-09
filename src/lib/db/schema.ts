@@ -109,6 +109,8 @@ export const intents = sqliteTable("intents", {
   escrowExpiresAt: ts("escrow_expires_at"),
   /** When the approved payment started moving (status "settling"). The reconciler times unconfirmed sends from here. */
   approvedAt: ts("approved_at"),
+  /** "send … privately": a shielded Zcash send. Public pages show it as shielded, with no amount, names or note. */
+  private: integer("private", { mode: "boolean" }).notNull().default(false),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),
   releaseTxHash: text("release_tx_hash"),

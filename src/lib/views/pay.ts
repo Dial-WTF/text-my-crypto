@@ -3,7 +3,7 @@ import type { BotDeps } from "@/lib/bot/types";
 import type { Chain } from "@/lib/chains";
 import type { User } from "@/lib/db/schema";
 import { isUsdAmount, usdToBaseUnits } from "@/lib/money";
-import { eip681TransferUri, payActionUrl, payByTextBody, smsUri, solanaActionLinks, solanaPayUri, zip321Uri } from "@/lib/pay-links";
+import { eip681TransferUri, payByTextBody, smsUri, solanaActionLinks, solanaPayUri, zip321Uri } from "@/lib/pay-links";
 import { REGISTRY } from "@/lib/settlement/registry";
 import { ChainDownError } from "@/lib/settlement/types";
 import { formatZec, usdToZats } from "@/lib/settlement/zcash";
@@ -20,7 +20,7 @@ export type PayChain = {
   /** Opens a wallet app on a filled-in transfer: Solana Pay on Solana, ZIP 321 on Zcash, EIP-681 elsewhere. */
   uri: string;
   explorer: string;
-  /** Solana only: the same payment as a Solana Action (Blink) any Solana wallet can sign. */
+  /** Solana only: the same payment as a Solana Action (Blink), and Dial's checkout page for it (/@handle/blink). */
   action?: { url: string; uri: string; blink: string };
 };
 
@@ -87,8 +87,7 @@ export async function payProfile(deps: BotDeps, user: User, ask: PayAsk = {}): P
       uri = eip681TransferUri({ token, chainId: entry.viem.id, address, baseUnits });
     }
     const asset = entry.kind === "zcash" ? entry.asset : "USDC";
-    const actionUrl = payActionUrl(deps.appUrl, handle, ask);
-    const action = entry.kind === "solana" ? { url: actionUrl, ...solanaActionLinks(actionUrl, deps.network === "testnet") } : null;
+    const action = entry.kind === "solana" ? solanaActionLinks(deps.appUrl, handle, ask) : null;
     chains.push({
       chain,
       network: entry.network,

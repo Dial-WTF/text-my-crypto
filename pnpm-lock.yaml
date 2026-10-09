@@ -34,6 +34,18 @@ importers:
       '@solana/kit':
         specifier: ~8.4.0
         version: 8.4.0(typescript@5.9.3)
+      '@solana/wallet-standard-features':
+        specifier: ~1.5.0
+        version: 1.5.0
+      '@wallet-standard/app':
+        specifier: ~1.1.1
+        version: 1.1.1
+      '@wallet-standard/base':
+        specifier: ~1.1.1
+        version: 1.1.1
+      '@wallet-standard/features':
+        specifier: ~1.1.1
+        version: 1.1.1
       ai:
         specifier: ^7.0.134
         version: 7.0.134(zod@4.6.5)
@@ -2375,6 +2387,10 @@ packages:
       typescript:
         optional: true
 
+  '@solana/wallet-standard-features@1.5.0':
+    resolution: {integrity: sha512-gxlLaEfPAqbhd3LNkK0Ks2pbVvDm1SDGqBK/ynDQy13Gu+qiURLpRCfSPjbtrw5bmqQsZ6rS2YJHL31bY/Koag==}
+    engines: {node: '>=22'}
+
   '@speed-highlight/core@1.2.24':
     resolution: {integrity: sha512-qeW2e1l78afw8VhRPfPQ1Gjj+KU5XFQ/OFV5ti6eTa9bruO7mJyZtA4vw0ofqmA3tKCkROE9xLk3VZoeRc98nw==}
 
@@ -2647,6 +2663,18 @@ packages:
 
   '@vitest/spy@5.0.3':
     resolution: {integrity: sha512-XhFysQTB8AZ+P4gMi+Lpo99vg2AZi0qKpaB9yXQl37+CaMEAPO3iH/wGVnSyL5MPERiLezpqTVtrR6UZH5GCXg==}
+
+  '@wallet-standard/app@1.1.1':
+    resolution: {integrity: sha512-WDGwoByhP5gwHH01r5EaLgQdLVkACPCdOMQhmhn8rsm10h/siSgTorShzBxrn0ExSPof+Lu+C3TfgqBrPa1xoQ==}
+    engines: {node: '>=22'}
+
+  '@wallet-standard/base@1.1.1':
+    resolution: {integrity: sha512-gggIHTtxicF9XFMQ12DkfS6NAG92Ak795JeSA7f2whAQ6Y3AkMWWuCMxSZXG2NIPN42kEaZSNVjqMsJRaJRxMQ==}
+    engines: {node: '>=22'}
+
+  '@wallet-standard/features@1.1.1':
+    resolution: {integrity: sha512-aCWYmVeSCGViyEU5k7GMoW8zxE4Gs+C1s1Pp2XLesvSNlnZ4PMES9HUnTB3hl0b3RVj7C61yze3IWyrncqg4MA==}
+    engines: {node: '>=22'}
 
   '@workflow/serde@4.1.0':
     resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
@@ -7445,6 +7473,11 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
+  '@solana/wallet-standard-features@1.5.0':
+    dependencies:
+      '@wallet-standard/base': 1.1.1
+      '@wallet-standard/features': 1.1.1
+
   '@speed-highlight/core@1.2.24': {}
 
   '@standard-schema/spec@1.1.0': {}
@@ -7700,6 +7733,16 @@ snapshots:
       vite: 8.3.4(@types/node@24.19.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.16.9)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/spy@5.0.3': {}
+
+  '@wallet-standard/app@1.1.1':
+    dependencies:
+      '@wallet-standard/base': 1.1.1
+
+  '@wallet-standard/base@1.1.1': {}
+
+  '@wallet-standard/features@1.1.1':
+    dependencies:
+      '@wallet-standard/base': 1.1.1
 
   '@workflow/serde@4.1.0': {}
 

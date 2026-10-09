@@ -16,6 +16,7 @@
   align-content: start;
   padding: var(--space-sm);
   border: var(--rule-thin) solid var(--color-canvas-rule);
+  border-top: var(--rule-thick) solid var(--color-accent);
   counter-increment: step;
 }
 
@@ -53,7 +54,8 @@
 
 .chip {
   padding: var(--space-3xs) var(--space-xs);
-  border: var(--rule-thin) solid var(--color-on-card);
+  border: var(--rule-thin) solid var(--color-accent-on-card);
+  color: var(--color-accent-on-card);
   border-radius: var(--radius-sm);
   font: 600 var(--text-sm) / 1.4 var(--font-mono);
   white-space: nowrap;
@@ -87,9 +89,9 @@
   text-transform: none;
 }
 
-/* The card's own ink, not the brand's focus colour: brand colours are tuned for the canvas, not cards. */
+/* The accent tuned for cards, not the canvas one: --color-focus is tuned for the canvas. */
 .input:focus-visible {
-  outline: 2px solid var(--color-on-card);
+  outline: 2px solid var(--color-accent-on-card);
   outline-offset: 1px;
 }
 

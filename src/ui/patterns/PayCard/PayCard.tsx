@@ -8,7 +8,7 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
-/** `action`: Solana only, the pay link as a Solana Action (Blink). */
+/** `action`: Solana only, the pay link as a Solana Action (Blink): its solana-action: URI and Dial's checkout page for it. */
 type PayCardChain = {
   network: string;
   address: string;
@@ -77,8 +77,8 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
                 Pay with a Solana wallet
               </ButtonLink>
               <Fine>
-                A Blink: pick an amount and approve it in Phantom, Solflare or Backpack. Wallets that read Solana Actions
-                open{" "}
+                Pick an amount and approve it in Phantom, Solflare or Backpack in this browser. Wallets that read Solana
+                Actions open{" "}
                 <a className={styles.link} href={c.action.uri}>
                   this link
                 </a>{" "}

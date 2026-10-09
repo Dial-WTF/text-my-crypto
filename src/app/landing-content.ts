@@ -37,7 +37,8 @@ const STATE_ORDER: Record<ChainState, number> = { live: 0, ready: 1, wired: 2, b
 
 /**
  * One tile per chain with a prize track in the Crypto World's Fair: live first, then ready, wired, building.
- * Each links to its chain page; `branded` also colours each tile in its chain's brand (/judges).
+ * Each links to its chain page and takes its chain's brand on hover and focus; `branded` also wears the
+ * brand at rest (/judges).
  */
 export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): (ChainStripItem & { href: string })[] {
   return [...statuses]
@@ -48,7 +49,8 @@ export function settlesOn(statuses: ChainStatus[], { branded = false } = {}): (C
       statusLabel: s.label,
       href: chainPath(s.chain),
       linkLabel: `${CHAIN_COPY[s.chain].name}: how Dial uses it`,
-      ...(branded ? { brand: s.chain } : {}),
+      brand: s.chain,
+      ...(branded ? { brandAtRest: true } : {}),
     }));
 }
 

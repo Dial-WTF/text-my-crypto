@@ -1,4 +1,7 @@
 .receipt {
+  /* A card surface: links and focus rings inside it take the card's versions of the accent. */
+  --color-link: var(--color-link-on-card);
+  --color-focus: var(--color-focus-on-card);
   position: relative;
   width: min(100%, var(--receipt-width));
   padding: var(--space-lg) var(--space-md);
@@ -7,6 +10,8 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   border: var(--card-border);
+  /* The card's border unless a brand page gives it a thick edge in its accent. */
+  border-inline-start: var(--card-edge-start);
   mask: var(--card-edge);
 }
 

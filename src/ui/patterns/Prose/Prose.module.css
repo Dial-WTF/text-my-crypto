@@ -13,6 +13,7 @@
 .prose h3 {
   margin-top: var(--space-sm);
   font: 700 var(--text-lg) / 1.25 var(--font-body);
+  color: var(--color-heading);
 }
 
 .prose h3:first-child {
@@ -28,10 +29,11 @@
 }
 
 .prose li::marker {
-  color: var(--color-on-canvas-muted);
+  color: var(--color-marker);
 }
 
 .prose a {
+  color: var(--color-link);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }

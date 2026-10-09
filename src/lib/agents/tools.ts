@@ -82,7 +82,18 @@ export const toolInputs = {
   get_balance: z.object({}),
   get_receive_address: z.object({}),
   resolve_recipient: z.object({ to: person }),
-  send_payment: z.object({ to: person, amountUsd, note, chain }),
+  send_payment: z.object({
+    to: person,
+    amountUsd,
+    note,
+    chain,
+    private: z
+      .boolean()
+      .optional()
+      .describe(
+        "true: a private send, shielded on Zcash whatever the default chain. The amount and who paid whom stay off the public chain and public receipts. Fails if Zcash isn't switched on.",
+      ),
+  }),
   request_payment: z.object({ from: person, amountUsd, note, chain }),
   create_invoice: z.object({ to: person, amountUsd, note, chain }),
   withdraw: z.object({
@@ -184,6 +195,7 @@ async function paymentOut(deps: BotDeps, owner: User, i: Intent): Promise<Record
     statusLabel: view.status.label,
     amountUsd: usd(i.amount),
     asset: assetOf(i.chain, deps.network),
+    shielded: i.private,
     from: view.from,
     // One leg of a split: who this leg pays. The view's "to" names the whole split.
     to: view.split?.legs.find((l) => l.id === i.id)?.to ?? view.to,
@@ -317,10 +329,11 @@ async function moneyTool(
   deps: BotDeps,
   agent: Agent,
   kind: MoneyKind,
-  input: { counterparty: string; amountUsd: string; note?: string; chain?: (typeof CHAINS)[number] },
+  input: { counterparty: string; amountUsd: string; note?: string; chain?: (typeof CHAINS)[number]; private?: boolean },
 ): Promise<ToolResult> {
   const { user } = agent;
-  const cmd = { kind, ...input };
+  const { private: shielded, ...rest } = input;
+  const cmd = { kind, ...rest, ...(shielded && kind === "send" ? { private: true as const } : {}) };
   const checked = checkMoney(deps, user, cmd);
   if (!checked.ok) return err(checked.error.code, checked.error.message);
   const resolved = await resolveCounterparty(deps, user, input.counterparty);
@@ -501,7 +514,7 @@ export const toolDescriptions: Record<ToolName, { title: string; description: st
   send_payment: {
     title: "Send payment",
     description:
-      "Start a USDC payment from the owner to someone. Creates a pending payment and texts the owner a one-time code and approval link. Nothing moves until the owner approves; you cannot approve. Returns intentId and approveUrl; poll get_payment.",
+      "Start a USDC payment from the owner to someone, or a private one shielded on Zcash with private: true. Creates a pending payment and texts the owner a one-time code and approval link. Nothing moves until the owner approves; you cannot approve. Returns intentId and approveUrl; poll get_payment.",
   },
   request_payment: {
     title: "Request payment",
