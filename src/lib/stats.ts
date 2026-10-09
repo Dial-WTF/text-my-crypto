@@ -9,7 +9,7 @@ export type PublicStats = { payments: number; movedUsd: bigint; people: number }
 
 export async function publicStats(db: Db): Promise<PublicStats> {
   const [money] = await db
-    .select({ payments: count(), moved: sql<number | null>`sum(${intents.amount})` })
+    .select({ payments: count(), moved: sql<number | null>`sum(case when ${intents.private} then 0 else ${intents.amount} end)` })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
   // Payments from any Solana wallet through a pay link's Blink count once recorded.
@@ -49,7 +49,8 @@ export type FeedItem = {
   id: string;
   from: string;
   to: string;
-  amount: bigint;
+  /** Null for a private send: the public ledger shows it happened, not how much or between whom. */
+  amount: bigint | null;
   chain: Chain;
   status: Intent["status"];
   txHash: string | null;
@@ -67,16 +68,18 @@ export function groupSplits(items: FeedItem[]): FeedGroup[] {
   const out: FeedGroup[] = [];
   const bySplit = new Map<string, FeedGroup>();
   for (const item of items) {
-    const legs = [{ to: item.to, amount: item.amount }];
-    const group = item.splitId ? bySplit.get(item.splitId) : undefined;
+    // A private send is never a split leg (splits batch on a chain that can't shield), and its amount is hidden.
+    const splitId = item.amount === null ? null : item.splitId;
+    const legs = [{ to: item.to, amount: item.amount ?? 0n }];
+    const group = splitId ? bySplit.get(splitId) : undefined;
     if (!group) {
-      const entry: FeedGroup = { ...item, legs: item.splitId ? legs : null };
-      if (item.splitId) bySplit.set(item.splitId, entry);
+      const entry: FeedGroup = { ...item, legs: splitId ? legs : null };
+      if (splitId) bySplit.set(splitId, entry);
       out.push(entry);
       continue;
     }
     group.legs?.push(...legs);
-    group.amount += item.amount;
+    group.amount = (group.amount ?? 0n) + (item.amount ?? 0n);
   }
   // Legs come back newest first; list them in the order they were paid.
   for (const g of out) {
@@ -112,9 +115,10 @@ export async function recentPayments(db: Db, limit: number, chain?: Chain): Prom
   const fromIntents = rows.map(
     (r): FeedItem => ({
       id: r.id,
-      from: who(r.senderId),
-      to: who(r.recipientId),
-      amount: r.amount,
+      // A private send shows only that it happened, on which chain, and its txid.
+      from: r.private ? "someone" : who(r.senderId),
+      to: r.private ? "someone" : who(r.recipientId),
+      amount: r.private ? null : r.amount,
       chain: r.chain,
       status: r.status,
       txHash: r.txHash,

@@ -2,7 +2,7 @@ import { payActionMetadata } from "@/lib/actions/pay";
 import { getDb } from "@/lib/db/client";
 import { publicEnv } from "@/lib/env";
 import { usdToBaseUnits } from "@/lib/money";
-import { payActionUrl, solanaActionLinks } from "@/lib/pay-links";
+import { solanaActionLinks } from "@/lib/pay-links";
 import { demoHandle } from "@/lib/stats";
 import { ButtonLink } from "@/ui/primitives/Button/Button";
 import { CodeBlock } from "@/ui/primitives/CodeBlock/CodeBlock";
@@ -13,9 +13,10 @@ import { quietly } from "../../ledger-data";
 import styles from "./demos.module.css";
 import type { DemoProps } from "./types";
 
-/** The pay-link Blink for one handle: what a Blink client shows, its dial.to page and its solana-action: URI. */
-export function blinkFor(appUrl: string, handle: string, testnet: boolean) {
-  return { actionUrl: payActionUrl(appUrl, handle), ...solanaActionLinks(payActionUrl(appUrl, handle), testnet) };
+/** The pay-link Blink for one handle: its action URL, Dial's own checkout page for it and its solana-action: URI. */
+export function blinkFor(appUrl: string, handle: string) {
+  const { url, uri, blink } = solanaActionLinks(appUrl, handle);
+  return { actionUrl: url, uri, blink };
 }
 
 /**
@@ -27,7 +28,7 @@ export async function ActionsDemo({ chain, network }: DemoProps) {
   if (!handle) return null;
   const { APP_URL, PER_TX_CAP_USD } = publicEnv();
   const meta = payActionMetadata({ appUrl: APP_URL, perTxCap: usdToBaseUnits(PER_TX_CAP_USD), network }, chain, { handle, name: null }, {});
-  const links = blinkFor(APP_URL, handle, network === "testnet");
+  const links = blinkFor(APP_URL, handle);
 
   return (
     <Receipt title={`Blink · @${handle}`}>
@@ -42,12 +43,12 @@ export async function ActionsDemo({ chain, network }: DemoProps) {
           ))}
         </ul>
         <ButtonLink href={links.blink} target="_blank" rel="noreferrer">
-          Open on dial.to
+          Pay with a Solana wallet
         </ButtonLink>
         <ReceiptRule />
         <CodeBlock label="solana-action URI" code={links.uri} />
         <Fine>
-          This page sends nothing. Paying the Blink on dial.to moves {network === "testnet" ? "devnet test USDC" : "USDC"} from
+          This page sends nothing. Paying the Blink moves {network === "testnet" ? "devnet test USDC" : "USDC"} from
           your own wallet to @{handle}.
         </Fine>
       </Stack>

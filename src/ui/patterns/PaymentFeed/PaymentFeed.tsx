@@ -7,7 +7,8 @@ export type FeedEntry = {
   id: string;
   from: string;
   to: string;
-  amount: bigint;
+  /** Null for a private (shielded) send. */
+  amount: bigint | null;
   network: string;
   state: string;
   txHash: string | null;
@@ -38,7 +39,7 @@ export function PaymentFeed({
         entries.map((e) => (
           <div key={e.id} className={styles.item}>
             <ReceiptLine label={e.legs ? `${e.from} split ${e.legs.length} ways` : `${e.from} → ${e.to}`}>
-              <Money amount={e.amount} unit={null} />
+              {e.amount === null ? "shielded" : <Money amount={e.amount} unit={null} />}
             </ReceiptLine>
             {e.legs?.map((leg, i) => (
               <div key={`${e.id}-${i}`} className={styles.leg}>
