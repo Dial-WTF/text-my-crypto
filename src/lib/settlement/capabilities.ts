@@ -43,10 +43,15 @@ export interface BatchTransfer {
 }
 
 export interface PaymentActions {
+  /** The network's CAIP-2 id, which Actions responses name in their X-Blockchain-Ids header. */
+  blockchainId: string;
   /** An unsigned transaction paying `recipient` from `payer`, tagged with `reference` so it can be found. Base64. */
   buildPayment(args: { payer: string; recipient: string; amount: bigint; reference: string; memo: string }): Promise<string>;
-  /** Confirmed payments carrying `reference`, oldest first. Empty until one lands. */
-  findByReference(reference: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
+  /**
+   * Confirmed payments carrying `reference` that paid `recipient`, oldest first: `amount` is what
+   * `recipient` received, `payer` the wallet it came from. Empty until one lands.
+   */
+  findByReference(reference: string, recipient: string): Promise<Array<SettleResult & { payer: string; amount: bigint }>>;
 }
 
 export interface ShieldedTransfer {

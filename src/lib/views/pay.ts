@@ -3,7 +3,7 @@ import type { BotDeps } from "@/lib/bot/types";
 import type { Chain } from "@/lib/chains";
 import type { User } from "@/lib/db/schema";
 import { isUsdAmount, usdToBaseUnits } from "@/lib/money";
-import { eip681TransferUri, payByTextBody, smsUri, solanaPayUri, zip321Uri } from "@/lib/pay-links";
+import { eip681TransferUri, payActionUrl, payByTextBody, smsUri, solanaActionLinks, solanaPayUri, zip321Uri } from "@/lib/pay-links";
 import { REGISTRY } from "@/lib/settlement/registry";
 import { ChainDownError } from "@/lib/settlement/types";
 import { formatZec, usdToZats } from "@/lib/settlement/zcash";
@@ -20,6 +20,8 @@ export type PayChain = {
   /** Opens a wallet app on a filled-in transfer: Solana Pay on Solana, ZIP 321 on Zcash, EIP-681 elsewhere. */
   uri: string;
   explorer: string;
+  /** Solana only: the same payment as a Solana Action (Blink) any Solana wallet can sign. */
+  action?: { url: string; uri: string; blink: string };
 };
 
 /** Everything a payer needs, and nothing private: no phone number, no balances. */
@@ -84,7 +86,19 @@ export async function payProfile(deps: BotDeps, user: User, ask: PayAsk = {}): P
       uri = eip681TransferUri({ token, chainId: entry.viem.id, address, baseUnits });
     }
     const asset = entry.kind === "zcash" ? entry.asset : "USDC";
-    chains.push({ chain, network: entry.network, address, token, asset, assetNote, uri, explorer: entry.explorerAddress(address) });
+    const actionUrl = payActionUrl(deps.appUrl, handle, ask);
+    const action = entry.kind === "solana" ? { url: actionUrl, ...solanaActionLinks(actionUrl, deps.network === "testnet") } : null;
+    chains.push({
+      chain,
+      network: entry.network,
+      address,
+      token,
+      asset,
+      assetNote,
+      uri,
+      explorer: entry.explorerAddress(address),
+      ...(action ? { action } : {}),
+    });
   }
   const body = payByTextBody(handle, ask.amountUsd, ask.note);
   const query = new URLSearchParams({ ...(ask.amountUsd ? { amount: ask.amountUsd } : {}), ...(ask.note ? { note: ask.note } : {}) });

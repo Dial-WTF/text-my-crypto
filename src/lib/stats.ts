@@ -1,7 +1,7 @@
-import { and, count, desc, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Chain } from "@/lib/chains";
 import type { Db } from "@/lib/db/client";
-import { type Intent, intents, users } from "@/lib/db/schema";
+import { actionPayments, type Intent, intents, users } from "@/lib/db/schema";
 import { STOCK_TOKEN_ADDRESSES, stockForToken } from "@/lib/stocks";
 
 const MOVED: Intent["status"][] = ["settled", "escrowed", "refunded"];
@@ -17,8 +17,17 @@ export async function publicStats(db: Db): Promise<PublicStats> {
     })
     .from(intents)
     .where(and(inArray(intents.status, MOVED), inArray(intents.kind, ["send", "request", "invoice"])));
+  // Payments from any Solana wallet through a pay link's Blink count once recorded.
+  const [blinks] = await db
+    .select({ payments: count(), moved: sql<number | null>`sum(${actionPayments.received})` })
+    .from(actionPayments)
+    .where(isNotNull(actionPayments.signature));
   const [people] = await db.select({ n: count() }).from(users).where(isNotNull(users.claimedAt));
-  return { payments: money?.payments ?? 0, movedUsd: BigInt(money?.moved ?? 0), people: people?.n ?? 0 };
+  return {
+    payments: (money?.payments ?? 0) + (blinks?.payments ?? 0),
+    movedUsd: BigInt(money?.moved ?? 0) + BigInt(blinks?.moved ?? 0),
+    people: people?.n ?? 0,
+  };
 }
 
 /**
@@ -31,7 +40,14 @@ export async function movedByChain(db: Db): Promise<Partial<Record<Chain, number
     .from(intents)
     .where(inArray(intents.status, MOVED))
     .groupBy(intents.chain);
-  return Object.fromEntries(rows.filter((r) => r.n > 0).map((r) => [r.chain, r.n]));
+  const blinks = await db
+    .select({ chain: actionPayments.chain, n: count() })
+    .from(actionPayments)
+    .where(isNotNull(actionPayments.signature))
+    .groupBy(actionPayments.chain);
+  const moved: Partial<Record<Chain, number>> = {};
+  for (const r of [...rows, ...blinks]) if (r.n > 0) moved[r.chain] = (moved[r.chain] ?? 0) + r.n;
+  return moved;
 }
 
 export type FeedItem = {
@@ -93,17 +109,44 @@ export async function recentPayments(db: Db, limit: number): Promise<FeedItem[]>
     const handle = people.find((p) => p.id === id)?.handle;
     return handle ? `@${handle}` : "someone new";
   };
-  return rows.map((r) => ({
-    id: r.id,
-    from: who(r.senderId),
-    to: who(r.recipientId),
-    amount: r.amount,
-    stock: stockForToken(r.chain, r.token)?.symbol ?? null,
-    chain: r.chain,
-    status: r.status,
-    txHash: r.txHash,
-    explorerUrl: r.explorerUrl,
-    at: r.createdAt,
-    splitId: r.splitId,
+  const fromIntents = rows.map(
+    (r): FeedItem => ({
+      id: r.id,
+      from: who(r.senderId),
+      to: who(r.recipientId),
+      amount: r.amount,
+      stock: stockForToken(r.chain, r.token)?.symbol ?? null,
+      chain: r.chain,
+      status: r.status,
+      txHash: r.txHash,
+      explorerUrl: r.explorerUrl,
+      at: r.createdAt,
+      splitId: r.splitId,
+    }),
+  );
+  return [...fromIntents, ...(await blinkPayments(db, limit))].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
+}
+
+/** Recorded pay-link Blink payments: from the paying wallet's address (it isn't on Dial) to a handle. */
+async function blinkPayments(db: Db, limit: number): Promise<FeedItem[]> {
+  const rows = await db
+    .select({ p: actionPayments, handle: users.handle })
+    .from(actionPayments)
+    .innerJoin(users, eq(users.id, actionPayments.recipientId))
+    .where(isNotNull(actionPayments.signature))
+    .orderBy(desc(actionPayments.paidAt))
+    .limit(limit);
+  return rows.map(({ p, handle }) => ({
+    id: p.id,
+    from: `${p.payerAddress.slice(0, 4)}…${p.payerAddress.slice(-4)}`,
+    to: handle ? `@${handle}` : "someone new",
+    amount: p.received ?? p.amount,
+    stock: null,
+    chain: p.chain,
+    status: "settled",
+    txHash: p.signature,
+    explorerUrl: p.explorerUrl,
+    at: p.paidAt ?? p.createdAt,
+    splitId: null,
   }));
 }

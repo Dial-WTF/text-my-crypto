@@ -8,7 +8,15 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
-export type PayCardChain = { network: string; address: string; uri: string; explorer: string; assetNote: string | null };
+/** `action`: Solana only, the pay link as a Solana Action (Blink). */
+export type PayCardChain = {
+  network: string;
+  address: string;
+  uri: string;
+  explorer: string;
+  assetNote: string | null;
+  action?: { uri: string; blink: string };
+};
 
 type PayCardProps = {
   handle: string;
@@ -63,6 +71,21 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
           <ButtonLink href={c.uri} variant="outline" full>
             Open in a wallet app
           </ButtonLink>
+          {c.action ? (
+            <>
+              <ButtonLink href={c.action.blink} variant="outline" full>
+                Pay with a Solana wallet
+              </ButtonLink>
+              <Fine>
+                A Blink: pick an amount and approve it in Phantom, Solflare or Backpack. Wallets that read Solana Actions
+                open{" "}
+                <a className={styles.link} href={c.action.uri}>
+                  this link
+                </a>{" "}
+                directly.
+              </Fine>
+            </>
+          ) : null}
         </Stack>
       ))}
 
