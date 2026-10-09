@@ -333,14 +333,10 @@ async function moneyTool(
 }
 
 async function getStocks(deps: BotDeps, agent: Agent): Promise<ToolResult> {
-  const b = await stockBalances(deps, agent.user);
-  if (!b) return err("chain_unavailable", "Stock tokens need Robinhood Chain, which isn't switched on.");
+  const chains = await stockBalances(deps, agent.user);
+  if (chains.length === 0) return err("chain_unavailable", "No enabled chain carries assets like stock tokens right now.");
   return ok({
-    chain: b.chain,
-    network: b.network,
-    address: b.address,
-    holdings: b.holdings,
-    sendable: b.symbols,
+    chains: chains.map((b) => ({ chain: b.chain, network: b.network, address: b.address, holdings: b.holdings, sendable: b.symbols })),
     prices: null,
     note: "Testnet stock tokens have no price feed, so there are no dollar values. Send them by share count with send_stock.",
   });

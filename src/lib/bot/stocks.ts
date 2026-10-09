@@ -5,7 +5,7 @@ import { createIntent, issueCode, newIntentId } from "@/lib/intents";
 import type { MoneyCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { stockReplies } from "@/lib/operator/stock-replies";
-import { type Asset, type AssetTransfers, chainWith } from "@/lib/settlement/capabilities";
+import type { Asset, AssetTransfers } from "@/lib/settlement/capabilities";
 import { REGISTRY } from "@/lib/settlement/registry";
 import type { SettlementAdapter } from "@/lib/settlement/types";
 import { seal } from "@/lib/secretbox";
@@ -18,12 +18,23 @@ const fail = (code: MoneyError["code"], message: string): Prepared => ({ ok: fal
 
 type StockChain = { chain: Chain; adapter: SettlementAdapter; assets: AssetTransfers; network: string; stocks: Asset[] };
 
-/** The enabled chain carrying the `assets` module (Robinhood Chain, for its stock tokens), and what this network is called. */
-function stockChain(deps: BotDeps): StockChain | null {
-  const found = chainWith(deps.adapters, "assets");
-  if (!found) return null;
-  const { chain, adapter, module: assets } = found;
-  return { chain, adapter, assets, network: REGISTRY[chain][deps.network]?.network ?? chainLabel(chain), stocks: assets.list() };
+/** Every enabled chain carrying the `assets` module, with its asset list and what this network is called. */
+function assetChains(deps: BotDeps): StockChain[] {
+  return (Object.entries(deps.adapters) as Array<[Chain, SettlementAdapter | undefined]>).flatMap(([chain, adapter]) => {
+    const assets = adapter?.assets;
+    if (!adapter || !assets) return [];
+    return [{ chain, adapter, assets, network: REGISTRY[chain][deps.network]?.network ?? chainLabel(chain), stocks: assets.list() }];
+  });
+}
+
+/**
+ * The chain to send `symbol` on: the one whose `assets` list has it (the named chain first, if it does), never
+ * a chain picked by name. Without a symbol, the first chain carrying the module, for "stocks".
+ */
+function stockChain(deps: BotDeps, symbol?: string, preferred?: Chain): StockChain | null {
+  const chains = assetChains(deps).sort((a, b) => Number(b.chain === preferred) - Number(a.chain === preferred));
+  if (!symbol) return chains[0] ?? null;
+  return chains.find((c) => c.stocks.some((s) => s.symbol === symbol)) ?? null;
 }
 
 export type StockChecked =
@@ -36,10 +47,14 @@ export type StockChecked =
  */
 export function checkStock(deps: BotDeps, cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "asset">): StockChecked {
   const err = (code: MoneyError["code"], message: string): StockChecked => ({ ok: false, error: { code, message } });
-  const home = stockChain(deps);
-  if (!home) return err("chain_unavailable", stockReplies.unavailable());
-  if (cmd.chain && cmd.chain !== home.chain) return err("chain_unavailable", stockReplies.otherChain(chainLabel(cmd.chain), home.network));
   const symbol = (cmd.asset ?? "").toUpperCase();
+  const home = stockChain(deps, symbol, cmd.chain);
+  if (!home) {
+    const any = stockChain(deps);
+    if (!any) return err("chain_unavailable", stockReplies.unavailable());
+    return err("unknown_asset", stockReplies.unknownStock(symbol, any.network, any.stocks.map((s) => s.symbol)));
+  }
+  if (cmd.chain && cmd.chain !== home.chain) return err("chain_unavailable", stockReplies.otherChain(chainLabel(cmd.chain), home.network));
   const asset = home.stocks.find((s) => s.symbol === symbol);
   if (!asset) return err("unknown_asset", stockReplies.unknownStock(symbol, home.network, home.stocks.map((s) => s.symbol)));
   const amount = isShareAmount(cmd.amountUsd) ? sharesToUnits(cmd.amountUsd) : 0n;
@@ -105,33 +120,41 @@ export function confirmSendReply(i: Intent, who: string, code: string | null, li
 export type StockHolding = { symbol: string; name: string; token: string; shares: string };
 export type StockBalances = { chain: Chain; network: string; address: string; holdings: StockHolding[]; symbols: string[] };
 
-/** The user's stock token balances on the stock chain. Opens their wallet there if they have none, so they get an address. */
-export async function stockBalances(deps: BotDeps, user: User): Promise<StockBalances | null> {
-  const home = stockChain(deps);
-  if (!home) return null;
-  const wallet = await ensureWallet(deps, user.id, home.chain, home.adapter);
-  const holdings: StockHolding[] = [];
-  for (const stock of home.stocks) {
-    const units = await home.assets.balanceOf(wallet.address, stock);
-    if (units > 0n) holdings.push({ symbol: stock.symbol, name: stock.name, token: stock.address, shares: formatShares(units) });
+/**
+ * The user's asset balances on every chain carrying the `assets` module. Opens their wallet on each if they
+ * have none, so they get an address to fund.
+ */
+export async function stockBalances(deps: BotDeps, user: User): Promise<StockBalances[]> {
+  const out: StockBalances[] = [];
+  for (const home of assetChains(deps)) {
+    const wallet = await ensureWallet(deps, user.id, home.chain, home.adapter);
+    const holdings: StockHolding[] = [];
+    for (const stock of home.stocks) {
+      const units = await home.assets.balanceOf(wallet.address, stock);
+      if (units > 0n) holdings.push({ symbol: stock.symbol, name: stock.name, token: stock.address, shares: formatShares(units) });
+    }
+    out.push({ chain: home.chain, network: home.network, address: wallet.address, holdings, symbols: home.stocks.map((s) => s.symbol) });
   }
-  return { chain: home.chain, network: home.network, address: wallet.address, holdings, symbols: home.stocks.map((s) => s.symbol) };
+  return out;
 }
 
 /** "stocks" / "portfolio": what they hold, or where to get test stock tokens. */
 export async function stocksReply(deps: BotDeps, user: User): Promise<string> {
-  const b = await stockBalances(deps, user);
-  if (!b) return stockReplies.unavailable();
-  if (b.holdings.length === 0) return stockReplies.noStocks(b.network, b.symbols, b.address);
-  return stockReplies.portfolio(
-    b.network,
-    b.holdings.map((h) => `${h.shares} ${h.symbol}`),
-  );
+  const chains = await stockBalances(deps, user);
+  const held = chains.filter((b) => b.holdings.length > 0);
+  if (held.length > 0) {
+    return stockReplies.portfolio(
+      held.map((b) => b.network).join(" and "),
+      held.flatMap((b) => b.holdings.map((h) => `${h.shares} ${h.symbol}`)),
+    );
+  }
+  const first = chains[0];
+  return first ? stockReplies.noStocks(first.network, first.symbols, first.address) : stockReplies.unavailable();
 }
 
 /** "send @alex $5 of TSLA": dollar amounts need a price, and testnet stock tokens have none. */
 export function stockPricedReply(deps: BotDeps, symbol: string): string {
-  const home = stockChain(deps);
+  const home = stockChain(deps, symbol) ?? stockChain(deps);
   if (!home) return stockReplies.unavailable();
   if (!home.stocks.some((s) => s.symbol === symbol)) {
     return stockReplies.unknownStock(symbol, home.network, home.stocks.map((s) => s.symbol));

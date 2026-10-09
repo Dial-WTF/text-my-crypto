@@ -174,6 +174,21 @@ describe("stocks by text", () => {
     );
   });
 
+  it("picks the chain whose asset list has the ticker, not the first chain that carries assets", async () => {
+    const other: AssetTransfers = {
+      list: () => [{ symbol: "XYZ", name: "Other", address: "0x00000000000000000000000000000000000000aa", decimals: 18 }],
+      balanceOf: async () => 9_000_000n,
+      transfer: async () => {
+        throw new Error("wrong chain");
+      },
+    };
+    deps = { ...deps, adapters: { base: { ...fakeAdapter({ chain: "base" }), assets: other }, ...deps.adapters } };
+    await giveJeremyTsla(5_000_000n);
+    await say(JEREMY, codeIn(await say(JEREMY, "send @alex 0.1 TSLA")));
+    expect(tsla.settled).toHaveLength(1);
+    expect(await say(JEREMY, "send @alex 1 AAPL")).toMatch(/^AAPL isn't a stock token on /);
+  });
+
   it("says when Robinhood Chain is off", async () => {
     deps = { ...deps, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } };
     expect(await say(JEREMY, "send @alex 0.1 TSLA")).toBe("Stock tokens need Robinhood Chain, which isn't switched on yet.");
@@ -264,11 +279,15 @@ describe("stocks over MCP", () => {
     const r = await call(key, "get_stocks");
     expect(r.isError).toBe(false);
     expect(r.data).toMatchObject({
-      chain: "robinhood",
-      network: "Robinhood Chain testnet",
-      address: await walletOf(JEREMY),
-      holdings: [{ symbol: "TSLA", name: "Tesla", token: TSLA, shares: "2.5" }],
-      sendable: ["TSLA", "AMZN", "PLTR", "NFLX", "AMD"],
+      chains: [
+        {
+          chain: "robinhood",
+          network: "Robinhood Chain testnet",
+          address: await walletOf(JEREMY),
+          holdings: [{ symbol: "TSLA", name: "Tesla", token: TSLA, shares: "2.5" }],
+          sendable: ["TSLA", "AMZN", "PLTR", "NFLX", "AMD"],
+        },
+      ],
       prices: null,
     });
   });
