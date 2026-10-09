@@ -11,11 +11,13 @@ import type {
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@/lib/db/client";
-import { type Intent, type Passkey, passkeys, signupTokens } from "@/lib/db/schema";
+import { type Intent, type Passkey, passkeyChallenges, passkeys, signupTokens } from "@/lib/db/schema";
+import { sha256Hex } from "@/lib/hash";
 import { intentHash } from "@/lib/intents";
+import { randomToken } from "@/lib/ids";
 
 export type RelyingParty = { rpID: string; origin: string; rpName: string };
 
@@ -149,21 +151,79 @@ async function verifyAssertion(
   return true;
 }
 
+export const LOGIN_CHALLENGE_TTL_MS = 5 * 60_000;
+
 /**
- * Options for signing in with whichever passkey this device offers. The challenge is random; the
- * caller keeps it (a short-lived cookie) and hands it back to verifyPasskeyLogin.
+ * Every sign-in challenge starts with these bytes. An approval challenge is a bare 32-byte intent
+ * hash, so an assertion made to approve a payment can never pass as a sign-in, or the other way round.
  */
-export function startPasskeyLogin(rp: RelyingParty): Promise<PublicKeyCredentialRequestOptionsJSON> {
-  return generateAuthenticationOptions({ rpID: rp.rpID, userVerification: "required", allowCredentials: [] });
+const LOGIN_CHALLENGE_PREFIX = new TextEncoder().encode("dial-login-v1:");
+
+const hashChallengeId = (id: string) => sha256Hex(`dial-passkey-challenge-v1|${id}`);
+
+function newLoginChallenge(): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(LOGIN_CHALLENGE_PREFIX.length + 32);
+  out.set(LOGIN_CHALLENGE_PREFIX);
+  crypto.getRandomValues(out.subarray(LOGIN_CHALLENGE_PREFIX.length));
+  return out;
 }
 
-/** The account that owns the passkey behind a valid sign-in assertion, or null. */
+function isLoginChallenge(challenge: string): boolean {
+  const bytes = isoBase64URL.toBuffer(challenge);
+  return (
+    bytes.length === LOGIN_CHALLENGE_PREFIX.length + 32 && LOGIN_CHALLENGE_PREFIX.every((b, i) => bytes[i] === b)
+  );
+}
+
+export type PasskeyLogin = { options: PublicKeyCredentialRequestOptionsJSON; challengeId: string };
+
+/**
+ * Options for signing in with whichever passkey this device offers. The challenge is random and kept
+ * server-side for five minutes; the caller hands the browser only the opaque `challengeId` (a cookie)
+ * and passes it back to verifyPasskeyLogin.
+ */
+export async function startPasskeyLogin(db: Db, rp: RelyingParty, now: Date): Promise<PasskeyLogin> {
+  const options = await generateAuthenticationOptions({
+    rpID: rp.rpID,
+    challenge: newLoginChallenge(),
+    userVerification: "required",
+    allowCredentials: [],
+  });
+  const challengeId = randomToken(24);
+  await db.delete(passkeyChallenges).where(lte(passkeyChallenges.expiresAt, now));
+  await db.insert(passkeyChallenges).values({
+    idHash: await hashChallengeId(challengeId),
+    purpose: "login",
+    challenge: options.challenge,
+    expiresAt: new Date(now.getTime() + LOGIN_CHALLENGE_TTL_MS),
+  });
+  return { options, challengeId };
+}
+
+/** Removes a sign-in challenge and returns it, or null if it was never issued, already used or expired. */
+async function takeLoginChallenge(db: Db, challengeId: string, now: Date): Promise<string | null> {
+  const [row] = await db
+    .delete(passkeyChallenges)
+    .where(and(eq(passkeyChallenges.idHash, await hashChallengeId(challengeId)), eq(passkeyChallenges.purpose, "login")))
+    .returning({ challenge: passkeyChallenges.challenge, expiresAt: passkeyChallenges.expiresAt });
+  if (!row || row.expiresAt <= now || !isLoginChallenge(row.challenge)) return null;
+  return row.challenge;
+}
+
+/**
+ * The account that owns the passkey behind a valid sign-in assertion, or null. The challenge is
+ * spent on the first try, right or wrong, so a captured assertion can't be replayed.
+ */
 export async function verifyPasskeyLogin(
   db: Db,
   rp: RelyingParty,
-  challenge: string,
+  challengeId: string | undefined,
   response: AuthenticationResponseJSON,
+  now: Date,
 ): Promise<string | null> {
+  if (!challengeId) return null;
+  const challenge = await takeLoginChallenge(db, challengeId, now);
+  if (!challenge) return null;
   const [key] = await db.select().from(passkeys).where(eq(passkeys.id, response.id)).limit(1);
   if (!key) return null;
   return (await verifyAssertion(db, rp, key, response, challenge)) ? key.userId : null;

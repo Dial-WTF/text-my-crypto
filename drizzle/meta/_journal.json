@@ -57,6 +57,13 @@
       "when": 1791510777081,
       "tag": "0007_watchdog",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791512861608,
+      "tag": "0009_passkey_challenges",
+      "breakpoints": true
     }
   ]
 }

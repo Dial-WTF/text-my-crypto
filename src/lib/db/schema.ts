@@ -182,6 +182,18 @@ export const webSessions = sqliteTable("web_sessions", {
   revokedAt: ts("revoked_at"),
 });
 
+/**
+ * Passkey sign-in challenges the wallet page handed out. Each is used once and lives five minutes.
+ * The browser's cookie holds an opaque id; only its hash is stored. Payment approvals don't use this
+ * table: their challenge is the intent hash.
+ */
+export const passkeyChallenges = sqliteTable("passkey_challenges", {
+  idHash: text("id_hash").primaryKey(),
+  purpose: text("purpose", { enum: ["login"] }).notNull(),
+  challenge: text("challenge").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+});
+
 /** Fixed-window call counters per agent key and bucket. */
 export const agentRate = sqliteTable(
   "agent_rate",
