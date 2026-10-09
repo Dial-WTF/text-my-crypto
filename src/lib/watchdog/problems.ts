@@ -82,11 +82,37 @@ export async function markSent(db: Db, plan: Plan, now: Date): Promise<void> {
 }
 
 /** The one text for a plan, or null when there is nothing to say. Never carries a full phone number. */
+/** Each check in the owner's words: what's wrong, and what it looks like when it's fixed. */
+const WORDS: Record<string, [problem: string, fixed: string]> = {
+  app: ["the bot isn't answering at all", "the bot is answering again"],
+  unanswered: ["a text got no reply", "every text has a reply again"],
+  undelivered: ["Payphone got a text but never passed it to the bot", "Payphone is passing texts to the bot again"],
+  payphoneInbox: ["can't read Payphone's inbox", "Payphone's inbox reads again"],
+  payphoneAuth: ["Payphone login failing", "Payphone login works again"],
+  d1: ["database unreachable", "the database is back"],
+  llm: ["language model failing", "the language model is back"],
+};
+
+/** "solanaBalance" → ["Solana network not answering", "Solana network is answering again"]. Unknown keys fall back to the key. */
+export function checkWords(key: string): [problem: string, fixed: string] {
+  const chain = /^(\w+)Balance$/.exec(key)?.[1];
+  if (chain) {
+    const name = `${chain[0]?.toUpperCase()}${chain.slice(1)} network`;
+    return [`${name} not answering`, `${name} is answering again`];
+  }
+  return WORDS[key] ?? [key, `${key} is fine again`];
+}
+
 export function alertText(plan: Plan): string | null {
   const parts: string[] = [];
-  if (plan.alert.length) parts.push(`PROBLEM: ${plan.alert.map((a) => `${a.key}: ${a.detail}`).join("; ")}.`);
-  if (plan.recovered.length) parts.push(`Cleared: ${plan.recovered.join(", ")}.`);
-  if (plan.agedOut.length) parts.push(`Aged out unfixed (past the 1h window, no longer watched): ${plan.agedOut.join(", ")}.`);
+  if (plan.alert.length) {
+    parts.push(`Problem: ${plan.alert.map((a) => `${checkWords(a.key)[0]}${a.detail && a.detail !== "failed" ? ` (${a.detail})` : ""}`).join("; ")}.`);
+  }
+  if (plan.recovered.length) parts.push(`Fixed: ${plan.recovered.map((k) => checkWords(k)[1]).join("; ")}.`);
+  if (plan.agedOut.length) {
+    parts.push(`Never fixed, now over an hour old, so no longer watched: ${plan.agedOut.map((k) => checkWords(k)[0]).join("; ")}.`);
+  }
   if (!parts.length) return null;
-  return `Dial watchdog. ${parts.join(" ")}`.slice(0, 600);
+  // Marked so it never reads as the operator talking: it lands in the same thread as the owner's own texts.
+  return `[Dial watchdog, for you only] ${parts.join(" ")}`.slice(0, 600);
 }
