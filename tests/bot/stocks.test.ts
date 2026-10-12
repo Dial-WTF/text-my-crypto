@@ -62,7 +62,7 @@ const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
 
 async function signUp(phone: string, name: string) {
   await say(phone, "hi");
-  await say(phone, name);
+  await say(phone, `call me ${name}`);
 }
 
 async function walletOf(phone: string): Promise<string> {
@@ -114,7 +114,7 @@ describe("stocks by text", () => {
   it("gifts 0.1 TSLA: approve by code, settle the stock token, receipts both ways", async () => {
     await giveJeremyTsla(5_000_000n);
     const ask = await say(JEREMY, "send @alex 0.1 TSLA for your birthday");
-    expect(ask).toMatch(/^Send 0\.1 TSLA to @alex \(your birthday\) on Robinhood Chain\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
+    expect(ask).toMatch(/^Send 0\.1 TSLA to @alex \(your birthday\) on Robinhood Chain\? Reply \d{6} to confirm\. Details: https:\/\/tmc\.test\/a\/pi_/);
     expect(ask.length).toBeLessThanOrEqual(160);
 
     const id = intentIdIn(ask);
@@ -213,19 +213,15 @@ describe("stocks by text", () => {
     expect(escrowed?.status).toBe("escrowed");
     expect(escrowed?.escrowSecretEnc).not.toBeNull();
     expect(tsla.settled[0]).toMatchObject({ to: escrowed?.recipientAddress, amount: 500_000n });
-    expect(sms.last(NEWBIE)).toMatch(/^Jeremy sent you 0\.5 TSLA \(a test stock token\) on Dial\. Reply to this text to claim it\./);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! Jeremy sent you 0\.5 TSLA \(a test stock token\) using Dial Up Banking, the revolutionary new way to send money by text\. Reply YES to get it\./);
 
-    expect(await say(NEWBIE, "hi")).toContain("Jeremy sent you 0.5 TSLA and it's waiting for you.");
-    await say(NEWBIE, "Newbie");
-    const offer = sms.last(NEWBIE);
-    expect(offer).toMatch(/^Jeremy sent you 0\.5 TSLA\. Reply \d{6} to claim it\.$/);
-    await say(NEWBIE, codeIn(offer));
+    await say(NEWBIE, "yes");
 
     expect(tsla.settled[1]).toMatchObject({ to: await walletOf(NEWBIE), amount: 500_000n, memo: id });
     expect(sms.to(NEWBIE)).toContain(
-      `Claimed 0.5 TSLA from Jeremy. It's in your Dial wallet now, nothing to set up. Receipt: https://explorer.testnet.chain.robinhood.com/tx/0xTSLA_${id}`,
+      `You got money! 0.5 TSLA from Jeremy is in your Dial wallet now, nothing to set up. Receipt: https://explorer.testnet.chain.robinhood.com/tx/0xTSLA_${id}`,
     );
-    expect(sms.last(JEREMY)).toBe("Newbie claimed the 0.5 TSLA you sent.");
+    expect(sms.last(JEREMY)).toBe("+•••••••0099 claimed the 0.5 TSLA you sent.");
   });
 
   it("shows shares on the receipt page, the share card and the ledger, and no dollars in the stats", async () => {

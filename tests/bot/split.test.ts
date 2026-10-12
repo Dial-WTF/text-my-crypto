@@ -61,7 +61,7 @@ const codeIn = (s: string) => /\b(\d{6})\b/.exec(s)?.[1] ?? "";
 
 async function signUp(phone: string, name: string) {
   await say(phone, "hi");
-  await say(phone, name);
+  await say(phone, `call me ${name}`);
 }
 
 async function legsOf(phone: string) {
@@ -99,7 +99,7 @@ describe("split over SMS", () => {
     const confirm = await say(JEREMY, "split $30 between @alex @sam for dinner on tempo");
     const legs = await legsOf(JEREMY);
     expect(confirm).toBe(
-      `Split $30 (dinner) 2 ways on Tempo: $15 each to @alex, @sam. Reply ${codeIn(confirm)} to confirm, or tap: https://tmc.test/a/${legs[0]!.id}`,
+      `Split $30 (dinner) 2 ways on Tempo: $15 each to @alex, @sam. Reply ${codeIn(confirm)} to confirm. Details: https://tmc.test/a/${legs[0]!.id}`,
     );
     expect(legs.map((l) => [l.kind, l.amount, l.status, l.note])).toEqual([
       ["send", 15_000_000n, "pending", "dinner"],
@@ -227,7 +227,7 @@ describe("split over SMS", () => {
     expect(sms.last(JEREMY)).toMatch(
       /^Split sent on Tempo in one transaction: \$10 each to @alex, \+•+0099\. \+•+0099 has 7 days to claim\. Receipt: /,
     );
-    expect(sms.last(NEWBIE)).toMatch(/^Jeremy sent you \$10 USDC on Dial\. Reply to this text to claim it\./);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! Jeremy sent you \$10 USDC using Dial Up Banking, the revolutionary new way to send money by text\. Reply YES to get it\./);
 
     // They sign up and claim it the usual way: out of the held wallet, to their own.
     await say(NEWBIE, "hi");

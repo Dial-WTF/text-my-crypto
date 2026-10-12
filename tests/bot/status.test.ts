@@ -9,7 +9,7 @@ import { getIntent } from "@/lib/intents";
 import { noLlm } from "@/lib/operator/brain";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { createTestDb } from "../helpers/db";
-import { fakeAdapter, smsSink, testDeps } from "../helpers/fakes";
+import { fakeAdapter, fakeEscrow, smsSink, testDeps } from "../helpers/fakes";
 
 const ALEX = "+15550000010";
 const JEREMY = "+15550000011";
@@ -43,7 +43,7 @@ beforeEach(async () => {
   ] as const) {
     await say(phone, "hi");
     later(1);
-    await say(phone, name);
+    await say(phone, `call me ${name}`);
     later(1);
   }
 });
@@ -91,7 +91,7 @@ describe("a code that never arrived (2026-10-09)", () => {
 
 describe("status questions", () => {
   it("has nothing to report when nothing is in flight", async () => {
-    expect(await say(ALEX, "status")).toBe('Nothing in flight right now. Text "balance", "wallet" or "send @name $5".');
+    expect(await say(ALEX, "status")).toBe("Nothing in flight right now. Text BALANCE to see your money.");
   });
 
   it("tells a requester they're waiting, and gives the payer a fresh code", async () => {
@@ -189,13 +189,14 @@ describe("status on an escrow", () => {
     return intentIdIn(confirm);
   }
 
-  it("tells the recipient it's waiting for them to claim, with a claim code that works", async () => {
+  it("after a claim that didn't land, tells the recipient it's waiting for them, with a claim code that works", async () => {
+    const esc = fakeEscrow();
+    deps = { ...deps, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n, escrow: esc }) } };
     const id = await escrowToSam("5");
-    await say(SAM, "hi");
+    esc.fail.next = new Error("Transaction simulation failed");
+    await say(SAM, "yes");
     later(1);
-    await say(SAM, "Sam");
-    later(1);
-    const offered = codeIn(sms.to(SAM).find((m) => m.startsWith("Alex sent you $5 USDC. Reply")) ?? "");
+    const offered = codeIn(sms.last(SAM));
     expect(offered).toMatch(/^\d{6}$/);
 
     const reply = await say(SAM, "did it work?");
@@ -206,7 +207,7 @@ describe("status on an escrow", () => {
     later(1);
     await say(SAM, fresh);
     const [claimed, tour] = sms.to(SAM).slice(-2);
-    expect(claimed).toMatch(/^Claimed \$5 from Alex/);
+    expect(claimed).toMatch(/^You got money! \$5 from Alex/);
     expect(tour).toMatch(/^Your Dial wallet: /);
     expect((await getIntent(db, id))?.status).toBe("settled");
   });
@@ -220,7 +221,7 @@ describe("status on an escrow", () => {
 
     await say(SAM, "hi");
     later(1);
-    await say(SAM, "Sam");
+    await say(SAM, "call me Sam");
     const sam = await findUserByPhone(db, SAM);
     const alex = await findUserByPhone(db, ALEX);
     expect(await statusReply(deps, sam!, refunded)).toBe(
@@ -236,8 +237,8 @@ describe("small talk", () => {
     const one = await say(ALEX, "purple monkey dishwasher");
     later(1);
     const two = await say(ALEX, "banana phone");
-    expect(one).toBe('I\'m the Dial operator. I move money by text. Try "send jeremy $10".');
-    expect(two).toBe('Not sure what you mean. Try "balance", "send @name $5", "request $5 from @name" or "wallet".');
+    expect(one).toBe("This is Dial Up Banking: I move money by text. To pay someone, text SEND @name $5. Text HELP anytime.");
+    expect(two).toBe("I didn't get that. Text HELP to see everything I can do.");
   });
 
   it("takes thanks", async () => {

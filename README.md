@@ -6,15 +6,14 @@ The Dial operator does agentic peer-to-peer crypto payments. People use it by SM
 - Public ledger: https://dialoperator.cc/ledger
 
 ```
-you: hi
-op:  hi, I'm the Dial operator. I can help you text your crypto. What name should people use to pay you?
-you: alex
 you: send jeremy $10 for pizza
+op:  Welcome to Dial Up Banking, the Dial operator by Dial.Work. You're @dialk3x9. To pay someone, text SEND @name $5.
 op:  What's jeremy's number?
 you: (806) 555 0142
 op:  Send $10 USDC to jeremy (pizza) on Solana? Reply 482913 to confirm.
 you: 482913
-op:  Sent $10 to jeremy. They have 7 days to claim it.
+op:  Sent $10 to jeremy. They reply YES to my text and it's theirs.
+op:  Want friends to know it's you? Text CALL ME and your name, like CALL ME Alex.
 ```
 
 ## Try it in 2 minutes
@@ -22,12 +21,12 @@ op:  Sent $10 to jeremy. They have 7 days to claim it.
 ### With a phone
 
 1. Text `hi` to **+1 806 607 1387**.
-2. Reply with a name. You get a handle (for example `@alex`) and a small amount of test USDC to try it with. It is play money.
+2. That first text opens your account: you get a handle and a small amount of test USDC to try it with. It is play money. Text `call me Alex` to pick your name (and an `@alex` handle).
 3. Text `send @someone $1`, using a friend's handle, or `send $1 to <their phone number>`. Add `on tempo`, `on base`, `on ethereum`, `on arbitrum`, `on hyperliquid` or `on robinhood` to pick a chain; Solana is the default.
 4. The operator replies with a 6-digit code. Text the code back to approve.
 5. You get `Sending…` and then a receipt with the explorer link. The payment also shows on [/ledger](https://dialoperator.cc/ledger).
 
-Paying a number that isn't on Dial puts the money in escrow (the Solana escrow program below). The recipient claims it with a code texted to their phone, or you text `reclaim` after 7 days.
+Paying a number that isn't on Dial puts the money in escrow (the Solana escrow program below). The recipient replies YES from that phone and it's theirs, or you text `reclaim` after 7 days.
 
 Other commands: `balance`, `split $30 between @alex @sam on tempo`, `411 <name>`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `receive`, `withdraw $10 to <address>`, `wallet`, `upgrade` (add a passkey), `connect agent`, `revoke agents`, `status`, `help`, `STOP`.
 

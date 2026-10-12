@@ -35,7 +35,7 @@ beforeEach(async () => {
   sms = smsSink();
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } });
   await say("hi");
-  await say("Alex");
+  await say("call me Alex");
 });
 
 describe("locking an account down by text", () => {
@@ -64,7 +64,7 @@ describe("coming back with START", () => {
       return sms.last(JEREMY);
     };
     await jeremy("hi");
-    await jeremy("Jeremy");
+    await jeremy("call me Jeremy");
     await say("request $5 from @jeremy for lunch");
     await say("request $6 from @jeremy for gas");
     const [lunch, gas] = await db.select().from(intents).where(eq(intents.kind, "request")).orderBy(intents.amount);
@@ -90,7 +90,7 @@ describe("coming back with START", () => {
     };
     const jeremy = from(JEREMY);
     await jeremy("hi");
-    await jeremy("Jeremy");
+    await jeremy("call me Jeremy");
     await jeremy("STOP");
     const before = sms.to(JEREMY).length;
 
@@ -99,7 +99,7 @@ describe("coming back with START", () => {
 
     await jeremy("START");
     const [welcome, request] = sms.to(JEREMY).slice(-2);
-    expect(welcome).toMatch(/^Welcome back\./);
-    expect(request).toMatch(/^Alex is asking you for \$5 USDC \(lunch\)\. Reply \d{6} to pay or NO to decline/);
+    expect(welcome).toMatch(/^Welcome back to Dial Up Banking\./);
+    expect(request).toMatch(/^Alex is asking you for \$5 USDC \(lunch\)\. Reply \d{6} to pay it\. Reply NO to decline/);
   });
 });

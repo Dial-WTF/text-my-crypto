@@ -20,6 +20,11 @@ export type Action =
   | { do: "optIn" }
   | { do: "help" }
   | { do: "welcome" }
+  /**
+   * Anyone not on Dial texted: open their account with a handle picked for them and pay out anything waiting, no
+   * questions asked. `then` is a command they led with ("send @alex $5"), run once they're in.
+   */
+  | { do: "join"; then?: string }
   | { do: "nameFirst" }
   | { do: "signup"; name: string }
   | { do: "badName" }
@@ -52,9 +57,12 @@ export function decide(s: Session, input: Input): Action {
     return s.account !== "claimed" && s.convo?.state === "awaiting_name" ? { do: "badName" } : { do: "help" };
   }
 
-  // 2. Onboarding: nobody moves money until they have a name.
+  // 2. Onboarding: any text opens the account (a name comes later, CALL ME …). Only a signup already
+  //    waiting on its name question, from before joining worked this way, still takes a name.
   if (s.account !== "claimed") {
-    if (s.convo?.state !== "awaiting_name") return { do: "welcome" };
+    if (s.convo?.state !== "awaiting_name") {
+      return input.kind === "text" && parseCommand(input.text).kind !== "chat" ? { do: "join", then: input.text } : { do: "join" };
+    }
     // Words that mean something to a member ("ty", "update") are just a name here: someone may be called Ty.
     const answer: Input = input.kind === "status" || input.kind === "thanks" ? { kind: "text", text: input.text } : input;
     if (answer.kind !== "text") return answer.kind === "phone" ? { do: "badName" } : { do: "welcome" };

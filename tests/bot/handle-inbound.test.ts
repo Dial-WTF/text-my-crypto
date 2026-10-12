@@ -3,6 +3,7 @@ import { ensureWallet } from "@/lib/bot/accounts";
 import { handleInbound } from "@/lib/bot/handle-inbound";
 import type { BotDeps } from "@/lib/bot/types";
 import type { Db } from "@/lib/db/client";
+import { setConversation } from "@/lib/conversations";
 import { findUserByPhone } from "@/lib/identity";
 import { claimForSettlement, getIntent } from "@/lib/intents";
 import { reconcileEscrows } from "@/lib/bot/settle";
@@ -35,7 +36,7 @@ const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
 
 async function signUp(phone: string, name: string) {
   await say(phone, "hi");
-  return say(phone, name);
+  return say(phone, `call me ${name}`);
 }
 
 beforeEach(async () => {
@@ -47,48 +48,56 @@ beforeEach(async () => {
 });
 
 /** The latest claim receipt to `phone` (a first claim is followed by the wallet tour). */
-const lastClaimed = (phone: string) => [...sms.to(phone)].reverse().find((m) => m.startsWith("Claimed")) ?? "";
+const lastClaimed = (phone: string) => [...sms.to(phone)].reverse().find((m) => m.startsWith("You got money! $")) ?? "";
+const ESCROW_SENT = "Sent $5 to +•••••••0099. They reply YES to my text and it's theirs. If they don't within 7 days, text RECLAIM to get it back.";
 
 describe("signup over SMS", () => {
-  it("asks for a name, then creates the account, wallet and test drip", async () => {
-    expect(await say(JEREMY, "hi")).toBe(
-      "hi, I'm the Dial operator by Dial.Work. I can help you text your crypto. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms\nWhat name should people use to pay you?",
-    );
-    expect(await say(JEREMY, "Jeremy")).toBe(
-      'You\'re in, Jeremy. Your Dial name is @jeremy, so people can text me "send @jeremy $5". Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It\'s play money, not real dollars. Text 411 and a name to find anyone. Text HELP anytime.',
-    );
+  it("opens the account on the first text, with a picked handle, a wallet and the test drip, and asks nothing", async () => {
+    const welcome = await say(JEREMY, "hi");
     const u = await findUserByPhone(db, JEREMY);
-    expect(u?.handle).toBe("jeremy");
-    expect(u?.name).toBe("Jeremy");
+    expect(u?.handle).toMatch(/^dial[a-z2-7]{4}$/);
+    expect(u?.name).toBeNull();
+    expect(welcome).toBe(
+      `Welcome to Dial Up Banking, the Dial operator by Dial.Work. You're @${u?.handle ?? ""}. You have $25 of test USDC to try. To pay someone, text SEND @name $5. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms`,
+    );
     expect(await getWallet(db, u!.id, "solana")).not.toBeNull();
     expect(sol.funded).toHaveLength(1);
   });
 
-  it("accepts whatever people call themselves and derives a free handle", async () => {
+  it("CALL ME sets the name and swaps the picked handle for one from the name, once", async () => {
     await say(JEREMY, "yo");
-    expect(await say(JEREMY, "J. P. Meyer, Crypto Anartist Imperialist and Bank Robber lmao")).toMatch(
-      /^You're in, J\. P\. Meyer\. Your Dial name is @jpmeyer,/,
-    );
+    expect(await say(JEREMY, "call me J. P. Meyer")).toBe("Done. You're J. P. Meyer, @jpmeyer. People pay you by texting SEND @jpmeyer $5.");
+    expect(await say(JEREMY, "call me JP")).toBe("Done. You're JP now, still @jpmeyer.");
     await signUp(ALEX, "J.P. Meyer");
     expect((await findUserByPhone(db, ALEX))?.handle).toBe("jpmeyer2");
-  });
-
-  it("asks again for nonsense names and for commands sent before a name", async () => {
-    await say(JEREMY, "hi");
-    expect(await say(JEREMY, "!!!")).toBe("What should I call you? Any name works, like Alex or J. P. Meyer.");
-    expect(await say(JEREMY, "send alex $5")).toBe("First things first: what name should people use to pay you?");
-    // Too short for a handle: the fallback is random, never the phone's last digits (handles are public).
-    expect(await say(JEREMY, "Al")).toMatch(/^You're in, Al\. Your Dial name is @dial[a-z2-7]{4},/);
-    expect((await findUserByPhone(db, JEREMY))?.handle).not.toContain("0011");
-  });
-
-  it("signs up someone called Ty instead of welcoming them again", async () => {
+    // Too short for a handle: they keep the picked one, never one from the phone's digits (handles are public).
     await say(NEWBIE, "hi");
-    expect(await say(NEWBIE, "Ty")).toMatch(/^You're in, Ty\. Your Dial name is @dial[a-z2-7]{4},/);
-    expect((await findUserByPhone(db, NEWBIE))?.name).toBe("Ty");
-    // Once they're in, the same word is thanks again.
-    clock = new Date(clock.getTime() + 2 * 60_000);
-    expect(await say(NEWBIE, "ty")).toBe("Anytime.");
+    expect(await say(NEWBIE, "call me Al")).toMatch(/^Done\. You're Al now, still @dial[a-z2-7]{4}\.$/);
+  });
+
+  it("runs a command sent as the first text once the account is open, then asks for a name after the payment", async () => {
+    await signUp(ALEX, "alex");
+    await say(JEREMY, "send @alex $1");
+    const [welcome, confirm] = sms.to(JEREMY);
+    expect(welcome).toMatch(/^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\. You're @dial/);
+    expect(confirm).toMatch(/^Send \$1 USDC to @alex on Solana\? Reply \d{6} to confirm\./);
+    await say(JEREMY, codeIn(confirm ?? ""));
+    const [sent, ask] = sms.to(JEREMY).slice(-2);
+    expect(sent).toMatch(/^Sent \$1 to alex on Solana\. Receipt: /);
+    expect(ask).toBe("Want friends to know it's you? Text CALL ME and your name, like CALL ME Alex.");
+    await say(JEREMY, "call me Jeremy");
+    await say(JEREMY, "send @alex $2");
+    await say(JEREMY, codeIn(sms.last(JEREMY)));
+    expect(sms.last(JEREMY)).toMatch(/^Sent \$2 to alex/);
+  });
+
+  it("a signup that was already waiting on its name question still takes the name", async () => {
+    await setConversation(db, JEREMY, { state: "awaiting_name", payload: {} }, clock);
+    expect(await say(JEREMY, "!!!")).toBe("Just text your name, like Alex.");
+    expect(await say(JEREMY, "send alex $5")).toBe("Text your name first, like Alex. Then you can send and get money.");
+    expect(await say(JEREMY, "Jeremy")).toBe(
+      "You're in, Jeremy. Your Dial name is @jeremy: people pay you by texting SEND @jeremy $5. Dial is on testnet for now, so I put $25 of test USDC in your wallet to try it. It's play money, not real dollars. To pay someone, text SEND @name $1. Text HELP anytime.",
+    );
   });
 
   it("ignores a duplicate delivery", async () => {
@@ -107,7 +116,7 @@ describe("send to someone on Dial", () => {
   it("asks for an unknown name's number, remembers it, and pays on the texted code", async () => {
     expect(await say(ALEX, "send mom $10 for pizza")).toBe("What's mom's number?");
     const confirm = await say(ALEX, "(555) 000-0011");
-    expect(confirm).toMatch(/^Send \$10 USDC to @jeremy \(pizza\) on Solana\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
+    expect(confirm).toMatch(/^Send \$10 USDC to @jeremy \(pizza\) on Solana\? Reply \d{6} to confirm\. Details: https:\/\/tmc\.test\/a\/pi_/);
 
     await say(ALEX, codeIn(confirm));
     expect(sms.last(ALEX)).toMatch(/^Sent \$10 to jeremy on Solana\. Receipt: https:\/\/explorer\.test\//);
@@ -172,28 +181,30 @@ describe("send to someone not on Dial (escrow)", () => {
     return intentIdIn(confirm);
   }
 
-  it("funds an escrow, and only the phone's owner can claim it with the texted code", async () => {
+  it("funds an escrow, and the phone's owner gets it by replying YES, with a handle picked for them", async () => {
     const id = await sendToNewbie();
     const intent = await getIntent(db, id);
     expect(intent?.status).toBe("escrowed");
     expect(sol.settled.at(-1)).toMatchObject({ to: intent?.recipientAddress, amount: 5_000_000n });
-    expect(sms.last(ALEX)).toBe('Sent $5 to +•••••••0099. They have 7 days to claim it. If they don\'t, text "reclaim" to get it back.');
-    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\. Reply to this text to claim it\. See it: https:\/\/tmc\.test\/a\/pi_/);
-    expect(sms.last(NEWBIE)).toMatch(/ Dial operator: msg & data rates may apply\. Reply STOP to opt out\.$/);
-
-    expect(await say(NEWBIE, "hey")).toBe(
-      "hi, I'm the Dial operator by Dial.Work. alex sent you $5 USDC and it's waiting for you. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms\nWhat name should people use to pay you?",
+    expect(sms.last(ALEX)).toBe(ESCROW_SENT);
+    expect(sms.last(NEWBIE)).toBe(
+      "You got money! alex sent you $5 USDC using Dial Up Banking, the revolutionary new way to send money by text. Reply YES to get it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
     );
-    await say(NEWBIE, "riley");
-    const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
-    expect(offer).toMatch(/Reply \d{6} to claim it\.$/);
 
-    await say(NEWBIE, codeIn(offer));
+    const before = sms.to(NEWBIE).length;
+    await say(NEWBIE, "YES");
     const riley = await findUserByPhone(db, NEWBIE);
+    expect(riley?.handle).toMatch(/^dial[a-z0-9]{4}$/);
+    expect(riley?.name).toBeNull();
+    const [welcome] = sms.to(NEWBIE).slice(before);
+    expect(welcome).toBe(
+      `Welcome to Dial Up Banking, the Dial operator by Dial.Work. You're @${riley?.handle ?? ""}. Your money is on its way. You have $25 of test USDC to try. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://tmc.test/terms`,
+    );
+    expect(sms.to(NEWBIE).some((m) => /\b\d{6}\b/.test(m))).toBe(false);
     const rw = await getWallet(db, riley!.id, "solana");
     expect(sol.settled.at(-1)).toMatchObject({ to: rw!.address, amount: 5_000_000n, memo: id, closeSource: true });
-    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: /);
-    expect(sms.last(ALEX)).toBe("riley claimed the $5 you sent.");
+    expect(lastClaimed(NEWBIE)).toMatch(/^You got money! \$5 from alex is in your Dial wallet now, nothing to set up\. Receipt: /);
+    expect(sms.last(ALEX)).toBe("+•••••••0099 claimed the $5 you sent.");
     expect((await getIntent(db, id))?.status).toBe("settled");
   });
 
@@ -224,11 +235,9 @@ describe("send to someone not on Dial (escrow program)", () => {
     return intentIdIn(confirm);
   }
 
+  /** The newcomer answers the money text. */
   async function claimAsRiley() {
-    await say(NEWBIE, "hey");
-    await say(NEWBIE, "riley");
-    const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
-    await say(NEWBIE, codeIn(offer));
+    await say(NEWBIE, "yes");
   }
 
   it("funds the program's vault for the intent instead of a server-held wallet", async () => {
@@ -245,17 +254,17 @@ describe("send to someone not on Dial (escrow program)", () => {
     });
     expect(esc.calls).toEqual([{ op: "create", intentId: id, amount: 5_000_000n, expiresAt: expires }]);
     expect(sol.settled).toEqual([]);
-    expect(sms.last(ALEX)).toBe('Sent $5 to +•••••••0099. They have 7 days to claim it. If they don\'t, text "reclaim" to get it back.');
+    expect(sms.last(ALEX)).toBe(ESCROW_SENT);
   });
 
-  it("claims with the attestor once the recipient proves their phone with the texted code", async () => {
+  it("claims with the attestor as soon as the recipient replies from their phone", async () => {
     const id = await sendToNewbie();
     await claimAsRiley();
     const riley = await findUserByPhone(db, NEWBIE);
     const rw = await getWallet(db, riley!.id, "solana");
     expect(esc.calls.at(-1)).toEqual({ op: "claim", intentId: id, to: rw!.address });
-    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
-    expect(sms.last(ALEX)).toBe("riley claimed the $5 you sent.");
+    expect(lastClaimed(NEWBIE)).toMatch(/^You got money! \$5 from alex is in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+    expect(sms.last(ALEX)).toBe("+•••••••0099 claimed the $5 you sent.");
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
   });
 
@@ -266,24 +275,19 @@ describe("send to someone not on Dial (escrow program)", () => {
     expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", error: "Transaction simulation failed" });
     const reply = sms.last(NEWBIE);
     expect(reply).toMatch(
-      /^Couldn't confirm your claim of the \$5 from alex yet\. Reply \d{6} to finish it: if it already went through, you'll just get the receipt\.$/,
+      /^The \$5 from alex didn't land yet\. Reply \d{6} to finish it: if it already went through, you'll just get the receipt\.$/,
     );
 
     await say(NEWBIE, codeIn(reply));
-    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: /);
+    expect(lastClaimed(NEWBIE)).toMatch(/^You got money! \$5 from alex is in your Dial wallet now, nothing to set up\. Receipt: /);
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
   });
 
-  it("after expiry, tells the recipient it can only go back to the sender and doesn't try the claim", async () => {
+  it("after expiry, a reply from the recipient doesn't try the claim or promise the money", async () => {
     const id = await sendToNewbie();
-    await say(NEWBIE, "hey");
-    await say(NEWBIE, "riley");
-    const offer = sms.to(NEWBIE).find((m) => m.startsWith("alex sent you $5 USDC. Reply")) ?? "";
     clock = new Date(clock.getTime() + 7 * 86_400_000 + 60_000);
 
-    expect(await say(NEWBIE, codeIn(offer))).toBe(
-      "The $5 from alex wasn't claimed in time, so it can only go back to them now. Ask them to send it again.",
-    );
+    expect(await say(NEWBIE, "yes")).not.toMatch(/on its way/);
     expect(esc.calls.map((c) => c.op)).toEqual(["create"]);
     expect((await getIntent(db, id))?.status).toBe("escrowed");
 
@@ -353,8 +357,8 @@ describe("send to someone not on Dial (escrow program)", () => {
 
     expect(await reconcileEscrows(deps)).toEqual({ escrowed: 1, failed: 0 });
     expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", txHash: `sig_create_${id}`, error: null });
-    expect(sms.last(ALEX)).toMatch(/^Sent \$5 to \+•••••••0099\. They have 7 days to claim it\./);
-    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\. Reply to this text to claim it\./);
+    expect(sms.last(ALEX)).toMatch(/^Sent \$5 to \+•••••••0099\. They reply YES to my text and it's theirs\./);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! alex sent you \$5 USDC using Dial Up Banking, the revolutionary new way to send money by text\. Reply YES to get it\./);
     expect(await reconcileEscrows(deps)).toEqual({ escrowed: 0, failed: 0 });
 
     await claimAsRiley();
@@ -368,7 +372,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     clock = new Date(clock.getTime() + 6 * 60_000);
     expect(await reconcileEscrows(deps)).toEqual({ escrowed: 1, failed: 0 });
     expect(await getIntent(db, id)).toMatchObject({ status: "escrowed", txHash: `sig_create_${id}` });
-    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$5 USDC on Dial\./);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! alex sent you \$5 USDC using Dial Up Banking/);
   });
 
   it("a payment whose worker died before anything landed fails 15 minutes after approval", async () => {
@@ -415,8 +419,8 @@ describe("send to someone not on Dial (escrow program)", () => {
     clock = new Date(clock.getTime() + 8 * 86_400_000);
     expect(await say(ALEX, "reclaim")).toBe("Nothing to reclaim right now. Unclaimed payments can come back after 7 days.");
     expect(await getIntent(db, id)).toMatchObject({ status: "settled", releaseTxHash: `sig_claim_${id}` });
-    expect(sms.to(ALEX)).toContain("riley claimed the $5 you sent.");
-    expect(lastClaimed(NEWBIE)).toMatch(/^Claimed \$5 from alex\. It.s in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
+    expect(sms.to(ALEX)).toContain("+•••••••0099 claimed the $5 you sent.");
+    expect(lastClaimed(NEWBIE)).toMatch(/^You got money! \$5 from alex is in your Dial wallet now, nothing to set up\. Receipt: https:\/\/explorer\.test\/sig_claim_/);
   });
 
   it("a refund someone else sent is recorded when the recipient tries to claim", async () => {
@@ -437,7 +441,7 @@ describe("send to someone not on Dial (escrow program)", () => {
     const intent = await getIntent(db, id);
     expect(intent?.status).toBe("escrowed");
     expect(intent?.error).toMatch(/Escrow program .* is not available on solana/);
-    expect(sms.last(NEWBIE)).toMatch(/^Couldn't confirm your claim of the \$5 from alex yet\./);
+    expect(sms.last(NEWBIE)).toMatch(/^The \$5 from alex didn't land yet\./);
   });
 
   it("still pays people already on Dial directly", async () => {
@@ -458,7 +462,7 @@ describe("request and invoice", () => {
   it("texts the payer a code, and paying it notifies the requester", async () => {
     expect(await say(JEREMY, "request $25 from @alex for pizza")).toBe("Asked @alex for $25. I'll text you when they pay.");
     const ask = sms.last(ALEX);
-    expect(ask).toMatch(/^jeremy is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay or NO to decline\. Or tap: /);
+    expect(ask).toMatch(/^jeremy is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay it\. Reply NO to decline\. Details: /);
     await say(ALEX, codeIn(ask));
     expect(sms.last(JEREMY)).toMatch(/^alex paid you \$25 \(pizza\)\. Receipt: /);
     expect(sms.last(ALEX)).toMatch(/^Sent \$25 to jeremy on Solana/);
@@ -466,7 +470,7 @@ describe("request and invoice", () => {
 
   it("lets the payer decline", async () => {
     await say(JEREMY, "invoice @alex $40 for logo design");
-    expect(sms.last(ALEX)).toMatch(/^jeremy sent you an invoice for \$40 USDC \(logo design\)\. Reply \d{6} to pay or NO/);
+    expect(sms.last(ALEX)).toMatch(/^jeremy sent you an invoice for \$40 USDC \(logo design\)\. Reply \d{6} to pay it\. Reply NO/);
     expect(await say(ALEX, "no")).toBe("Declined. Nothing was paid.");
     expect(sms.last(JEREMY)).toBe("alex declined your request for $40.");
     expect(await say(ALEX, "no")).toBe("Nothing waiting on you to decline.");

@@ -1,4 +1,4 @@
-import { NEWCOMER_FOOTER } from "./replies";
+import { BRAND, NEWCOMER_FOOTER } from "./replies";
 
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
 const ROBINHOOD_FAUCET = "faucet.testnet.chain.robinhood.com";
@@ -8,8 +8,8 @@ const ROBINHOOD_FAUCET = "faucet.testnet.chain.robinhood.com";
  * which add "USDC" only to plain dollars (namesItsCoin). `network` is the registry's name, like "Robinhood Chain testnet".
  */
 export const stockReplies = {
-  receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
-    `${from} sent you ${amount} (a test stock token)${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
+  receivedUnclaimed: (amount: string, from: string, note: string | null) =>
+    `You got money! ${from} sent you ${amount} (a test stock token)${forNote(note)} using ${BRAND}, the revolutionary new way to send money by text. Reply YES to get it. ${NEWCOMER_FOOTER}`,
   /** Testnet stock tokens have no price feed, so a dollar amount can't be turned into shares. */
   noPrice: (symbol: string, network: string) =>
     `${network} has no price for ${symbol}, so I can't send a dollar amount of it. Send shares instead, like "send @alex 0.1 ${symbol}".`,

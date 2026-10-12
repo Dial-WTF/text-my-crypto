@@ -59,7 +59,7 @@ beforeEach(async () => {
     [JEREMY, "jeremy"],
   ] as const) {
     await say(phone, "hi");
-    await say(phone, name);
+    await say(phone, `call me ${name}`);
   }
 });
 
@@ -108,7 +108,7 @@ describe("a transfer that went out without an answer", () => {
     const intent = await getIntent(db, id);
     expect(intent).toMatchObject({ status: "escrowed", txHash: TX });
     expect(intent?.escrowExpiresAt?.getTime()).toBe(clock.getTime() + 7 * 86_400_000);
-    expect(sms.last(NEWBIE)).toMatch(/^alex sent you \$3/);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! alex sent you \$3/);
   });
 
   it("landed but held back from the recipient is failed, and the sender hears where the money is", async () => {

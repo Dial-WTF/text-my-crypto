@@ -8,6 +8,7 @@ import {
   claimForSettlement,
   claimUnknownForRetry,
   declineIntent,
+  escrowedTo,
   expiredEscrowsFrom,
   finishUnconfirmedTransfer,
   getIntent,
@@ -49,7 +50,7 @@ import type { VenueTransfer } from "@/lib/settlement/capabilities";
 import { formatAmount, formatTotals, stockForToken } from "@/lib/stocks";
 import { isOptedOut } from "@/lib/sms/optout";
 import { getWallet, unsealWallet } from "@/lib/wallets";
-import { balanceLines, ensureWallet } from "./accounts";
+import { balanceLines, ensureWallet, expiredClaimReply, retryEscrowClaims } from "./accounts";
 import { overDailyCapAtApproval } from "./money";
 import { approveSplit, reconcileSplit } from "./split";
 import { notify } from "./text";
@@ -199,6 +200,11 @@ async function execute(deps: BotDeps, intent: Intent, { resume }: { resume: bool
   return { ok: true, status: "settled", ...result };
 }
 
+/** Someone who joined without a name is asked for one after each payment they make, until they set it. */
+async function askNameAfterPaying(deps: BotDeps, sender: User): Promise<void> {
+  if (sender.name === null) await notify(deps, sender.phone, replies.askName());
+}
+
 /** The money arrived: the receipt for the sender and, for a send or a paid request, the other person. */
 async function announceSettled(deps: BotDeps, intent: Intent, sender: User, recipient: User, result: SettleResult): Promise<void> {
   const amount = formatAmount(intent, deps.network);
@@ -215,6 +221,7 @@ async function announceSettled(deps: BotDeps, intent: Intent, sender: User, reci
     return;
   }
   await notify(deps, sender.phone, replies.sent(amount, displayName(recipient), chain, receipt));
+  await askNameAfterPaying(deps, sender);
   if (intent.kind === "venue") {
     await notify(deps, recipient.phone, replies.receivedOnHyperCore(displayName(recipient), amount, displayName(sender), intent.note, receipt));
   } else if (intent.kind === "send") {
@@ -305,11 +312,12 @@ function venueOf(adapter: SettlementAdapter): VenueTransfer {
 async function announceEscrowed(deps: BotDeps, intent: Intent, sender: User, recipient: User): Promise<void> {
   const amount = formatAmount(intent, deps.network);
   await notify(deps, sender.phone, replies.sentToEscrow(amount, displayName(recipient), deps.escrowTtlDays));
+  await askNameAfterPaying(deps, sender);
   if (await isOptedOut(deps.db, recipient.phone)) {
     await notify(deps, sender.phone, replies.recipientOptedOut(displayName(recipient), deps.escrowTtlDays));
   } else {
     const unclaimed = stockForToken(intent.chain, intent.token) ? stockReplies.receivedUnclaimed : replies.receivedUnclaimed;
-    await notify(deps, recipient.phone, unclaimed(amount, displayName(sender), intent.note, `${deps.appUrl}/a/${intent.id}`));
+    await notify(deps, recipient.phone, unclaimed(amount, displayName(sender), intent.note));
   }
 }
 
@@ -350,7 +358,30 @@ async function moveEscrow(deps: BotDeps, intent: Intent, to: "recipient" | "send
   });
 }
 
-/** Pays an escrow out to its recipient. Caller must have verified phone custody (claim code). */
+/**
+ * Pays out everything waiting in escrow for someone who just joined. Their reply came from the phone the money
+ * was sent to, which is the custody proof a claim code would add, so there is no code. A claim the chain refuses
+ * gets a fresh code to retry with; the replies say so.
+ */
+export async function claimWaiting(deps: BotDeps, user: User): Promise<string[]> {
+  const notes: string[] = [];
+  const retry: Intent[] = [];
+  for (const escrow of await escrowedTo(deps.db, user.id, deps.now())) {
+    const outcome = await releaseEscrow(deps, escrow.id);
+    if (outcome.ok || outcome.reason === "not_claimable") continue;
+    if (outcome.reason === "expired") notes.push(await expiredClaimReply(deps, escrow));
+    else retry.push(escrow);
+  }
+  if (retry.length > 0) notes.push(await retryEscrowClaims(deps, retry));
+  return notes;
+}
+
+/** Who claimed, as the sender knows them: their name, or the number they sent to (not a handle picked for them). */
+function claimerName(recipient: User): string {
+  return recipient.name ?? displayName({ phone: recipient.phone, handle: null });
+}
+
+/** Pays an escrow out to its recipient. Caller must have verified phone custody (a claim code, or their own reply). */
 export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<SettleOutcome> {
   const intent = await claimEscrowForRelease(deps.db, intentId, deps.now());
   if (!intent) {
@@ -372,7 +403,7 @@ export async function releaseEscrow(deps: BotDeps, intentId: string): Promise<Se
     const amount = formatAmount(intent, deps.network);
     await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
     await tourAfterFirstClaim(deps, recipient);
-    await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
+    await notify(deps, sender.phone, replies.escrowClaimed(claimerName(recipient), amount));
     return { ok: true, status: "settled", ...result };
   } catch (e) {
     const error = errorText(e);
@@ -421,7 +452,7 @@ async function recordLateClaim(deps: BotDeps, intent: Intent, result: SettleResu
   const amount = formatAmount(intent, deps.network);
   await notify(deps, recipient.phone, replies.claimed(amount, displayName(sender), receiptUrl(deps, intent, result)));
   await tourAfterFirstClaim(deps, recipient);
-  await notify(deps, sender.phone, replies.escrowClaimed(displayName(recipient), amount));
+  await notify(deps, sender.phone, replies.escrowClaimed(claimerName(recipient), amount));
 }
 
 /**

@@ -45,9 +45,9 @@ export default function HowItWorksPage() {
         <Prose>
           <h3>How do I sign up?</h3>
           <p>
-            Text <a href={hi}>&ldquo;hi&rdquo; to {phone}</a>. The operator asks what name people should use to pay you,
-            and that&apos;s it: you get an @handle, a wallet on each chain, and {l.signupDrop} of test USDC to try it
-            with. No app, no password, no wallet address to copy.
+            Text <a href={hi}>&ldquo;hi&rdquo; to {phone}</a>, or text a payment straight away. That&apos;s it: you get an
+            @handle, a wallet on each chain, and {l.signupDrop} of test USDC to try it with. Text <code>call me Sam</code>{" "}
+            whenever you like to pick your name. No app, no password, no wallet address to copy.
           </p>
           <h3>What can I text it?</h3>
           <ul>
@@ -86,8 +86,8 @@ export default function HowItWorksPage() {
           </p>
           <h3>What if they&apos;re not on Dial?</h3>
           <p>
-            The money goes into escrow and they get a text saying you sent it. They have {l.escrowDays} days to claim it
-            by replying from that phone. If they don&apos;t, text <code>reclaim</code> and it comes back to you. Nothing
+            The money goes into escrow and they get a text saying you sent it. They reply YES from that phone and
+            it&apos;s theirs, within {l.escrowDays} days. If they don&apos;t, text <code>reclaim</code> and it comes back to you. Nothing
             gets stuck.
           </p>
           <h3>How do I get paid?</h3>
