@@ -20,7 +20,7 @@ describe("first-contact disclosures", () => {
   it("the welcome names the program, carries the carrier lines and fits in two segments", () => {
     const body = replies.welcome(APP);
     required(body);
-    expect(body).toMatch(/^hi, I'm the Dial operator by Dial\.Work\. I can help you text your crypto\./);
+    expect(body).toMatch(/^hi, I'm the Dial operator by Dial\.Work\. This is Dial Up Banking\./);
     expect(body.length).toBeLessThanOrEqual(TWO_SEGMENTS);
   });
 
@@ -45,7 +45,7 @@ describe("first-contact disclosures", () => {
   it("HELP names the program, the help page and how to stop, then lists the commands", () => {
     const help = replies.help(APP);
     expect(help).toBe(
-      `Dial operator by Dial.Work: send and get paid in crypto by text. Help: ${APP}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
+      `Dial operator by Dial.Work: Dial Up Banking, money by text. Guide: ${APP}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
     );
     const commands = replies.commands();
     for (const c of ["send", "request", "invoice", "balance", "receive", "wallet", "withdraw", "reclaim", "411", "connect agent", "status"]) {
@@ -53,15 +53,26 @@ describe("first-contact disclosures", () => {
     }
     expect(help).toMatch(GSM);
     expect(commands).toMatch(GSM);
-    expect(commands.length).toBeLessThanOrEqual(160);
+    expect(commands.length).toBeLessThanOrEqual(TWO_SEGMENTS);
   });
 
   it("texts to people who never texted end with the opt-out line", () => {
     const footer = / Dial operator: msg & data rates may apply\. Reply STOP to opt out\.$/;
-    expect(replies.receivedUnclaimed("$5", "alex", null, `${APP}/a/pi_x`)).toMatch(footer);
+    expect(replies.receivedUnclaimed("$5", "alex", null)).toMatch(footer);
     expect(replies.payRequestNewcomer("alex", "$5", "pizza")).toMatch(footer);
     expect(replies.payInvoiceNewcomer("alex", "$5", null)).toMatch(footer);
     expect(replies.payRequestNewcomer("alex", "$5", "pizza")).not.toMatch(/\d{6}/);
+  });
+
+  it("the welcome for an account opened by its first text names the program, carries the carrier lines and fits in two segments", () => {
+    for (const landing of [true, false]) {
+      const body = replies.joinedPaid("dialk3x9", landing, "$25", APP);
+      expect(body).toMatch(/^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\. /);
+      expect(body).toContain("Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.");
+      expect(body).toContain(`Terms: ${APP}/terms`);
+      expect(body).toMatch(GSM);
+      expect(body.length).toBeLessThanOrEqual(TWO_SEGMENTS);
+    }
   });
 
   it("joined ends by pointing at HELP", () => {

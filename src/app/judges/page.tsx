@@ -52,7 +52,7 @@ export default async function JudgesPage() {
               <Fine>1 · Text hi to {s.phone}.</Fine>
               <ButtonLink href={smsUri(number, "hi")}>Text hi</ButtonLink>
               <Fine>
-                2 · Reply with a name. You get an @handle{drop ? ` and ${drop} of test USDC on Solana` : ""}.
+                2 · That&apos;s the signup: you get an @handle{drop ? ` and ${drop} of test USDC on Solana` : ""}. Text CALL ME and a name to pick your own.
               </Fine>
               <CodeBlock label="3 · Pay someone" code="send @handle $1" />
               <Fine>

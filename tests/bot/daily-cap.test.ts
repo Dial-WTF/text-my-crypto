@@ -51,7 +51,7 @@ beforeEach(async () => {
     [BOB, "bob"],
   ] as const) {
     await say(phone, "hi");
-    await say(phone, name);
+    await say(phone, `call me ${name}`);
   }
   deps = { ...deps, perDayCap: CAP };
 });

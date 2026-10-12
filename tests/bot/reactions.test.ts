@@ -24,7 +24,7 @@ beforeEach(async () => {
   sms = smsSink();
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } });
   await say("hi");
-  await say("Alex");
+  await say("call me Alex");
 });
 
 describe("reactions to the operator's texts", () => {

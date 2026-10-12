@@ -5,8 +5,9 @@ const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
 const usdc = (amount: string) => (namesItsCoin(amount) ? amount : `${amount} USDC`);
 /** Test funds: "$5 of test USDC", or "$5 (0.1 TAZ) of testnet ZEC". */
 const testFunds = (amount: string, of: "of" | "in") => `${amount} ${of} ${namesItsCoin(amount) ? "testnet ZEC" : "test USDC"}`;
+/** One way to say yes: the code (the link only shows the details), or the passkey page for accounts that approve with one. */
 const approveWith = (code: string | null, link: string, verb = "confirm") =>
-  code ? `Reply ${code} to ${verb}, or tap: ${link}` : `Approve with your passkey: ${link}`;
+  code ? `Reply ${code} to ${verb}. Details: ${link}` : `Approve with your passkey: ${link}`;
 const plural = (n: number, word: string) =>
   `${n} ${n === 1 ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`}`;
 
@@ -15,6 +16,8 @@ const PROGRAM = "Dial operator by Dial.Work";
 /** Two GSM-7 segments: 2 x 153 characters. */
 export const TWO_SEGMENTS = 306;
 /** Carrier (A2P 10DLC) first-contact disclosure, after the program name. */
+/** What the service is called in texts. */
+export const BRAND = "Dial Up Banking";
 const disclosure = (appUrl: string) =>
   `Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: ${appUrl}/terms`;
 const ASK_NAME = "What name should people use to pay you?";
@@ -26,22 +29,37 @@ const firstContact = (appUrl: string, intro: string, short: string) => {
   const full = `hi, I'm the ${PROGRAM}. ${intro} ${disclosure(appUrl)}\n${ASK_NAME}`;
   return full.length <= TWO_SEGMENTS ? full : `${PROGRAM}: ${disclosure(appUrl)}\n${short} ${ASK_NAME}`;
 };
+/** The last line of texts that tell people what they can do. */
+const HELP_ANYTIME = "Text HELP anytime.";
 /** Ends every text to someone who never texted the operator. */
 export const NEWCOMER_FOOTER = "Dial operator: msg & data rates may apply. Reply STOP to opt out.";
 
 export const replies = {
-  welcome: (appUrl: string) => firstContact(appUrl, "I can help you text your crypto.", "hi!"),
+  welcome: (appUrl: string) => firstContact(appUrl, `This is ${BRAND}.`, "hi!"),
   welcomeWithMoney: (amount: string, from: string, appUrl: string) =>
     firstContact(appUrl, `${from} sent you ${usdc(amount)} and it's waiting for you.`, `${from} sent you ${usdc(amount)}.`),
-  badName: () => `What should I call you? Any name works, like Alex or J. P. Meyer.`,
-  nameFirst: () => `First things first: what name should people use to pay you?`,
+  badName: () => `Just text your name, like Alex.`,
+  nameFirst: () => `Text your name first, like Alex. Then you can send and get money.`,
   joined: (name: string, handle: string, drip: string | null) =>
-    `You're in, ${name}. Your Dial name is @${handle}, so people can text me "send @${handle} $5".` +
+    `You're in, ${name}. Your Dial name is @${handle}: people pay you by texting SEND @${handle} $5.` +
     (drip
       ? ` Dial is on testnet for now, so I put ${testFunds(drip, "of")} in your wallet to try it. It's play money, not real dollars.`
       : ` Dial is on testnet for now: the USDC here is play money.`) +
-    ` Text 411 and a name to find anyone. Text HELP anytime.`,
+    ` To pay someone, text SEND @name $1. ${HELP_ANYTIME}`,
+  /**
+   * The first reply from someone who was paid before they joined: they're in, with a handle picked for them, and the
+   * money lands next (`landing`; false when what was sent to them has expired). Carries the carrier disclosure, since it's the first text after they wrote to the operator.
+   */
+  joinedPaid: (handle: string, landing: boolean, drip: string | null, appUrl: string) =>
+    `Welcome to ${BRAND}, the ${PROGRAM}. You're @${handle}.${landing ? " Your money is on its way." : ""}` +
+    (drip ? ` You have ${testFunds(drip, "of")} to try.` : ` It's testnet play money.`) +
+    (landing ? "" : " To pay someone, text SEND @name $5.") +
+    ` ${disclosure(appUrl)}`,
   renamed: (name: string, handle: string) => `Done. You're ${name} now, still @${handle}.`,
+  /** CALL ME from someone whose handle Dial picked: the name gives them a handle too. */
+  named: (name: string, handle: string) => `Done. You're ${name}, @${handle}. People pay you by texting SEND @${handle} $5.`,
+  /** After a payment from someone with no name yet: the profile comes last, once the money moved. */
+  askName: () => `Want friends to know it's you? Text CALL ME and your name, like CALL ME Alex.`,
   whoami: (name: string, handle: string) => `You're ${name}, @${handle}. People can text me "send @${handle} $5".`,
   directory: (query: string, entries: string[]) =>
     entries.length
@@ -49,17 +67,29 @@ export const replies = {
       : `No one matching "${query}" in the directory yet. Send to their phone number instead.`,
   chooseRecipient: (name: string, options: string[]) =>
     `I found ${options.length} people for "${name}": ${options.map((o, i) => `${i + 1}) ${o}`).join("  ")}. Reply ${options.map((_, i) => i + 1).join(" or ")}, or their number.`,
-  claimOffer: (amount: string, from: string, code: string) => `${from} sent you ${usdc(amount)}. Reply ${code} to claim it.`,
   help: (appUrl: string) =>
-    `${PROGRAM}: send and get paid in crypto by text. Help: ${appUrl}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
-  /** Sent right after `help`. */
+    `${PROGRAM}: ${BRAND}, money by text. Guide: ${appUrl}/how-it-works. Msg & data rates may apply. Reply STOP to cancel.`,
+  /** Sent right after `help`: one line per thing they can text, each saying what it does. Two segments at most. */
   commands: () =>
-    `Your wallet is ready. BALANCE, SEND @name $5, REQUEST $5 from @name, INVOICE @name $5, RECEIVE, WALLET, WITHDRAW, RECLAIM, 411 name, CONNECT AGENT, STATUS`,
+    [
+      "Text any of these:",
+      "BALANCE: your money",
+      "SEND @name $5: pay someone",
+      "REQUEST $5 FROM @name: get paid",
+      "INVOICE @name $5: bill someone",
+      "WALLET: open your wallet",
+      "WITHDRAW: cash out",
+      "RECEIVE: your pay link",
+      "RECLAIM: money nobody took",
+      "411 alex: find someone",
+      "STATUS: check a payment",
+      "CONNECT AGENT: let an AI pay",
+    ].join("\n"),
   optedOut: (cancelledPayment = false) =>
     `You're unsubscribed from the Dial operator. No more texts.` +
     (cancelledPayment ? ` Your pending payment won't go through.` : "") +
     ` Your money stays in your wallet: reply START anytime to get back to it.`,
-  optedIn: () => `Welcome back. The Dial operator is texting you again. Reply HELP for commands, STOP to stop.`,
+  optedIn: () => `Welcome back to ${BRAND}. I'm texting you again. Reply HELP for commands, STOP to stop.`,
   codeHint: () => `To confirm, reply with the 6-digit code from my last text. It keeps anyone else from spending your money.`,
   cancelled: (n: number) => (n > 0 ? `OK, cancelled. Nothing was sent.` : `OK, forgot about it.`),
   sending: (amount: string, who: string, chain: string) => `Sending ${amount} to ${who} on ${chain}…`,
@@ -80,11 +110,10 @@ export const replies = {
   badAmount: (cap: string) => `Amounts can be from $0.01 to ${cap}.`,
   recipientOptedOut: (who: string, days: number) =>
     `${who} has turned off texts from me, so I couldn't tell them. The money waits for them for ${plural(days, "day")}.`,
-  didntCatch: () =>
-    `I didn't catch who or how much. Try "send @jeremy $5", "send $5 to +1 555 123 4567" or "request $10 from alex".`,
-  chatFallback: () => `I'm the Dial operator. I move money by text. Try "send jeremy $10".`,
+  didntCatch: () => `I didn't catch who or how much. Text it like this: SEND @jeremy $5`,
+  chatFallback: () => `This is ${BRAND}: I move money by text. To pay someone, text SEND @name $5. ${HELP_ANYTIME}`,
   /** Said instead of chatFallback when that was the last thing sent: never the same canned line twice. */
-  notSure: () => `Not sure what you mean. Try "balance", "send @name $5", "request $5 from @name" or "wallet".`,
+  notSure: () => `I didn't get that. Text HELP to see everything I can do.`,
   thanks: () => `Anytime.`,
   statusWaitingOnYou: (amount: string, who: string, code: string | null, link: string) =>
     code
@@ -115,7 +144,7 @@ export const replies = {
       : `${from} sent you ${amount} and it's waiting for you to claim it. Reply with the code from my text, or text "status" for a new one.`,
   statusFailed: (amount: string, who: string) => `Your ${amount} to ${who} didn't go through, and nothing moved. Text it again to retry.`,
   statusCancelled: (amount: string, who: string) => `Your ${amount} with ${who} was cancelled. Nothing moved.`,
-  nothingInFlight: () => `Nothing in flight right now. Text "balance", "wallet" or "send @name $5".`,
+  nothingInFlight: () => `Nothing in flight right now. Text BALANCE to see your money.`,
   askNumber: (name: string) => `What's ${name}'s number?`,
   unknownHandle: (handle: string) => `There's no Dial user called ${handle}. Send their phone number instead.`,
   selfSend: () => `That's you. Pick someone else.`,
@@ -142,17 +171,17 @@ export const replies = {
   invoiceSent: (amount: string, who: string, link: string) => `Invoice for ${amount} sent to ${who}. Track it: ${link}`,
   payRequest: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
     code
-      ? `${from} is asking you for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay or NO to decline. Or tap: ${link}`
+      ? `${from} is asking you for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay it. Reply NO to decline. Details: ${link}`
       : `${from} is asking you for ${usdc(amount)}${forNote(note)}. Pay with your passkey or decline: ${link}`,
   payInvoice: (from: string, amount: string, note: string | null, code: string | null, link: string) =>
     code
-      ? `${from} sent you an invoice for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay or NO to decline. Invoice: ${link}`
+      ? `${from} sent you an invoice for ${usdc(amount)}${forNote(note)}. Reply ${code} to pay it. Reply NO to decline. Invoice: ${link}`
       : `${from} sent you an invoice for ${usdc(amount)}${forNote(note)}. Pay with your passkey or decline: ${link}`,
   /** payRequest for someone not on Dial: no code yet. They get one once they sign up (offerWaiting). */
   payRequestNewcomer: (from: string, amount: string, note: string | null) =>
-    `${from} is asking you for ${usdc(amount)}${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
+    `${from} is asking you for ${usdc(amount)}${forNote(note)} on ${BRAND}, the revolutionary new way to send money by text. Reply YES to see it. ${NEWCOMER_FOOTER}`,
   payInvoiceNewcomer: (from: string, amount: string, note: string | null) =>
-    `${from} sent you an invoice for ${usdc(amount)}${forNote(note)} on Dial. Reply HI to see it. ${NEWCOMER_FOOTER}`,
+    `${from} sent you an invoice for ${usdc(amount)}${forNote(note)} on ${BRAND}, the revolutionary new way to send money by text. Reply YES to see it. ${NEWCOMER_FOOTER}`,
   codeMismatch: (triesLeft?: number) =>
     triesLeft === undefined
       ? `That code didn't match anything waiting on you. Check my last text.`
@@ -167,25 +196,26 @@ export const replies = {
   sent: (amount: string, who: string, chain: string, explorerUrl: string) =>
     `Sent ${amount} to ${who} on ${chain}. Receipt: ${explorerUrl}`,
   sentToEscrow: (amount: string, who: string, days: number) =>
-    `Sent ${amount} to ${who}. They have ${plural(days, "day")} to claim it. If they don't, text "reclaim" to get it back.`,
+    `Sent ${amount} to ${who}. They reply YES to my text and it's theirs. If they don't within ${plural(days, "day")}, text RECLAIM to get it back.`,
   received: (who: string, amount: string, from: string, chain: string, note: string | null, explorerUrl: string) =>
     `${who}, you got ${amount} from ${from}${forNote(note)} on ${chain}. Receipt: ${explorerUrl}`,
-  receivedUnclaimed: (amount: string, from: string, note: string | null, link: string) =>
-    `${from} sent you ${usdc(amount)}${forNote(note)} on Dial. Reply to this text to claim it. See it: ${link} ${NEWCOMER_FOOTER}`,
+  /** The first text anyone gets who was paid before joining: any reply pays them out (claimWaiting). */
+  receivedUnclaimed: (amount: string, from: string, note: string | null) =>
+    `You got money! ${from} sent you ${usdc(amount)}${forNote(note)} using ${BRAND}, the revolutionary new way to send money by text. Reply YES to get it. ${NEWCOMER_FOOTER}`,
   claimed: (amount: string, from: string, explorerUrl: string) =>
-    `Claimed ${amount} from ${from}. It's in your Dial wallet now, nothing to set up. Receipt: ${explorerUrl}`,
+    `You got money! ${amount} from ${from} is in your Dial wallet now, nothing to set up. Receipt: ${explorerUrl}`,
   /**
    * After someone's first claim: what their wallet holds, that paying anyone is a text, how to cash out and
    * where the dashboard is. `balances` is like ["$3 USDC on Solana"]; empty when no chain answered.
    */
   firstClaimTour: (balances: string[], appUrl: string) =>
-    `${balances.length ? `Your Dial wallet: ${balances.join(", ")}.` : "Your Dial wallet holds it."} Sending is just a text: SEND @friend $1 pays a friend, WITHDRAW ALL TO <your address> moves it to your own wallet. Text WALLET for your dashboard. Guide: ${appUrl}/how-it-works#got-paid`,
+    `${balances.length ? `Your Dial wallet: ${balances.join(", ")}.` : "Your Dial wallet holds it."} To pay a friend, text SEND @friend $1. To cash out, text WITHDRAW. To see your wallet, text WALLET. Guide: ${appUrl}/how-it-works#got-paid`,
   /** A bare "withdraw" or "cash out": how to say where the money goes. */
   withdrawHowTo: (appUrl: string) =>
     `To move money to your own wallet, text WITHDRAW ALL TO <your address> or WITHDRAW $5 TO <address>. For an 0x address, add the chain: ON BASE. Step by step: ${appUrl}/how-it-works#cash-out`,
   escrowClaimed: (who: string, amount: string) => `${who} claimed the ${amount} you sent.`,
   claimFailed: (amount: string, from: string, code: string) =>
-    `Couldn't confirm your claim of the ${amount} from ${from} yet. Reply ${code} to finish it: if it already went through, you'll just get the receipt.`,
+    `The ${amount} from ${from} didn't land yet. Reply ${code} to finish it: if it already went through, you'll just get the receipt.`,
   claimExpired: (amount: string, from: string) =>
     `The ${amount} from ${from} wasn't claimed in time, so it can only go back to them now. Ask them to send it again.`,
   requestPaid: (who: string, amount: string, note: string | null, explorerUrl: string) =>

@@ -188,7 +188,7 @@ describe("approveSplit", () => {
     expect(out).toEqual({ ok: true, status: "escrowed", ...TX });
     expect((await statuses(r.split.splitId)).map(([s]) => s)).toEqual(["escrowed", "escrowed"]);
     expect(sms.to(NEWBIE)).toHaveLength(1);
-    expect(sms.last(NEWBIE)).toMatch(/^Jeremy sent you \$10 .*on Dial\. Reply to this text to claim it\./);
+    expect(sms.last(NEWBIE)).toMatch(/^You got money! Jeremy sent you \$10 .*using Dial Up Banking, the revolutionary new way to send money by text\. Reply YES to get it\./);
     expect(sms.to(NEWBIE2)).toEqual([]);
     expect(sms.last(JEREMY)).toMatch(/have 7 days to claim\. Receipt: https:\/\/explore\.test\/tx\/0xsplit$/);
   });

@@ -27,7 +27,7 @@ flowchart LR
 `decide` applies these rules in order:
 
 1. **Compliance.** STOP opts out (one confirmation). CANCEL also cancels the member's unapproved payments. While opted out, only START gets a reply. HELP always answers, in two texts: who this is and where to get help, then the commands.
-2. **Onboarding.** Strangers are welcomed and asked for a name; nothing else happens until they give one. A command sent instead of a name gets "first, your name".
+2. **Onboarding.** Any first text opens the account with a handle Dial picks (`dial` and four characters), pays out anything waiting in escrow for that number, and then runs the text if it was a command. A name comes later: `call me Alex` sets it and swaps the picked handle for one from the name. A signup already waiting on the old name question still takes a name.
 3. **Answers to a question the operator asked.** A code approves; nevermind cancels; 1–5 picks from a list; a number answers "what's their number?"; a chain name answers "which chain?"; NEW confirms a deliberate repeat; "yes" while a code is pending explains codes.
 4. **Everything else** is a fresh request and drops any pending question.
 
@@ -70,7 +70,7 @@ stateDiagram-v2
   settling --> settled: direct transfer confirmed
   settling --> escrowed: recipient not on Dial yet
   settling --> failed: transfer failed, nothing moved
-  escrowed --> settling: recipient claims (code to their phone) or sender reclaims after 7 days
+  escrowed --> settling: recipient replies from their phone or sender reclaims after 7 days
   settling --> refunded: reclaim confirmed
   settled --> [*]
   refunded --> [*]
@@ -97,9 +97,10 @@ Every arrow is a conditional UPDATE, so a payment moves at most once even if two
 | Slow chain | "Sending…" immediately, receipt after | Acknowledge first |
 | STOP / UNSUBSCRIBE / CANCEL / END / QUIT | Unsubscribed, one confirmation, then silence until START | Carrier compliance |
 | CANCEL while a payment waits on their code | Unsubscribed, and their unapproved payments are cancelled; the confirmation adds "Your pending payment won't go through." | CANCEL is an opt-out word that may also mean "cancel that"; never leave a payment they think is cancelled |
-| First text from a stranger | Welcome names the program (Dial operator by Dial.Work), says message frequency varies, "Msg & data rates may apply", "Reply HELP for help, STOP to opt out" and links /terms, then asks for a name. Fits two segments; if a long name pushes it over, the disclosure leads on its own line | Carrier (A2P 10DLC) first-contact rules |
+| First text from a stranger | The account opens. The reply names the program ("Welcome to Dial Up Banking, the Dial operator by Dial.Work"), gives their picked @handle, says message frequency varies, "Msg & data rates may apply", "Reply HELP for help, STOP to opt out" and links /terms. Fits two segments. A command sent as that first text runs right after | Carrier first-contact rules, and no question between a stranger and their first payment |
 | HELP | Two texts: program name, what it does, "Help: <app>/how-it-works", "Msg & data rates may apply. Reply STOP to cancel."; then the command list | Carrier HELP rules, and a real answer to "what can I text?" |
 | Signup finishes | "You're in…" ends with "Text HELP anytime." | Point at the way out of any dead end |
+| A payment from someone with no name yet | After the receipt: "Text CALL ME and your name" | The profile comes last, after the money moved |
 | Recipient opted out | Never texted; sender told the money waits 7 days | Respect opt-out, keep sender informed |
 | Unknown name | "What's their number?", saved as a contact | Ask, then remember |
 | Name matches several people | Numbered list, reply 1–5 or a number | Never guess between people |
@@ -107,7 +108,7 @@ Every arrow is a conditional UPDATE, so a payment moves at most once even if two
 | "nevermind" | Cancels unapproved payments and pending questions | Easy undo |
 | Sending to the operator's own number | Refused | Obvious mistake |
 | $0 or above the cap | Range explained | Clear limits |
-| Command before giving a name | "First, your name" | Account first |
+| A command as the first text | Welcome, then the command runs | Account first, no questions |
 | Request or payment to someone not on Dial | Escrow / request waits; offered again with a fresh code after they join, after their welcome | Nothing gets stuck or lost |
 | Text to someone who never texted the operator (money waiting, request, invoice) | No code (they can't use one yet): a request or invoice says "Reply HI to see it". Every such text ends "Dial operator: msg & data rates may apply. Reply STOP to opt out." | Don't show what they can't use; carrier rules for unsolicited first contact |
 | Not enough money to send or withdraw | Balance, then "Add more:" with their pay page (it lists deposit options); on a testnet Circle's faucet covers, "Free test USDC: faucet.circle.com" | Say where to get more, not just that it's short |

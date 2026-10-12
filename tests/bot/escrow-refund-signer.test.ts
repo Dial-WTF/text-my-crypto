@@ -42,7 +42,7 @@ describe("refunding a program escrow", () => {
       now: () => clock,
     });
     await say(ALEX, "hi");
-    await say(ALEX, "alex");
+    await say(ALEX, "call me alex");
   });
 
   it("passes the program the sender's wallet key", async () => {

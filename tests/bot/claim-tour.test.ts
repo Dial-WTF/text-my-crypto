@@ -29,7 +29,7 @@ beforeEach(async () => {
   sms = smsSink();
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: fakeAdapter({ defaultBalance: 100_000_000n }) } });
   await alex("hi");
-  await alex("Alex");
+  await alex("call me Alex");
 });
 
 async function sendRiley(amount: string): Promise<void> {
@@ -40,14 +40,11 @@ async function sendRiley(amount: string): Promise<void> {
 describe("someone's first claim", () => {
   it("is followed by their wallet, how to pay and cash out by text, the dashboard and the guide, once", async () => {
     await sendRiley("5");
-    await riley("hi");
-    await riley("Riley");
-    const offer = sms.to(RILEY).find((m) => /Reply \d{6} to claim it\.$/.test(m)) ?? "";
-    await riley(codeIn(offer));
+    await riley("yes");
 
     const [claimed, tour] = sms.to(RILEY).slice(-2);
-    expect(claimed).toMatch(/^Claimed \$5 from Alex\. It's in your Dial wallet now, nothing to set up\. Receipt: /);
-    expect(tour).toMatch(/^Your Dial wallet: \$[\d.]+ USDC on Solana\. Sending is just a text: SEND @friend \$1 pays a friend, WITHDRAW ALL TO <your address> moves it to your own wallet\. Text WALLET for your dashboard\. Guide: https:\/\/tmc\.test\/how-it-works#got-paid$/);
+    expect(claimed).toMatch(/^You got money! \$5 from Alex is in your Dial wallet now, nothing to set up\. Receipt: /);
+    expect(tour).toMatch(/^Your Dial wallet: \$[\d.]+ USDC on Solana\. To pay a friend, text SEND @friend \$1\. To cash out, text WITHDRAW\. To see your wallet, text WALLET\. Guide: https:\/\/tmc\.test\/how-it-works#got-paid$/);
     expect(tour).toMatch(GSM);
 
     await sendRiley("2");

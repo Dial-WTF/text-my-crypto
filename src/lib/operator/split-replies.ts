@@ -5,7 +5,7 @@
 
 const forNote = (note: string | null | undefined) => (note ? ` (${note})` : "");
 const approveWith = (code: string | null, link: string) =>
-  code ? `Reply ${code} to confirm, or tap: ${link}` : `Approve with your passkey: ${link}`;
+  code ? `Reply ${code} to confirm. Details: ${link}` : `Approve with your passkey: ${link}`;
 
 /** One share per person, short: "$10 each to @a, @b" when they're equal, else "@a $10.01, @b $10". */
 export function shareList(shares: Array<{ name: string; amount: string }>): string {

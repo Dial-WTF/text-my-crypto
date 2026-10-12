@@ -93,13 +93,14 @@ export type SignupResult = { ok: true; user: User; reply: string } | { ok: false
 /**
  * Turns a phone number into a named account: claims an unclaimed user (someone already sent them money)
  * or creates a new one, opens wallets on every enabled chain and drops test funds. The caller sends the
- * welcome first, then `offerWaiting` for anything that was waiting on this number.
+ * welcome first, then `claimWaiting` and `offerWaiting` for anything that was waiting on this number.
  */
-export async function completeSignup(deps: BotDeps, phone: string, rawName: string): Promise<SignupResult> {
-  const name = cleanDisplayName(rawName);
-  if (!name) return { ok: false, error: replies.badName() };
+export async function completeSignup(deps: BotDeps, phone: string, rawName: string | null): Promise<SignupResult> {
+  // No name: someone who was paid joins on their first reply, and can set a name later (CALL ME …).
+  const name = rawName === null ? null : cleanDisplayName(rawName);
+  if (rawName !== null && !name) return { ok: false, error: replies.badName() };
   // Handles are public (pay links, the ledger), so the fallback must not carry any phone digits.
-  const handle = await uniqueHandle(deps.db, handleFromName(name) ?? `dial${randomBase32(4)}`);
+  const handle = await uniqueHandle(deps.db, (name && handleFromName(name)) ?? `dial${randomBase32(4)}`);
 
   const existing = await findUserByPhone(deps.db, phone);
   if (existing && isClaimed(existing)) return { ok: true, user: existing, reply: replies.whoami(displayName(existing), existing.handle ?? handle) };
@@ -119,7 +120,10 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
     }
   }
 
-  return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
+  const drip = dripped ? formatUsd(deps.dripAmount) : null;
+  if (name) return { ok: true, user, reply: replies.joined(name, handle, drip) };
+  const landing = (await escrowedTo(deps.db, user.id, deps.now())).length > 0;
+  return { ok: true, user, reply: replies.joinedPaid(handle, landing, drip, deps.appUrl) };
 }
 
 /** How much these escrows add up to and who sent them, for a claim text. */
@@ -132,22 +136,6 @@ async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount:
     if (s) senders.add(displayName(s));
   }
   return { amount, from: [...senders].join(", ") || "someone" };
-}
-
-/**
- * Texts the person one code that claims every escrow waiting for them. Offered again (START after STOP),
- * the wrong guesses made so far still count, and one locked by them isn't offered: asking again never buys more tries.
- */
-async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
-  const waiting = (await escrowedTo(deps.db, user.id, deps.now())).filter((i) => !isCodeLocked(i));
-  if (waiting.length === 0) return;
-  const code = await issueSharedCode(
-    deps.db,
-    waiting.map((i) => i.id),
-    { keepAttempts: true },
-  );
-  const { amount, from } = await claimSummary(deps, waiting);
-  await notify(deps, user.phone, replies.claimOffer(amount, from, code));
 }
 
 /** A claim the chain refused or didn't answer: nothing moved, so a fresh code lets them try again. */
@@ -186,9 +174,8 @@ async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   }
 }
 
-/** After the welcome: escrows to claim and requests to pay that arrived before this person joined. */
+/** After the welcome: requests to pay that arrived before this person joined. Escrows are paid out (claimWaiting). */
 export async function offerWaiting(deps: BotDeps, user: User): Promise<void> {
-  await offerEscrowClaims(deps, user);
   await offerPendingRequests(deps, user);
 }
 

@@ -7,7 +7,7 @@ Text money to anyone. The Dial operator ships in tranches; each one is usable on
 - Text the operator from any phone: signup by replying with a name, then send, request, invoice, receive, withdraw, reclaim.
 - Every money movement is confirmed by a one-time code texted to the phone (6 digits, bound to one payment, 10 minutes, 5 tries) or by a passkey.
 - Unknown names: the operator asks for the number and remembers it as a contact.
-- Recipients not on Dial: funds wait in escrow; only the holder of that phone number can claim (code texted to that number). Unclaimed escrows come back to the sender after 7 days via `reclaim`. On Solana the escrow is now an on-chain program (Tranche 3).
+- Recipients not on Dial: funds wait in escrow; only the holder of that phone number can claim (by replying from it). Unclaimed escrows come back to the sender after 7 days via `reclaim`. On Solana the escrow is now an on-chain program (Tranche 3).
 - Passkey upgrade from a link: payments over $20 then require the passkey.
 - Settlement on Solana devnet (USDC). Wallets are server-held and encrypted; `withdraw all to <address>` exits to self-custody at any time.
 - Language: TypeScript (Next.js on Cloudflare Workers via OpenNext, D1, Payphone for SMS).

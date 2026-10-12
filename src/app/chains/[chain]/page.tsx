@@ -134,7 +134,7 @@ export default async function ChainPage({ params }: PageProps<"/chains/[chain]">
           <Split>
             <Receipt title="Text it">
               <Stack gap="sm">
-                <Fine>1 · Text hi and reply with a name. That&apos;s the signup.</Fine>
+                <Fine>1 · Text hi. That&apos;s the signup.</Fine>
                 <ButtonLink href={smsUri(number, "hi")}>Text hi</ButtonLink>
                 <CodeBlock label="2 · Then text" code={text} />
                 <ButtonLink href={smsUri(number, text)} variant="outline">

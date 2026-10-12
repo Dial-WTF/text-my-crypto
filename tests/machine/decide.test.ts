@@ -46,8 +46,10 @@ describe("decide: compliance", () => {
 });
 
 describe("decide: onboarding", () => {
-  it("welcomes strangers, then takes their name", () => {
-    expect(decide(s({ account: "unknown" }), text("yo"))).toEqual({ do: "welcome" });
+  it("opens an account on any first text, running a command they led with, and still takes a name already asked for", () => {
+    expect(decide(s({ account: "unknown" }), text("yo"))).toEqual({ do: "join" });
+    expect(decide(s({ account: "unknown" }), text("send @alex $5"))).toEqual({ do: "join", then: "send @alex $5" });
+    expect(decide(s({ account: "unclaimed" }), { kind: "affirm" })).toEqual({ do: "join" });
     expect(decide(s({ account: "unknown", convo: awaitingName }), text("J. P. Meyer"))).toEqual({
       do: "signup",
       name: "J. P. Meyer",
@@ -71,8 +73,8 @@ describe("decide: onboarding", () => {
     expect(decide(naming, { kind: "status", text: "Update" })).toEqual({ do: "signup", name: "Update" });
   });
 
-  it("still welcomes a stranger who says thanks before being asked their name", () => {
-    expect(decide(s({ account: "unknown" }), { kind: "thanks", text: "ty" })).toEqual({ do: "welcome" });
+  it("opens an account for a stranger who says thanks", () => {
+    expect(decide(s({ account: "unknown" }), { kind: "thanks", text: "ty" })).toEqual({ do: "join" });
   });
 
   it("members still get thanks and status for the same words", () => {

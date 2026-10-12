@@ -82,7 +82,7 @@ const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
 
 async function signUp(phone: string, name: string) {
   await say(phone, "hi");
-  return say(phone, name);
+  return say(phone, `call me ${name}`);
 }
 
 async function hyperevmAddress(phone: string): Promise<string> {
@@ -108,7 +108,7 @@ afterEach(() => {
 describe("move $5 to hyperliquid", () => {
   it("asks for the code, then deposits into the sender's own HyperCore balance", async () => {
     const confirm = await say(ALEX, "move $5 to hyperliquid");
-    expect(confirm).toMatch(/^Move \$5 USDC from HyperEVM to your Hyperliquid spot balance\? Reply \d{6} to confirm, or tap: https:\/\/tmc\.test\/a\/pi_/);
+    expect(confirm).toMatch(/^Move \$5 USDC from HyperEVM to your Hyperliquid spot balance\? Reply \d{6} to confirm\. Details: https:\/\/tmc\.test\/a\/pi_/);
     expect(core.deposits).toHaveLength(0);
 
     await say(ALEX, codeIn(confirm));

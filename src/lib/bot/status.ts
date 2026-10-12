@@ -94,7 +94,7 @@ export async function statusReply(
       if (outgoing) return replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires");
       // Too late to claim: it can only go back to the sender now.
       if (i.escrowExpiresAt && i.escrowExpiresAt <= now) return replies.claimExpired(amount, who);
-      // Waiting for this person to claim it: the same shared claim code as offerEscrowClaims, sent again.
+      // Waiting for this person to claim it (a claim that didn't land the first time): a fresh claim code.
       if (isCodeLocked(i)) return replies.codeMismatch(0);
       if (!freshCode) return replies.statusClaimWaiting(amount, who, null);
       const waiting = (await escrowedTo(deps.db, user.id, now)).filter((e) => !isCodeLocked(e));

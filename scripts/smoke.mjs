@@ -4,9 +4,9 @@
 //   pnpm smoke --env staging   # https://text-my-crypto-staging…, secret from SMOKE_SECRET or .env.staging.local
 //   pnpm smoke --env local     # pnpm dev on :3100, secret from .env.local
 //
-// A fresh sender signs up (hi → name), checks its balance, pays the standing receiver $0.50 with the
-// texted code, sends $0.50 to a fresh number that isn't on Dial (escrow), which signs up and claims it
-// with its code. Then the sender texts WALLET and signs in on the web with the texted link and code.
+// A fresh sender joins on its first text and names itself (hi → CALL ME), checks its balance, pays the
+// standing receiver $0.50 with the texted code, sends $0.50 to a fresh number that isn't on Dial (escrow),
+// which replies YES and gets it. Then the sender texts WALLET and signs in on the web with the texted link and code.
 // Exits 1 with the transcript on the first wrong or missing reply.
 // The two payments spend the sender's whole $1 signup drop (SIGNUP_DRIP_USD on staging).
 import { existsSync, readFileSync } from "node:fs";
@@ -138,23 +138,21 @@ async function main() {
   const handle = await step("receiver ready", async () => {
     await markSeen(RECEIVER);
     await say(RECEIVER, "whoami");
-    const m = await expectReply(RECEIVER, /@([a-z0-9_]+)|What name|what name/);
-    if (m[1]) return m[1];
-    await say(RECEIVER, "Smoke Receiver");
-    return (await expectReply(RECEIVER, /You're in, .*?@([a-z0-9_]+)/))[1];
+    // A receiver new to this target joins on that text; one already on Dial says who it is.
+    return (await expectReply(RECEIVER, /@([a-z0-9_]+)/, { timeoutMs: 90_000 }))[1];
   });
 
   const sender = await freshSender();
   await markSeen(sender);
 
-  await step("hi asks for a name", async () => {
+  await step("hi opens the account without a question", async () => {
     await say(sender, "hi");
-    await expectReply(sender, /What name should people use to pay you\?/);
+    await expectReply(sender, /^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\. You're @dial/, { timeoutMs: 90_000 });
   });
 
-  await step("name signs up", async () => {
-    await say(sender, "Smoke Sender");
-    await expectReply(sender, /You're in, Smoke Sender\. Your Dial name is @/, { timeoutMs: 90_000 });
+  await step("CALL ME sets the name and handle", async () => {
+    await say(sender, "call me Smoke Sender");
+    await expectReply(sender, /^Done\. You're Smoke Sender, @smokesender\w*\./);
   });
 
   await step("balance", async () => {
@@ -188,23 +186,17 @@ async function main() {
 
   await step("code funds the escrow; the newcomer is told", async () => {
     await say(sender, escrowCode);
-    await expectReply(sender, new RegExp(`^Sent ${PAY_RE} to .* They have \\d+ days? to claim it`), { timeoutMs: 120_000 });
-    await expectReply(newcomer, new RegExp(`Smoke Sender sent you ${PAY_RE} USDC on Dial\\. Reply to this text to claim it`));
+    await expectReply(sender, new RegExp(`^Sent ${PAY_RE} to .* They reply YES to my text and it's theirs\\.`), { timeoutMs: 120_000 });
+    await expectReply(newcomer, new RegExp(`^You got money! Smoke Sender sent you ${PAY_RE} USDC using Dial Up Banking.* Reply YES to get it\\.`));
   });
 
-  const claimCode = await step("newcomer signs up and gets a claim code", async () => {
-    await say(newcomer, "hi");
-    await expectReply(newcomer, /What name should people use to pay you\?/);
-    await say(newcomer, "Smoke Newcomer");
-    return (await expectReply(newcomer, /Reply (\d{6}) to claim it\./, { timeoutMs: 90_000 }))[1];
-  });
-
-  await step("claim code pays the newcomer, who gets the wallet tour; the sender is told", async () => {
-    await say(newcomer, claimCode);
-    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. It's in your Dial wallet now, nothing to set up\\. Receipt: https?://`), {
+  await step("YES pays the newcomer, who gets the wallet tour; the sender is told", async () => {
+    await say(newcomer, "YES");
+    await expectReply(newcomer, /^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\. You're @dial\w+\. Your money is on its way\./, { timeoutMs: 90_000 });
+    await expectReply(newcomer, new RegExp(`^You got money! ${PAY_RE} from Smoke Sender is in your Dial wallet now, nothing to set up\\. Receipt: https?://`), {
       timeoutMs: 120_000,
     });
-    await expectReply(newcomer, /^Your Dial wallet: .+ Sending is just a text: .+ Guide: https?:\/\/\S+\/how-it-works#got-paid$/, { timeoutMs: 30_000 });
+    await expectReply(newcomer, /^Your Dial wallet: .+ To pay a friend, text SEND .+ Guide: https?:\/\/\S+\/how-it-works#got-paid$/, { timeoutMs: 30_000 });
     await expectReply(sender, new RegExp(`claimed the ${PAY_RE} you sent`), { timeoutMs: 30_000 });
   });
 

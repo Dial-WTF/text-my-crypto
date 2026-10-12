@@ -88,10 +88,10 @@ describe("zcash amounts", () => {
   it("never calls testnet ZEC USDC in replies", () => {
     const zec = money(usdToBaseUnits("5"), "zcash", "testnet");
     const confirm = replies.confirmSend(zec, "alex", "Zcash", null, "123456", "https://x/a/pi_1");
-    expect(confirm).toBe("Send $5 (0.1 TAZ) to alex on Zcash? Reply 123456 to confirm, or tap: https://x/a/pi_1");
+    expect(confirm).toBe("Send $5 (0.1 TAZ) to alex on Zcash? Reply 123456 to confirm. Details: https://x/a/pi_1");
     expect(replies.insufficient(zec, "https://x/@alex", true, null)).toContain("$5 (0.1 TAZ) in testnet ZEC");
     expect(replies.dripped(zec)).toContain("$5 (0.1 TAZ) of testnet ZEC");
-    expect(replies.claimOffer(zec, "sam", "123456")).not.toContain("USDC");
+    expect(replies.receivedUnclaimed(zec, "sam", null)).not.toContain("USDC");
     // Stablecoin chains read exactly as before.
     expect(replies.confirmSend("$5", "alex", "Solana", null, "123456", "https://x/a/pi_1")).toContain("Send $5 USDC to alex");
   });

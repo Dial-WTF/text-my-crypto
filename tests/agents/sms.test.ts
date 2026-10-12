@@ -41,7 +41,7 @@ describe("connect agent over SMS", () => {
     sms = smsSink();
     deps = testDeps(await createTestDb(), { sendSms: sms.sendSms });
     await say("hi");
-    await say("alex");
+    await say("call me alex");
   });
 
   it("texts a one-time link and code to the account's own phone", async () => {
@@ -69,9 +69,11 @@ describe("connect agent over SMS", () => {
     expect(await say("revoke agents")).toBe('No agents are connected. Text "connect agent" to connect one.');
   });
 
-  it("needs an account first", async () => {
+  it("opens an account first for someone new, then connects", async () => {
     const STRANGER = "+15550000077";
     await handleInbound(deps, { to: "+18066071387", from: STRANGER, body: "connect agent", dedupeKey: "s1" });
-    expect(sms.last(STRANGER)).toMatch(/^hi, I'm the Dial operator/);
+    const [welcome, connect] = sms.to(STRANGER);
+    expect(welcome).toMatch(/^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\./);
+    expect(connect).toMatch(/^Connect an AI agent to your Dial account: /);
   });
 });

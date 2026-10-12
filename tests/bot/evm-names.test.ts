@@ -59,13 +59,13 @@ beforeEach(async () => {
     names: { ethereum: names.ens, base: names.base },
   });
   await say(ALEX, "hi");
-  await say(ALEX, "alex");
+  await say(ALEX, "call me alex");
 });
 
 describe("withdrawing to an ENS name or Basename over SMS", () => {
   it("resolves an ENS name on Ethereum and shows the name with the address it approves", async () => {
     const confirm = await say(ALEX, "withdraw $5 to vitalik.eth");
-    expect(confirm).toMatch(/^Withdraw \$5 USDC to vitalik\.eth \(0xd8dA…6045\) on Ethereum\? Reply \d{6} to confirm, or tap: /);
+    expect(confirm).toMatch(/^Withdraw \$5 USDC to vitalik\.eth \(0xd8dA…6045\) on Ethereum\? Reply \d{6} to confirm\. Details: /);
     const intent = await getIntent(db, intentIdIn(confirm));
     expect(intent).toMatchObject({ kind: "withdraw", chain: "ethereum", recipientAddress: VITALIK, recipientName: "vitalik.eth" });
   });

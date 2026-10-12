@@ -9,6 +9,7 @@ import {
   expiredEscrowForCode,
   finishUnconfirmedTransfer,
   getIntent,
+  latestSettledTo,
   markTransferUnconfirmed,
   matchesExpiredCode,
   matchPageCode,
@@ -53,6 +54,13 @@ async function setCode(id: string, code: string): Promise<void> {
 describe("intent lookups that come back empty", () => {
   it("getIntent returns null for an id that was never created", async () => {
     expect(await getIntent(db, "pi_nope")).toBeNull();
+  });
+
+  it("latestSettledTo is null until something settled or escrowed is on its way to them", async () => {
+    const i = await createIntent(db, base, now);
+    expect(await latestSettledTo(db, jeremyId)).toBeNull();
+    await db.update(intents).set({ status: "escrowed" }).where(eq(intents.id, i.id));
+    expect((await latestSettledTo(db, jeremyId))?.id).toBe(i.id);
   });
 
   it("sentSince is zero for someone who has sent nothing", async () => {

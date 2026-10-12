@@ -16,8 +16,10 @@ import {
   findUserByPhone,
   getUserById,
   isClaimed,
+  isPickedHandle,
   renameUser,
   searchDirectory,
+  uniqueHandle,
 } from "@/lib/identity";
 import {
   cancelUnapproved,
@@ -29,7 +31,7 @@ import {
   matchCode,
   matchesExpiredCode,
 } from "@/lib/intents";
-import { cleanDisplayName } from "@/lib/names";
+import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { formatAmount } from "@/lib/stocks";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
@@ -45,7 +47,7 @@ import { walletLinkReply } from "./web";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
 import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
-import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { approveIntent, claimWaiting, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
 import { prepareVenue, priceReply, venueBalanceReply } from "./hyperliquid";
 import { prepareSplit } from "./split";
 import { latestRecent, needsMention, statusReply } from "./status";
@@ -91,7 +93,7 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   return out;
 }
 
-const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "useChain", "command"]);
+const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "join", "nevermind", "confirmNew", "pick", "useNumber", "useChain", "command"]);
 
 async function loadSession(
   deps: BotDeps,
@@ -133,7 +135,7 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       await optIn(deps.db, phone);
       await reply(replies.optedIn());
       // Anything sent or asked of them while they were away was held back; offer it now, as at signup.
-      if (ctx.user && isClaimed(ctx.user)) await offerWaiting(deps, ctx.user);
+      if (ctx.user && isClaimed(ctx.user)) await payOutWaiting(deps, ctx.user, reply);
       return;
     case "help":
       return helpReplies(deps, reply);
@@ -144,11 +146,14 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       return reply(replies.nameFirst());
     case "badName":
       return reply(replies.badName());
-    case "signup": {
-      const result = await completeSignup(deps, phone, action.name);
+    case "signup":
+    case "join": {
+      const result = await completeSignup(deps, phone, action.do === "signup" ? action.name : null);
       if (!result.ok) return reply(result.error);
       await reply(result.reply);
-      return offerWaiting(deps, result.user);
+      await payOutWaiting(deps, result.user, reply);
+      if (action.do === "join" && action.then) await runCommand(deps, result.user, action.then, reply);
+      return;
     }
     default:
       // Everything else needs a signed-up user: the switch below.
@@ -179,6 +184,12 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
     case "command":
       return runCommand(deps, user, action.text, reply);
   }
+}
+
+/** Everything that was waiting on a new member: escrowed money lands now, requests to pay get their code. */
+async function payOutWaiting(deps: BotDeps, user: User, reply: (b: string) => Promise<void>): Promise<void> {
+  for (const note of await claimWaiting(deps, user)) await reply(note);
+  await offerWaiting(deps, user);
 }
 
 /** HELP: who this is and where to get help, then the commands. */
@@ -237,8 +248,12 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     }
     case "rename": {
       const name = cleanDisplayName(cmd.name);
-      const renamed = name ? await renameUser(deps.db, user.id, name) : null;
-      return reply(renamed && name ? replies.renamed(name, renamed.handle ?? "") : replies.badName());
+      // A handle picked for them at signup (no name yet) becomes one from the name they chose.
+      const derived = name && user.name === null && isPickedHandle(user.handle) ? handleFromName(name) : null;
+      const handle = derived ? await uniqueHandle(deps.db, derived) : undefined;
+      const renamed = name ? await renameUser(deps.db, user.id, name, handle) : null;
+      if (!renamed || !name) return reply(replies.badName());
+      return reply(handle ? replies.named(name, handle) : replies.renamed(name, renamed.handle ?? ""));
     }
     case "whoami":
       return reply(replies.whoami(displayName(user), user.handle ?? ""));

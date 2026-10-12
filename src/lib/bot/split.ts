@@ -348,7 +348,7 @@ async function deliverSplit(
       delivered.push({ amount: leg.amount, person });
       waiting.push(shortName(person));
       if (!(await isOptedOut(deps.db, person.phone))) {
-        await notify(deps, person.phone, replies.receivedUnclaimed(amount, displayName(sender), leg.note, `${deps.appUrl}/a/${leg.id}`));
+        await notify(deps, person.phone, replies.receivedUnclaimed(amount, displayName(sender), leg.note));
       }
     } else {
       delivered.push({ amount: leg.amount, person });

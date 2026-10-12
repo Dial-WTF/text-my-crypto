@@ -109,9 +109,19 @@ export async function searchDirectory(db: Db, query: string, limit = 5): Promise
     .limit(limit);
 }
 
-export async function renameUser(db: Db, userId: string, name: string): Promise<User | null> {
-  const [u] = await db.update(users).set({ name }).where(eq(users.id, userId)).returning();
+/** Sets the display name, and the handle too when one is given (see isPickedHandle). */
+export async function renameUser(db: Db, userId: string, name: string, handle?: string): Promise<User | null> {
+  const [u] = await db
+    .update(users)
+    .set(handle ? { name, handle } : { name })
+    .where(eq(users.id, userId))
+    .returning();
   return u ?? null;
+}
+
+/** A handle Dial picked at signup ("dial" and four random characters), which the person's chosen name may replace. */
+export function isPickedHandle(handle: string | null): boolean {
+  return handle !== null && /^dial[a-z2-7]{4}\d*$/.test(handle);
 }
 
 const hashSignupCode = (token: string, code: string) => sha256Hex(`dial-signup-code-v1|${token}|${code}`);

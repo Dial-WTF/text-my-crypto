@@ -5,6 +5,7 @@ import type { Db } from "@/lib/db/client";
 import { findUserByPhone } from "@/lib/identity";
 import { getIntent } from "@/lib/intents";
 import { noLlm } from "@/lib/operator/brain";
+import { replies } from "@/lib/operator/replies";
 import { ChainDownError } from "@/lib/settlement/types";
 import type { InboundSms } from "@/lib/sms/inbound";
 import { getWallet } from "@/lib/wallets";
@@ -31,7 +32,7 @@ const codeIn = (s: string) => /\b(\d{6})\b/.exec(s)?.[1] ?? "";
 const intentIdIn = (s: string) => /\/a\/(pi_[\w-]+)/.exec(s)?.[1] ?? "";
 const signUp = async (phone: string, name: string) => {
   await say(phone, "hi");
-  return say(phone, name);
+  return say(phone, `call me ${name}`);
 };
 
 beforeEach(async () => {
@@ -53,7 +54,7 @@ describe("STOP / START / HELP", () => {
     expect(await send(ALEX, "help")).toEqual([]);
     expect(await send(ALEX, "stop")).toEqual([]);
     expect(sms.to(ALEX)).toHaveLength(before);
-    expect(await say(ALEX, "start")).toMatch(/^Welcome back\./);
+    expect(await say(ALEX, "start")).toMatch(/^Welcome back to Dial Up Banking\./);
     expect(await say(ALEX, "balance")).toBe("You have $100 USDC on Solana.");
   });
 
@@ -61,8 +62,8 @@ describe("STOP / START / HELP", () => {
     expect(await say(NEWBIE, "stop")).toMatch(/^You're unsubscribed/);
     expect(await send(NEWBIE, "hi")).toEqual([]);
     expect(await send(ALEX, "HELP")).toEqual([
-      "Dial operator by Dial.Work: send and get paid in crypto by text. Help: https://tmc.test/how-it-works. Msg & data rates may apply. Reply STOP to cancel.",
-      "Your wallet is ready. BALANCE, SEND @name $5, REQUEST $5 from @name, INVOICE @name $5, RECEIVE, WALLET, WITHDRAW, RECLAIM, 411 name, CONNECT AGENT, STATUS",
+      "Dial operator by Dial.Work: Dial Up Banking, money by text. Guide: https://tmc.test/how-it-works. Msg & data rates may apply. Reply STOP to cancel.",
+      replies.commands(),
     ]);
   });
 
@@ -217,7 +218,7 @@ describe("things the operator can't parse", () => {
   it("explains the format when a payment can't be understood and no model is configured", async () => {
     deps = { ...deps, llm: noLlm };
     expect(await say(ALEX, "send some money to that guy from yesterday")).toBe(
-      'I didn\'t catch who or how much. Try "send @jeremy $5", "send $5 to +1 555 123 4567" or "request $10 from alex".',
+      "I didn't catch who or how much. Text it like this: SEND @jeremy $5",
     );
   });
 });
@@ -227,23 +228,22 @@ describe("requests to people who aren't on Dial yet", () => {
     await say(JEREMY, "request $8 from (555) 000-0099 for lunch");
     // No code yet: they can't use one until they sign up.
     expect(sms.last(NEWBIE)).toBe(
-      "Jeremy is asking you for $8 USDC (lunch) on Dial. Reply HI to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
+      "Jeremy is asking you for $8 USDC (lunch) on Dial Up Banking, the revolutionary new way to send money by text. Reply YES to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
     );
-    await say(NEWBIE, "hey");
-    await send(NEWBIE, "Riley");
+    await say(NEWBIE, "yes");
     const thread = sms.to(NEWBIE);
-    expect(thread.at(-2)).toMatch(/^You're in, Riley\./);
+    expect(thread.at(-2)).toMatch(/^Welcome to Dial Up Banking, the Dial operator by Dial\.Work\. You're @dial[a-z2-7]{4}\. /);
     const offer = thread.at(-1) ?? "";
     expect(offer).toMatch(/^Jeremy is asking you for \$8 USDC \(lunch\)\./);
-    expect(offer).toMatch(/Reply \d{6} to pay or NO to decline/);
+    expect(offer).toMatch(/Reply \d{6} to pay it\. Reply NO to decline/);
     await say(NEWBIE, codeIn(offer));
-    expect(sms.last(JEREMY)).toMatch(/^Riley paid you \$8 \(lunch\)\./);
+    expect(sms.last(JEREMY)).toMatch(/^dial[a-z2-7]{4} paid you \$8 \(lunch\)\./);
   });
 
   it("an invoice to someone not on Dial carries no code and the opt-out line", async () => {
     await say(JEREMY, "invoice (555) 000-0098 $20 for design");
     expect(sms.last("+15550000098")).toBe(
-      "Jeremy sent you an invoice for $20 USDC (design) on Dial. Reply HI to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
+      "Jeremy sent you an invoice for $20 USDC (design) on Dial Up Banking, the revolutionary new way to send money by text. Reply YES to see it. Dial operator: msg & data rates may apply. Reply STOP to opt out.",
     );
   });
 });

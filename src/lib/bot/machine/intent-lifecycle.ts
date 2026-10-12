@@ -19,7 +19,7 @@ export const INTENT_TRANSITIONS = {
     failed: "transfer failed; nothing moved",
   },
   escrowed: {
-    settling: "recipient claims with the texted code, or sender reclaims after expiry",
+    settling: "recipient replies from their phone, or sender reclaims after expiry",
   },
   settled: {},
   refunded: {},

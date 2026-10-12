@@ -26,7 +26,7 @@ const say = async (from: string, body: string) => {
 
 async function signUp(phone: string, name: string) {
   await say(phone, "hi");
-  await say(phone, name);
+  await say(phone, `call me ${name}`);
 }
 
 /** The full SMS issuance flow: "connect agent" → link + code → key. */
@@ -134,7 +134,7 @@ describe("MCP over Streamable HTTP", () => {
 
     const ownerText = sms.last(ALEX);
     expect(ownerText).toMatch(
-      new RegExp(`^From your agent "claude": Send \\$5 USDC to @jeremy \\(lunch\\) on Solana\\? Reply \\d{6} to confirm, or tap: https://tmc.test/a/${intentId}$`),
+      new RegExp(`^From your agent "claude": Send \\$5 USDC to @jeremy \\(lunch\\) on Solana\\? Reply \\d{6} to confirm\\. Details: https://tmc.test/a/${intentId}$`),
     );
     expect((await getIntent(db, intentId))?.status).toBe("pending");
     expect(sol.settled).toHaveLength(0);
@@ -165,7 +165,7 @@ describe("MCP over Streamable HTTP", () => {
     const key = await connectAgent(ALEX, "claude");
     const r = await call(key, "request_payment", { from: "@jeremy", amountUsd: "25", note: "pizza" });
     expect(r.data).toMatchObject({ status: "awaiting_approval", approver: "@jeremy", kind: "request" });
-    expect(sms.last(JEREMY)).toMatch(/^alex is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay or NO to decline/);
+    expect(sms.last(JEREMY)).toMatch(/^alex is asking you for \$25 USDC \(pizza\)\. Reply \d{6} to pay it\. Reply NO to decline/);
     expect(sms.last(ALEX)).toBe('From your agent "claude": Asked @jeremy for $25. I\'ll text you when they pay.');
   });
 

@@ -33,7 +33,7 @@ beforeEach(async () => {
   sol = fakeAdapter({ defaultBalance: 100_000_000n, escrow });
   deps = testDeps(db, { sendSms: sms.sendSms, adapters: { solana: sol } });
   now = deps.now();
-  alexId = (await createUser(db, { phone: ALEX, handle: "alex" }, now)).id;
+  alexId = (await createUser(db, { phone: ALEX, handle: "alex", name: "alex" }, now)).id;
   jeremyId = (await createUser(db, { phone: JEREMY, handle: "jeremy" }, now)).id;
 });
 
@@ -325,7 +325,7 @@ describe("reconcileEscrows", () => {
     const [a, b] = await Promise.all([reconcileEscrows(deps), reconcileEscrows(deps)]);
     expect(a.escrowed + b.escrowed).toBe(1);
     expect(await row(i.id)).toMatchObject({ status: "escrowed", txHash: "sig_create_late", error: null });
-    expect(sms.to(ALEX)).toEqual(["Sent $10 to jeremy. They have 7 days to claim it. If they don't, text \"reclaim\" to get it back."]);
+    expect(sms.to(ALEX)).toEqual(["Sent $10 to jeremy. They reply YES to my text and it's theirs. If they don't within 7 days, text RECLAIM to get it back."]);
     expect(sms.to(JEREMY)).toHaveLength(1);
   });
 
