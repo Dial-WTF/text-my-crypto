@@ -1,87 +1,49 @@
 # Tasks
 
-Deadline: **Oct 12, 11:59pm PDT** (Colosseum Crypto World's Fair). Owner: **you** = Jeremy, **build** = engineering.
-Update this file as things ship. Checked = done and verified.
+What's built and what's next. Checked = shipped and verified in production. The live site is [dialoperator.cc](https://dialoperator.cc).
 
-## Tranche 1 · SMS-first payments on Solana — [PR #1](https://github.com/Dial-WTF/text-my-crypto/pull/1)
+## SMS payments
 
-- [x] build · SMS bot: signup by name, send / request / invoice / receive / balance / withdraw / reclaim / decline / upgrade
-- [x] build · Texted one-time codes on every money movement; passkey required above $20 once added
-- [x] build · Contacts ("What's jeremy's number?") and per-payment escrow with claim and reclaim
-- [x] build · Solana devnet settlement (USDC, memo, treasury-paid fees, rate-limit retry); devnet tests pass
-- [x] build · Landing page, payment receipt + approval page, passkey page; dark / light / matrix themes (matrix default)
-- [x] build · "Settles on / Runs on" logo strips with honest Live / Building status
-- [x] build · Deployed to Cloudflare (Workers + D1); Payphone line +1 806 607 1387 pointed at production
-- [x] build · CI + deploy workflows; `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets set
-- [x] you · Fund the devnet treasury (SOL + USDC)
-- [x] you · First live test: signup by text works on a real phone
-- [x] build · Fix what the live test turned up: any name becomes a profile + handle, 411 directory, pay by name
-- [x] build · State machines (classify → decide → act), STOP/START/HELP, double-tap and repeat-payment handling, code edge cases — see docs/STATES.md
-- [x] build · Durable inbound processing (Cloudflare Queue + retries + dead-letter queue): texts are queued before Payphone gets its 200
-- [x] build · Multi-word names ("send my guy $1") and a helpful reply when a payment can't be parsed
-- [ ] you · Second live test: send to a second phone, claim, request, 411
-- [x] you · Merge PR #1
-- [ ] you · Optional: add `AI_GATEWAY_API_KEY` for plain-English understanding
+- [x] SMS operator: signup by name, send / request / invoice / receive / balance / withdraw / reclaim / decline / upgrade, 411 directory, pay by name or number
+- [x] One-time texted codes on every money movement; passkey required above $20 once added
+- [x] Contacts ("What's roger's number?") and escrow for people not on Dial yet, with claim and reclaim
+- [x] State machines (classify → decide → act), STOP/START/HELP, carrier disclosures, double-tap and repeat-payment handling, phone reactions ignored. See [STATES.md](STATES.md)
+- [x] Durable inbound processing: texts are queued (Cloudflare Queue, retries, dead-letter queue) before the carrier gets its 200
+- [x] First claim comes with a wallet tour; a bare WITHDRAW explains how to cash out
 
-## Prize map (official rules §14)
+## Chains
 
-Solana, Tempo, Hyperliquid, Zcash: $100K each (10 × $10K). Ethereum L1, Base, Arbitrum, Robinhood Chain: $25K each (5 × $5K).
-General: $30K grand, 20 × $15K, $5K public goods, $5K university. Track prizes stack with general awards.
-Judging (rules §8): functionality and code quality, impact, novelty, UX, **open source**, business plan.
+Each chain carries the modules its network makes possible. See [CAPABILITIES.md](CAPABILITIES.md).
 
-## Tranche 2 · More chains, self-custody, agents
+- [x] Solana devnet: USDC with a memo per payment, the `dial_escrow` program, pay links as Blinks
+- [x] Tempo Moderato: memo per payment, fees in the stablecoin, split payments in one batched transaction
+- [x] Ethereum Sepolia (ENS names), Base Sepolia (Basenames), Arbitrum Sepolia, HyperEVM testnet: USDC by EIP-3009 signed authorization, treasury pays gas
+- [x] Robinhood Chain testnet: Dial Test USD (`contracts/src/DialTestUSD.sol`) and stock-token gifts
+- [x] Zcash: Rust wallet service in a Cloudflare Container, shielded sends with the payment id in the encrypted memo, "send privately". See [zcash.md](zcash.md)
+- [ ] Zcash: deploy the wallet service, one real testnet round trip (`ZCASH_INT=1`), then switch it on
+- [ ] Arbitrum: deploy the Stylus escrow contract once Stylus activations resume (paused since 2 Oct 2026)
+- [ ] HyperEVM: deploy `DialCoreDeposit` and switch on HyperCore deposits
+- [ ] Tempo passkey accounts: the passkey is the on-chain signer for upgraded users
+- [ ] Solana smart wallet with passkey authority
 
-- [x] build · Generic EVM adapter (EIP-3009, treasury pays gas) for HyperEVM, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia; Robinhood wired (needs a test token) → enable each by adding it to `CHAINS` once funded
-- [ ] you · Fund EVM treasury `0xcc5583a18a9908b80a20876cd8877048ae792B6f`: gas (Sepolia ETH, Base Sepolia ETH, Arbitrum Sepolia ETH, HyperEVM HYPE, Robinhood testnet ETH) + Circle test USDC on Base/Ethereum/Arbitrum Sepolia and HyperEVM. `pnpm chains:status` shows what each chain still needs
-- [x] build · Dial Test USD (`contracts/src/DialTestUSD.sol`): ERC-20 + EIP-3009 test dollar for chains with no Circle test USDC; proven against the EVM adapter on anvil (`ANVIL_INT=1`)
-- [ ] build · Robinhood: `pnpm contracts:deploy robinhood` once the treasury has testnet ETH, put the address in the registry, add `robinhood` to `CHAINS`
-- [ ] build · Turn on each funded EVM chain: add it to `CHAINS` in `wrangler.jsonc`, deploy, check the health route; tile goes Live after one real payment
-- [x] build · Tempo adapter (Moderato testnet, AlphaUSD, memo, treasury pays fees); enabled in production
-- [x] build · Chain registry (`src/lib/settlement/registry.ts`): testnet and mainnet per chain, `NETWORK` picks one, mainnet needs `ALLOW_MAINNET=yes`. RPC order: `RPC_<NETWORK>` secret, then `ALCHEMY_API_KEY`, then public. Secrets live in `.env.production.local` and go up with `pnpm secrets:push`
-- [x] you · Enable Tempo Moderato, HyperEVM testnet and Robinhood testnet on the Alchemy app (Workers can't use Tempo's public RPC)
-- [ ] you · One real Tempo payment by text ("send @someone $1 on tempo") → then flip Tempo to Live
-- [ ] build · Tempo passkey accounts: passkey is the on-chain signer for upgraded users
-- [x] build · MCP server at `/api/mcp` (send / request / invoice / withdraw / balance / payments) with per-user agent keys
-- [x] build · Agent skill `skills/dial-operator/SKILL.md`, installable with `npx skills add`
-- [x] build · Dial Pay: crypto-Zelle pay pages at `/@handle` (pay by text or any wallet via Solana Pay / EIP-681, JSON at `/@handle.json`), `/wallet` (texted link + code, passkey, or agent key at `/api/wallet`), MCP `get_pay_link` and `get_wallet`
-- [x] build · On-chain ledger: treasury links per chain, `/ledger`, `/ledger.json`
-- [x] build · Pay links are Solana Actions (Blinks): `/actions.json` maps `/@handle` to `/api/actions/pay/[handle]`, which offers $1/$5/$10 or a custom amount and builds a devnet USDC transfer with a reference key; the watchdog cron finds it by reference, records it on the ledger once and texts the recipient (`action_payments`, migration 0014)
-- [ ] you · Register the pay action with Dialect's registry so pay links unfurl as Blinks on X: dial.to/register is paused, so email hello@dialect.to (docs.dialect.to/blinks/blinks-provider/blink-registry)
+## Escrow
+
+- [x] Anchor escrow program on Solana devnet ([`4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3`](https://explorer.solana.com/address/4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3?cluster=devnet)): claim with the attestor's signature, refund after expiry without Dial. LiteSVM tests for every instruction plus devnet integration tests
+- [x] Escrow sends go through the program in production; the round trip runs in every staging smoke test
+- [x] Arbitrum escrow as a Stylus (Rust) contract with its token pinned at deploy, tested on a Nitro dev node
+- [ ] k-of-n attestors in the escrow program (today: one attestor key)
+- [ ] Carrier SIM-swap / number-verification checks where an aggregator covers US numbers
+
+## Web, agents and pay links
+
+- [x] Pay pages at `/@handle` (by text, Solana Pay, EIP-681, ZIP 321, or a Blink), JSON at `/@handle.json`
+- [x] Wallet dashboard: a permanent `/@handle/wallet` link plus a texted code, or a passkey
+- [x] MCP server at `/api/mcp` with per-user agent keys, and an installable agent skill (`skills/dial-operator`)
+- [x] Public ledger (`/ledger`, `/ledger.json`), status page (`/status`), chain pages for judges (`/judges`, `/chains/<chain>`)
 
 ## Reliability
 
-- [ ] Payphone dev · Raise the inbound webhook cap (3 texts per sender per 5 min held back a code on 2026-10-09) and retry held texts in seconds; a proposed PR is in the Payphone repo
-- [x] build · Staging Worker + scripted smoke conversation gating every prod deploy (`pnpm ship`, `pnpm smoke --env staging`)
-- [x] build · Prod watchdog every minute: health, unanswered texts, Payphone inbox vs our log; alerts by text
-- [ ] you · Add `ALERT_PHONE` to `.env.production.local`, then `pnpm secrets:push`
-- [ ] you · GitHub Actions starts no jobs on this repo (every CI and Deploy run sits pending, then is cancelled); likely Actions billing on the private repo. Until fixed, deploy with `pnpm ship`
-- [ ] build · Solana smart wallet with passkey authority (stretch)
-
-## Tranche 3 · On-chain escrow
-
-- [x] build · Anchor escrow program on Solana devnet: refund after expiry without Dial, claim with attestor signature. `dial_escrow` at [`4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3`](https://explorer.solana.com/address/4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3?cluster=devnet), upgrade authority `GFFmgkLxChrX3MdFQqbCZPHNcL1J4sda7c383fG5gs88` (keys and runbook in `solana/README.md`); LiteSVM tests for every instruction plus devnet integration tests
-- [x] build · Switch escrow sends to the program (`ESCROW_PROGRAM=on`); server escrow stays the fallback. Round-trip proven through the app on staging (send to a new number → claim by code), now part of every staging smoke run; on in production
-- [ ] build · k-of-n attestors in the escrow program (today: one attestor key per escrow)
-- [x] build · Zcash wallet service (Rust, librustzcash NU7 pre-releases, testnet.zec.rocks) with a Cloudflare Container wrapper, `zcash` adapter, registry entry for Zcash testnet, TAZ shown next to dollars at a $50 demo rate — see docs/zcash.md. Syncs testnet locally; no real send yet
-- [ ] you · Deploy the Zcash wallet service and fund its treasury with TAZ (faucets were down on 2026-10-08; ask in the Zcash Discord) — docs/zcash.md "Setting it up"
-- [ ] build · One real Zcash testnet round-trip (`ZCASH_INT=1` test), then add `zcash` to `CHAINS` on staging, then production
-- [ ] build · Carrier SIM-swap / number-verification check if an aggregator covers US numbers (stretch)
-
-## Submission (Colosseum portal)
-
-- [ ] you · Confirm eligibility with Colosseum (new product; disclose Payphone and Dial as pre-existing work)
-- [ ] you · Ask in Colosseum Discord whether one project can place in multiple ecosystem tracks
-- [ ] you · Make the repo public with a license (open source is a judging criterion; also the public goods award)
-- [ ] you · Confirm no team member is an employee or contractor of a contest sponsor (rules §3b)
-- [ ] you · Weekly 1-minute update video (this week: the live SMS flow)
-- [ ] you · Pitch video, 2–3 min: founder-market fit (Dial.Work phone rails), why now, live product, go-to-market
-- [ ] you · Demo video, ≤3 min: real phone, real texts, explorer receipt
-- [ ] you · Form: chains and tools integrated, team, location, logo, GTM, demand validation, prior-work disclosure
-- [ ] build · Help outline the form answers and video scripts (you write the final words)
-- [ ] build · Product logo / graphic for the submission
-
-## Growth (traction counts)
-
-- [ ] you · Post "text hi to +1 806 607 1387" to Dial and Payphone users, Superteam, X
-- [ ] build · Show live counts on the landing page (done) and keep the treasury topped up for signup drips
-- [ ] you · Collect a few real quotes from early users (with permission)
+- [x] Staging Worker and a scripted smoke conversation gating every production deploy (`pnpm ship`)
+- [x] Gates before every ship: typecheck, type-aware lint, dead-code check, 95% branch coverage on the money paths, property tests, migration drift check
+- [x] Watchdog every minute: health, unanswered texts, the carrier inbox against our log, and reconciling escrows and sends with no answer
+- [x] Money-path, security and privacy audit, with every finding fixed and tested
