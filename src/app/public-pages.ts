@@ -11,6 +11,7 @@ export const PUBLIC_PAGES: readonly Page[] = [
   { path: "/judges", changeFrequency: "weekly", priority: 0.7 },
   { path: "/ledger", changeFrequency: "hourly", priority: 0.6 },
   { path: "/status", changeFrequency: "hourly", priority: 0.4 },
+  { path: "/self-audit", changeFrequency: "weekly", priority: 0.6 },
   { path: "/terms", changeFrequency: "monthly", priority: 0.3 },
   { path: "/privacy", changeFrequency: "monthly", priority: 0.3 },
 ];

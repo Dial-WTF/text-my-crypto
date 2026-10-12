@@ -11,6 +11,7 @@ const footerLinks = () => [
   { href: "/judges", label: "For judges" },
   { href: "/ledger", label: "Ledger" },
   { href: "/status", label: "Status" },
+  { href: "/self-audit", label: "Self-audit" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
   { href: site().source, label: "GitHub" },
