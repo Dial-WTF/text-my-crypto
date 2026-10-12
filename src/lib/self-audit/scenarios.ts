@@ -35,9 +35,9 @@ export type Scenario = {
   harden: string[];
 };
 
-const nothing: Loss = { amount: 0n, basis: "Nothing leaves a Dial wallet" };
+const nothing: Loss = { amount: 0n, basis: "Nothing leaves anyone's wallet" };
 
-/** Every way the Solana side of Dial could lose money, worst first. The amounts come from `loadExposure`, never from copy. */
+/** Every way the Solana side of text-my-crypto could lose money, worst first. The amounts come from `loadExposure`, never from copy. */
 export function scenarios(f: AuditFacts): Scenario[] {
   return [
     {
@@ -49,7 +49,7 @@ export function scenarios(f: AuditFacts): Scenario[] {
       worst:
         "Every key is a Worker secret and the database is D1 in the same account. The attacker decrypts every user wallet, signs a claim for every escrow, and empties the treasury.",
       loss: (e) => ({ amount: everything(e), basis: "Every user wallet, every live escrow and the treasury" }),
-      impact: "Every user's money at once. Every phone number and message is exposed, and the attacker can text anyone as Dial.",
+      impact: "Every user's money at once. Every phone number and message is exposed, and the attacker can text anyone as the operator.",
       inPlace: [
         "Keys are Worker secrets, and on the deploy laptop in a git-ignored env file. Never in the repo, and never in the database unsealed.",
         "Deploys go through one gated script: typecheck, lint, 95% branch coverage on money paths, a staging smoke conversation.",
@@ -83,7 +83,7 @@ export function scenarios(f: AuditFacts): Scenario[] {
       title: "Forged texts plus codes read from a log",
       severity: "high",
       needs:
-        "The SMS webhook secret, to send texts as any number, and a way to read the codes Dial texts back: a read of D1 (the message log keeps every outgoing text, codes included), the SMS provider's logs, or the language model provider's logs (recent texts go to the model as history).",
+        "The SMS webhook secret, to send texts as any number, and a way to read the codes the operator texts back: a read of D1 (the message log keeps every outgoing text, codes included), the SMS provider's logs, or the language model provider's logs (recent texts go to the model as history).",
       worst: `Forge "withdraw all to <attacker>" from each person, read the code back, and forge the code. Accounts without a passkey lose their balance up to ${f.perDay} a day; accounts with one, in payments of ${f.passkeyAbove} or less, up to the same ${f.perDay}.`,
       loss: (e) => ({ amount: usersCapped(e, f.perDayCap), basis: `Each user wallet, up to ${f.perDay} each, every day until the secret changes` }),
       impact: "Everyone without a passkey, repeating daily until the secret is rotated.",
@@ -110,7 +110,7 @@ export function scenarios(f: AuditFacts): Scenario[] {
       impact: "Recipients never get what they were sent, and senders can't take a refund because the escrow already paid out.",
       inPlace: [
         "Only the attestor's signature can claim, and only before expiry.",
-        "After expiry the money can only go back to the sender, and anyone can send that refund without Dial.",
+        "After expiry the money can only go back to the sender, and anyone can send that refund without the operator.",
       ],
       harden: [
         "Fix the recipient when the escrow is made: open the recipient's wallet at send time, record it in the escrow, and let claim pay only that address. A stolen attestor key can then only deliver money to its rightful owner.",
@@ -125,7 +125,7 @@ export function scenarios(f: AuditFacts): Scenario[] {
       needs: `The program's upgrade authority key (${f.upgradeAuthority}). Today it is a key file on a developer's laptop.`,
       worst: "Deploy a new version of the program that sends every vault to the attacker.",
       loss: (e) => ({ amount: e.escrows.amount, basis: `Every live escrow (${e.escrows.count})` }),
-      impact: "Everything the program promises (refunds without Dial, claims only by the attestor) stops holding, for every escrow at once.",
+      impact: "Everything the program promises (refunds without the operator, claims only by the attestor) stops holding, for every escrow at once.",
       inPlace: ["The program and its authority are public on the explorer.", "The authority is not on the server."],
       harden: [
         "Move the upgrade authority to a multisig (Squads) with a timelock, so an upgrade needs several people and waits.",
@@ -289,7 +289,7 @@ export function scenarios(f: AuditFacts): Scenario[] {
         "The ledger shows @handles, amounts and transactions, and pay pages show wallet addresses, so anyone can read a person's balance on chain. Phone numbers are never public.",
       loss: () => nothing,
       impact: "Privacy: payments between handles are public by design.",
-      inPlace: ["Phone numbers stay private; people not on Dial show as \"someone new\"."],
+      inPlace: ["Phone numbers stay private; people who haven't joined show as \"someone new\"."],
       harden: ["Let people hide their payments from the public ledger.", "A fresh deposit address per payment, or shielded payments (built for Zcash)."],
     },
   ];
