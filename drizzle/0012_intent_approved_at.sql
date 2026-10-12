@@ -1,0 +1,1 @@
+ALTER TABLE `intents` ADD `approved_at` integer;

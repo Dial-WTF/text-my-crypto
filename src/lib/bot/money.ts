@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
 import { findContact } from "@/lib/contacts";
 import { setConversation } from "@/lib/conversations";
+import { isEvmName, normalizeName, wrongNetworkBasename } from "@/lib/evm-names";
 import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   createUnclaimedUser,
@@ -23,14 +24,21 @@ import {
   sentSince,
 } from "@/lib/intents";
 import { formatUsd, isUsdAmount, usdToBaseUnits } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import type { MoneyCommand, WithdrawCommand } from "@/lib/operator/grammar";
 import { replies } from "@/lib/operator/replies";
 import { hasOutboundSince } from "@/lib/sms/log";
 import { hasPasskey } from "@/lib/passkeys";
+import { withdrawTarget } from "@/lib/payment-labels";
 import { normalizePhone } from "@/lib/phone";
 import { seal } from "@/lib/secretbox";
+import { chainWith, type NameService, nameServiceFor } from "@/lib/settlement/capabilities";
+import { REGISTRY } from "@/lib/settlement/registry";
 import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
-import { dripOnce, ensureSenderWallet, ensureWallet } from "./accounts";
+import { formatAmount, usdAmount } from "@/lib/stocks";
+import { getWallet } from "@/lib/wallets";
+import { dripOnce, enabledChains, ensureSenderWallet, ensureWallet } from "./accounts";
+import { checkStock, createStockSend } from "./stocks";
 import { notify, text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -40,12 +48,26 @@ export const moneyCommandSchema = z.object({
   amountUsd: z.string(),
   note: z.string().optional(),
   chain: z.enum(CHAINS).optional(),
+  asset: z.string().optional(),
+  private: z.literal(true).optional(),
 });
+
+export const withdrawCommandSchema = z.object({
+  kind: z.literal("withdraw"),
+  amountUsd: z.string(),
+  address: z.string(),
+  chain: z.enum(CHAINS).optional(),
+});
+
+/** Testnets where Circle's faucet hands out test USDC. Tempo and Robinhood use other test tokens. */
+const CIRCLE_FAUCET_CHAINS: ReadonlySet<Chain> = new Set<Chain>(["solana", "base", "ethereum", "arbitrum", "hyperevm"]);
+const CIRCLE_FAUCET = "faucet.circle.com";
 
 /** Why a payment wasn't created. `message` is the plain-English reply the operator texts. */
 export type MoneyError = {
   code:
     | "chain_unavailable"
+    | "private_chain"
     | "bad_amount"
     | "over_cap"
     | "over_daily"
@@ -55,7 +77,12 @@ export type MoneyError = {
     | "self"
     | "bad_address"
     | "nothing_to_withdraw"
-    | "duplicate";
+    | "which_chain"
+    | "venue_account_missing"
+    | "unknown_name"
+    | "name_lookup_failed"
+    | "duplicate"
+    | "unknown_asset";
   message: string;
 };
 
@@ -106,15 +133,16 @@ export async function codeFor(
   deps: BotDeps,
   payerId: string,
   intentId: string,
-  amount: bigint,
+  /** The payment in dollars; null when it has no price (a testnet stock), which the code approves. */
+  amount: bigint | null,
   opts: IssueOptions = {},
 ): Promise<string | null> {
-  if (amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
+  if (amount !== null && amount > deps.passkeyThreshold && (await hasPasskey(deps.db, payerId))) return null;
   return issueCode(deps.db, intentId, opts);
 }
 
 /** dripOnce, but a failure is logged instead of ending the turn. */
-async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
+export async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAdapter): Promise<boolean> {
   try {
     return await dripOnce(deps, wallet, adapter);
   } catch (e) {
@@ -123,26 +151,65 @@ async function dripQuietly(deps: BotDeps, wallet: Wallet, adapter: SettlementAda
   }
 }
 
+/** Not enough money: where to add more (their pay page lists deposit options) and, on testnet, a faucet. */
+export function insufficientReply(deps: BotDeps, user: User, chain: Chain, balance: bigint): string {
+  const testnet = deps.network === "testnet";
+  const payUrl = user.handle ? `${deps.appUrl}/@${user.handle}` : `${deps.appUrl}/wallet`;
+  const faucet = testnet && CIRCLE_FAUCET_CHAINS.has(chain) ? CIRCLE_FAUCET : null;
+  return replies.insufficient(money(balance, chain, deps.network), payUrl, testnet, faucet);
+}
+
+/** The shielded pool a chain's private sends go through, for the confirm text. */
+function shieldedPool(deps: BotDeps, chain: Chain): string {
+  return deps.adapters[chain]?.shielded?.pool ?? "shielded";
+}
+
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-type Checked = { ok: true; chain: Chain; adapter: SettlementAdapter; amount: bigint } | { ok: false; error: MoneyError };
+type Checked =
+  | { ok: true; chain: Chain; adapter: SettlementAdapter; amount: bigint; token: string }
+  | { ok: false; error: MoneyError };
 
 /** The checks that need no lookup: chain switched on, amount well-formed and under the per-payment cap. */
-export function checkMoney(deps: BotDeps, user: User, cmd: Pick<MoneyCommand, "amountUsd" | "chain">): Checked {
-  const chain = cmd.chain ?? user.defaultChain;
+export function checkMoney(
+  deps: BotDeps,
+  user: User,
+  cmd: Pick<MoneyCommand, "amountUsd" | "chain" | "private" | "asset">,
+): Checked {
+  if (cmd.asset) return checkStock(deps, cmd);
+  let chain = cmd.chain ?? user.defaultChain;
+  // Private sends go to a chain with a shielded pool, whatever the sender's default chain.
+  if (cmd.private) {
+    const shielded = chainWith(deps.adapters, "shielded", cmd.chain);
+    if (!shielded) return { ok: false, error: { code: "chain_unavailable", message: replies.privateUnavailable() } };
+    if (cmd.chain && shielded.chain !== cmd.chain) {
+      const message = replies.privateOnlyShielded(chainLabel(cmd.chain), chainLabel(shielded.chain));
+      return { ok: false, error: { code: "private_chain", message } };
+    }
+    chain = shielded.chain;
+  }
   const adapter = deps.adapters[chain];
   if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(chain)) } };
   const amount = isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
   if (amount <= 0n) return { ok: false, error: { code: "bad_amount", message: replies.badAmount(formatUsd(deps.perTxCap)) } };
   if (amount > deps.perTxCap) return { ok: false, error: { code: "over_cap", message: replies.overCap(formatUsd(deps.perTxCap)) } };
-  return { ok: true, chain, adapter, amount };
+  return { ok: true, chain, adapter, amount, token: adapter.tokenId };
 }
 
-async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
+export async function overDailyCap(deps: BotDeps, user: User, amount: bigint): Promise<boolean> {
   const today = await sentSince(deps.db, user.id, startOfUtcDay(deps.now()));
   return today + amount > deps.perDayCap;
+}
+
+/**
+ * The daily cap again, at approval, for payments already claimed for settlement (so they count themselves).
+ * Checking only at creation let several payments wait side by side and then all be approved. Two approved
+ * at the same moment each see the other, so the cap can only err on the side of refusing.
+ */
+export async function overDailyCapAtApproval(deps: BotDeps, payerId: string): Promise<boolean> {
+  return (await sentSince(deps.db, payerId, startOfUtcDay(deps.now()))) > deps.perDayCap;
 }
 
 const JUST_SENT_MS = 3 * 60_000;
@@ -157,17 +224,18 @@ export async function findDuplicate(
   kind: MoneyCommand["kind"],
   amount: bigint,
   chain: Chain,
+  token: string,
 ): Promise<Duplicate> {
   const isSend = kind === "send";
   const pending = await findPendingDuplicate(
     deps.db,
-    { senderId: isSend ? user.id : other.id, recipientId: isSend ? other.id : user.id, kind, amount, chain },
+    { senderId: isSend ? user.id : other.id, recipientId: isSend ? other.id : user.id, kind, amount, chain, token },
     deps.now(),
   );
   if (pending) return { pending };
   if (!isSend) return null;
   const since = new Date(deps.now().getTime() - JUST_SENT_MS);
-  const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: other.id, amount, chain }, since);
+  const done = await findRecentCompletedDuplicate(deps.db, { senderId: user.id, recipientId: other.id, amount, chain, token }, since);
   return done ? { justSent: done } : null;
 }
 
@@ -185,20 +253,23 @@ async function repeatReply(
 ): Promise<{ text: string; askNew: boolean } | null> {
   if (!dup) return null;
   const otherName = describe(other);
-  if ("justSent" in dup) return { text: replies.justSent(formatUsd(dup.justSent.amount), otherName), askNew: true };
+  if ("justSent" in dup) return { text: replies.justSent(formatAmount(dup.justSent, deps.network), otherName), askNew: true };
   const { pending } = dup;
-  if (kind !== "send") return { text: replies.alreadyRequested(formatUsd(pending.amount), otherName), askNew: false };
+  if (kind !== "send") return { text: replies.alreadyRequested(formatAmount(pending, deps.network), otherName), askNew: false };
   // Too many wrong codes on it already: repeating the command must not hand out a fresh one.
   if (isCodeLocked(pending)) return { text: replies.codeMismatch(0), askNew: false };
-  const code = await codeFor(deps, user.id, pending.id, pending.amount, { keepAttempts: true });
+  const code = await codeFor(deps, user.id, pending.id, usdAmount(pending), { keepAttempts: true });
   const link = `${deps.appUrl}/a/${pending.id}`;
   // Nothing texted since the payment was created: the first confirmation never went out (a retried turn),
   // so confirm normally. Otherwise they saw it and are repeating on purpose.
   if (!(await hasOutboundSince(deps.db, user.phone, pending.createdAt))) {
-    const text = replies.confirmSend(formatUsd(pending.amount), otherName, chainLabel(pending.chain), pending.note, code, link);
+    const amount = formatAmount(pending, deps.network);
+    const text = pending.private
+      ? replies.confirmPrivateSend(amount, otherName, chainLabel(pending.chain), shieldedPool(deps, pending.chain), pending.note, code, link)
+      : replies.confirmSend(amount, otherName, chainLabel(pending.chain), pending.note, code, link);
     return { text, askNew: false };
   }
-  return { text: replies.alreadyPending(formatUsd(pending.amount), otherName, code, link), askNew: true };
+  return { text: replies.alreadyPending(formatAmount(pending, deps.network), otherName, code, link), askNew: true };
 }
 
 /**
@@ -206,6 +277,7 @@ async function repeatReply(
  * Texts nobody: callers decide who hears about it (see `announce`).
  */
 export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCommand, other: User): Promise<Prepared> {
+  if (cmd.asset) return cmd.kind === "send" ? createStockSend(deps, user, cmd, other) : fail("bad_amount", replies.didntCatch());
   const checked = checkMoney(deps, user, cmd);
   if (!checked.ok) return checked;
   const { chain, adapter, amount } = checked;
@@ -219,13 +291,18 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
 
   if (cmd.kind === "send") {
     let balance = await adapter.getBalance(mine.address);
+    // Zcash payments carry the recipient's next fees on top; other chains carry nothing.
+    const fees = adapter.carriedFees?.(isClaimed(other) ? "dial" : adapter.escrow ? "outside" : "escrow") ?? 0n;
     // Short, and the test drip never landed (say the chain was down at signup): drop it now. A wallet opened
     // this turn already had its try. A drip that fails (empty treasury, rate limit) just means "not enough".
-    if (balance < amount && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
+    if (balance < amount + fees && !triedDrip && (await dripQuietly(deps, mine, adapter))) {
       balance += deps.dripAmount;
-      await notify(deps, user.phone, replies.dripped(formatUsd(deps.dripAmount)));
+      await notify(deps, user.phone, replies.dripped(money(deps.dripAmount, chain, deps.network)));
     }
-    if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
+    if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
+    if (balance < amount + fees) {
+      return fail("insufficient", replies.feeShort(money(balance, chain, deps.network), money(fees, chain, deps.network), chainLabel(chain)));
+    }
     if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
     const id = newIntentId();
@@ -258,6 +335,7 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
         note,
         escrowSecretEnc,
         escrowProgram,
+        private: cmd.private === true,
       },
       deps.now(),
     );
@@ -284,23 +362,93 @@ export async function createMoneyIntent(deps: BotDeps, user: User, cmd: MoneyCom
   return { ok: true, prepared: { intent, counterparty: other, code, approveUrl: `${deps.appUrl}/a/${intent.id}` } };
 }
 
-function shortAddress(a: string): string {
-  return a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+type ChainPick = { ok: true; chain: Chain; adapter: SettlementAdapter } | { ok: false; error: MoneyError };
+
+/**
+ * Which chain a withdrawal leaves from: the one they named; else their default chain if the address fits it;
+ * else the only enabled chain the address fits (a 0x address on a Solana account). Several fit: ask which.
+ */
+function withdrawChain(deps: BotDeps, user: User, cmd: WithdrawCommand): ChainPick {
+  const named = cmd.chain ?? user.defaultChain;
+  const adapter = deps.adapters[named];
+  if (adapter?.isValidAddress(cmd.address)) return { ok: true, chain: named, adapter };
+  if (!cmd.chain) {
+    const fits = enabledChains(deps).filter(([, a]) => a.isValidAddress(cmd.address));
+    const [only] = fits;
+    if (fits.length === 1 && only) return { ok: true, chain: only[0], adapter: only[1] };
+    if (fits.length > 1) {
+      const message = replies.whichChain(fits.map(([c]) => c).sort());
+      return { ok: false, error: { code: "which_chain", message } };
+    }
+  }
+  if (!adapter) return { ok: false, error: { code: "chain_unavailable", message: replies.chainUnavailable(chainLabel(named)) } };
+  return { ok: false, error: { code: "bad_address", message: replies.badAddress(chainLabel(named)) } };
 }
 
-/** Moves funds out to an address the user controls. Same code/limit rules as a send. Texts nobody. */
-export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<Prepared> {
-  const chain = cmd.chain ?? user.defaultChain;
-  const adapter = deps.adapters[chain];
-  if (!adapter) return fail("chain_unavailable", replies.chainUnavailable(chainLabel(chain)));
-  if (!adapter.isValidAddress(cmd.address)) return fail("bad_address", replies.badAddress(chainLabel(chain)));
+/** Nothing on this chain: say where the money is, if it's on another chain. */
+async function nothingToWithdrawReply(deps: BotDeps, user: User, chain: Chain): Promise<string> {
+  const elsewhere: Array<[Chain, bigint]> = [];
+  for (const [other, adapter] of enabledChains(deps)) {
+    if (other === chain) continue;
+    const wallet = await getWallet(deps.db, user.id, other);
+    if (!wallet) continue;
+    // A chain that won't answer just isn't mentioned.
+    const balance = await adapter.getBalance(wallet.address).catch(() => 0n);
+    if (balance > 0n) elsewhere.push([other, balance]);
+  }
+  const lines = elsewhere.map(([c, b]) => `${formatUsd(b)} on ${chainLabel(c)}`);
+  return replies.nothingToWithdraw(chainLabel(chain), lines, elsewhere[0]?.[0]);
+}
+
+type Destination = { ok: true; cmd: WithdrawCommand; name: string | null } | { ok: false; error: MoneyError };
+
+/**
+ * An ENS name or Basename becomes its address here, once: the intent stores that address, the confirmation
+ * shows it next to the name, and settlement never looks the name up again. The chain whose name service
+ * answers for the ending (Base for Basenames, Ethereum for other .eth names) is the chain, unless they named
+ * one. A chain that's switched off still resolves first, so they hear "isn't switched on yet".
+ */
+async function resolveDestination(deps: BotDeps, cmd: WithdrawCommand): Promise<Destination> {
+  if (!isEvmName(cmd.address)) return { ok: true, cmd, name: null };
+  const name = normalizeName(cmd.address) ?? cmd.address.toLowerCase();
+  // Enabled chains answer with their adapter's module; chains that are off with the one from deps.names.
+  const service = nameServiceFor({ ...nameHolders(deps), ...deps.adapters }, name);
+  let address: string | null = null;
+  try {
+    address = service ? await service.names.resolve(name) : null;
+  } catch (e) {
+    console.error("name lookup failed", name, errorText(e));
+    return { ok: false, error: { code: "name_lookup_failed", message: replies.nameLookupDown(name) } };
+  }
+  if (service && address) return { ok: true, cmd: { ...cmd, address, chain: cmd.chain ?? service.chain }, name };
+  const network = service ? (REGISTRY[service.chain][deps.network]?.network ?? chainLabel(service.chain)) : null;
+  const testBasename = deps.network === "testnet" && wrongNetworkBasename(name, deps.network);
+  const message = replies.unknownName(name, network, testBasename);
+  return { ok: false, error: { code: "unknown_name", message } };
+}
+
+/** deps.names in the shape nameServiceFor reads. */
+function nameHolders(deps: BotDeps): Partial<Record<Chain, { names: NameService }>> {
+  const out: Partial<Record<Chain, { names: NameService }>> = {};
+  for (const [chain, names] of Object.entries(deps.names ?? {}) as Array<[Chain, NameService]>) out[chain] = { names };
+  return out;
+}
+
+/** Moves funds out to an address (or ENS name / Basename) the user controls. Same code/limit rules as a send. Texts nobody. */
+export async function createWithdrawIntent(deps: BotDeps, user: User, asked: WithdrawCommand): Promise<Prepared> {
+  const dest = await resolveDestination(deps, asked);
+  if (!dest.ok) return dest;
+  const { cmd } = dest;
+  const picked = withdrawChain(deps, user, cmd);
+  if (!picked.ok) return picked;
+  const { chain, adapter } = picked;
 
   const mine = await ensureWallet(deps, user.id, chain, adapter);
   const balance = await adapter.getBalance(mine.address);
   const amount = cmd.amountUsd === "all" ? balance : isUsdAmount(cmd.amountUsd) ? usdToBaseUnits(cmd.amountUsd) : 0n;
-  if (amount <= 0n) return fail("nothing_to_withdraw", replies.nothingToWithdraw());
+  if (amount <= 0n) return fail("nothing_to_withdraw", await nothingToWithdrawReply(deps, user, chain));
   if (amount > deps.perTxCap) return fail("over_cap", replies.overCap(formatUsd(deps.perTxCap)));
-  if (balance < amount) return fail("insufficient", replies.insufficient(formatUsd(balance)));
+  if (balance < amount) return fail("insufficient", insufficientReply(deps, user, chain, balance));
   if (await overDailyCap(deps, user, amount)) return fail("over_daily", replies.overDaily(formatUsd(deps.perDayCap)));
 
   const intent = await createIntent(
@@ -313,6 +461,7 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
       chain,
       token: adapter.tokenId,
       recipientAddress: cmd.address,
+      recipientName: dest.name,
       amount,
       note: null,
     },
@@ -328,19 +477,36 @@ export async function createWithdrawIntent(deps: BotDeps, user: User, cmd: Withd
  */
 export async function announce(deps: BotDeps, user: User, p: PreparedIntent): Promise<string> {
   const { intent, code, approveUrl: link } = p;
-  const amount = formatUsd(intent.amount);
+  const amount = formatAmount(intent, deps.network);
   const chain = chainLabel(intent.chain);
   const other = describe(p.counterparty);
   switch (intent.kind) {
     case "send":
-      return replies.confirmSend(amount, other, chain, intent.note, code, link);
+      return intent.private
+        ? replies.confirmPrivateSend(amount, other, chain, shieldedPool(deps, intent.chain), intent.note, code, link)
+        : replies.confirmSend(amount, other, chain, intent.note, code, link);
     case "withdraw":
-      return replies.confirmWithdraw(amount, shortAddress(intent.recipientAddress), chain, code, link);
+      return replies.confirmWithdraw(amount, withdrawTarget(intent), chain, code, link);
+    case "venue":
+      return replies.confirmHyperCore(amount, intent.recipientId === intent.senderId ? null : other, code, link);
+    // Someone not on Dial can't use a code yet: they get one after they sign up (offerWaiting).
     case "request":
-      await text(deps, p.counterparty.phone, replies.payRequest(displayName(user), amount, intent.note, code, link));
+      await text(
+        deps,
+        p.counterparty.phone,
+        isClaimed(p.counterparty)
+          ? replies.payRequest(displayName(user), amount, intent.note, code, link)
+          : replies.payRequestNewcomer(displayName(user), amount, intent.note),
+      );
       return replies.requestSent(amount, other);
     case "invoice":
-      await text(deps, p.counterparty.phone, replies.payInvoice(displayName(user), amount, intent.note, code, link));
+      await text(
+        deps,
+        p.counterparty.phone,
+        isClaimed(p.counterparty)
+          ? replies.payInvoice(displayName(user), amount, intent.note, code, link)
+          : replies.payInvoiceNewcomer(displayName(user), amount, intent.note),
+      );
       return replies.invoiceSent(amount, other, link);
   }
 }
@@ -362,6 +528,8 @@ export async function prepareMoney(
   const resolved = await resolveCounterparty(deps, user, cmd.counterparty);
   if ("error" in resolved) return resolved.error;
   if ("choose" in resolved) {
+    // A reply of "2" is looked up in the saved handles, so number exactly the people saved: those with a handle.
+    const options = resolved.choose.flatMap((u) => (u.handle ? [{ user: u, handle: u.handle }] : []));
     await setConversation(
       deps.db,
       user.phone,
@@ -370,12 +538,12 @@ export async function prepareMoney(
         payload: {
           name: cmd.counterparty,
           command: JSON.stringify(cmd),
-          handles: resolved.choose.flatMap((u) => (u.handle ? [u.handle] : [])),
+          handles: options.map((o) => o.handle),
         },
       },
       deps.now(),
     );
-    return replies.chooseRecipient(cmd.counterparty, resolved.choose.map(describe));
+    return replies.chooseRecipient(cmd.counterparty, options.map((o) => describe(o.user)));
   }
   if ("askFor" in resolved) {
     await setConversation(
@@ -391,7 +559,7 @@ export async function prepareMoney(
   if (other.id === user.id) return replies.selfSend();
 
   if (!opts.allowDuplicate) {
-    const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain);
+    const dup = await findDuplicate(deps, user, other, cmd.kind, checked.amount, checked.chain, checked.token);
     const repeat = await repeatReply(deps, user, other, cmd.kind, dup);
     if (repeat?.askNew) {
       await setConversation(deps.db, user.phone, { state: "awaiting_duplicate", payload: { command: JSON.stringify(cmd) } }, deps.now());
@@ -403,8 +571,12 @@ export async function prepareMoney(
   return r.ok ? announce(deps, user, r.prepared) : r.error.message;
 }
 
-/** SMS path for withdrawals. Returns the reply for the person who texted. */
+/** SMS path for withdrawals. Returns the reply for the person who texted. Asking which chain waits for the answer. */
 export async function prepareWithdraw(deps: BotDeps, user: User, cmd: WithdrawCommand): Promise<string> {
   const r = await createWithdrawIntent(deps, user, cmd);
-  return r.ok ? announce(deps, user, r.prepared) : r.error.message;
+  if (r.ok) return announce(deps, user, r.prepared);
+  if (r.error.code === "which_chain") {
+    await setConversation(deps.db, user.phone, { state: "awaiting_chain", payload: { command: JSON.stringify(cmd) } }, deps.now());
+  }
+  return r.error.message;
 }

@@ -1,9 +1,12 @@
+import { liveExplorer } from "@/lib/explorers";
 import type { Intent, User } from "@/lib/db/schema";
 import { displayName, getUserById } from "@/lib/identity";
 import { escrowedTo, intentsFor, isCodeLocked, issueSharedCode, latestInFlightFor } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
 import { replies } from "@/lib/operator/replies";
+import { withdrawTarget } from "@/lib/payment-labels";
+import { formatAmount, usdAmount } from "@/lib/stocks";
 import { codeFor } from "./money";
+import { splitStatusReply } from "./split";
 import type { BotDeps } from "./types";
 
 /** How far back "did it work?" looks. Older payments are history, not something in flight. */
@@ -50,15 +53,19 @@ export async function statusReply(
 ): Promise<string> {
   const i = latest === undefined ? await latestRecent(deps, user) : latest;
   if (!i) return replies.nothingInFlight();
+  const split = await splitStatusReply(deps, user, i, { freshCode });
+  if (split) return split;
   const now = deps.now();
-  const amount = formatUsd(i.amount);
+  const amount = formatAmount(i, deps.network);
   const outgoing = i.senderId === user.id;
   const otherId = outgoing ? i.recipientId : i.senderId;
   const other = await getUserById(deps.db, otherId);
   const who =
     i.kind === "withdraw"
-      ? `${i.recipientAddress.slice(0, 4)}…${i.recipientAddress.slice(-4)}`
-      : other
+      ? withdrawTarget(i)
+      : i.kind === "venue" && i.recipientId === i.senderId
+        ? "your Hyperliquid balance"
+        : other
         ? displayName(other)
         : "them";
   const link = `${deps.appUrl}/a/${i.id}`;
@@ -71,21 +78,26 @@ export async function statusReply(
       if (isCodeLocked(i)) return replies.codeMismatch(0);
       // A nudge must not replace a code that may still be on its way; only an explicit "status" does.
       if (!freshCode) return replies.statusReminder(amount, who);
-      const code = await codeFor(deps, user.id, i.id, i.amount, { keepAttempts: true });
-      return i.kind === "send" || i.kind === "withdraw"
+      const code = await codeFor(deps, user.id, i.id, usdAmount(i), { keepAttempts: true });
+      return i.kind === "send" || i.kind === "withdraw" || i.kind === "venue"
         ? replies.statusWaitingOnYou(amount, who, code, link)
         : replies.statusAskedToPay(amount, who, code, link);
     }
     case "settling":
       return replies.statusSending(amount, who);
     case "settled":
-      return outgoing ? replies.statusSent(amount, who, i.explorerUrl) : replies.statusReceived(amount, who, i.explorerUrl);
+      // Where the chain has no working explorer, Dial's own receipt page shows the transaction.
+      return outgoing
+        ? replies.statusSent(amount, who, liveExplorer(i.explorerUrl) ?? link)
+        : replies.statusReceived(amount, who, liveExplorer(i.explorerUrl) ?? link);
     case "escrowed": {
       if (outgoing) return replies.statusEscrowed(amount, who, i.escrowExpiresAt ? day(i.escrowExpiresAt) : "it expires");
+      // Too late to claim: it can only go back to the sender now.
+      if (i.escrowExpiresAt && i.escrowExpiresAt <= now) return replies.claimExpired(amount, who);
       // Waiting for this person to claim it: the same shared claim code as offerEscrowClaims, sent again.
       if (isCodeLocked(i)) return replies.codeMismatch(0);
       if (!freshCode) return replies.statusClaimWaiting(amount, who, null);
-      const waiting = (await escrowedTo(deps.db, user.id)).filter((e) => !isCodeLocked(e));
+      const waiting = (await escrowedTo(deps.db, user.id, now)).filter((e) => !isCodeLocked(e));
       const code = await issueSharedCode(
         deps.db,
         waiting.map((e) => e.id),
@@ -95,7 +107,7 @@ export async function statusReply(
     }
     case "refunded":
       return outgoing
-        ? replies.statusRefunded(amount, i.releaseExplorerUrl ?? i.explorerUrl)
+        ? replies.statusRefunded(amount, liveExplorer(i.releaseExplorerUrl ?? i.explorerUrl) ?? link)
         : replies.statusReturnedToSender(amount, who);
     case "failed":
       return replies.statusFailed(amount, who);

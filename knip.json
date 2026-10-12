@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "open-next.config.ts",
+    "scripts/*.mjs",
+    "tests/**/*.test.ts"
+  ],
+  "project": [
+    "**/*.{ts,tsx,mts,mjs}"
+  ],
+  "ignore": [
+    "services/**"
+  ],
+  "ignoreBinaries": [
+    "anchor"
+  ],
+  "paths": {
+    "@/*": [
+      "./src/*"
+    ]
+  }
+}

@@ -11,6 +11,8 @@ const llmSchema = z.object({
   amountUsd: z.string().nullable(),
   chain: z.enum(CHAINS).nullable(),
   note: z.string().nullable(),
+  /** A send they want kept private (shielded on Zcash). */
+  private: z.boolean().nullable().optional(),
   reply: z.string(),
 });
 
@@ -24,7 +26,7 @@ Classify the user's text message.
 - "send": they want to pay someone. counterparty = who gets paid.
 - "request": they want someone to pay them. counterparty = who should pay.
 - "invoice": they want to bill someone for work or goods. counterparty = who is billed.
-For send, request and invoice: counterparty is the name, @handle or phone number exactly as written. amountUsd is a plain decimal string in US dollars ("10", "2.50"); convert words like "ten" to digits. note is a short reason if they gave one ("pizza"), else null. chain only if they named solana, tempo, base or zcash.
+For send, request and invoice: counterparty is the name, @handle or phone number exactly as written. amountUsd is a plain decimal string in US dollars ("10", "2.50"); convert words like "ten" to digits. note is a short reason if they gave one ("pizza"), else null. chain only if they named solana, tempo, base or zcash. private: true only for a send they ask to keep private, shielded or anonymous; else null.
 - "balance": they ask what they have.
 - "receive": they ask how to get paid, their address, or how to deposit.
 - "help": they ask how this works.
@@ -90,6 +92,7 @@ export async function interpret(text: string, llm: LlmInterpreter, history: stri
     };
     if (r.note) cmd.note = r.note.slice(0, 120);
     if (r.chain) cmd.chain = r.chain;
+    if (r.private && r.intent === "send") cmd.private = true;
     return { command: cmd };
   }
   if (r.intent === "balance") return { command: { kind: "balance" } };

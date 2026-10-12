@@ -68,6 +68,9 @@ describe("intents", () => {
     const i = await createIntent(db, base, now);
     const [a, b] = await Promise.all([claimForSettlement(db, i.id, now), claimForSettlement(db, i.id, now)]);
     expect([a, b].filter(Boolean)).toHaveLength(1);
+    // The approval time is what the escrow reconciler measures its lease from.
+    expect((a ?? b)?.approvedAt?.getTime()).toBe(now.getTime());
+    expect((await getIntent(db, i.id))?.approvedAt?.getTime()).toBe(now.getTime());
     const late = await createIntent(db, base, now);
     expect(await claimForSettlement(db, late.id, new Date(now.getTime() + 11 * 60_000))).toBeNull();
   });
@@ -110,6 +113,28 @@ describe("codes", () => {
     expect(await codeCandidates(db, alexId, now)).toEqual([]);
   });
 
+  it("guesses sent in parallel get five tries between them, not one each", async () => {
+    const i = await createIntent(db, base, now);
+    const code = await issueCode(db, i.id);
+    const wrong = code === "000000" ? "111111" : "000000";
+    // Every guess holds the same row read before any of them was counted, as parallel requests do.
+    const [seen] = await codeCandidates(db, alexId, now);
+    const guesses = [...Array<string>(9).fill(wrong), code];
+    const results = await Promise.all(guesses.map((g) => matchCode(db, [seen!], g)));
+    expect(results.flat()).toEqual([]);
+    expect((await getIntent(db, i.id))?.codeAttempts).toBe(5);
+  });
+
+  it("a right code costs no try, on the payment or anything else waiting", async () => {
+    const i = await createIntent(db, base, now);
+    const other = await createIntent(db, { ...base, amount: 2_000_000n }, now);
+    const code = await issueCode(db, i.id);
+    await issueCode(db, other.id);
+    expect((await matchCode(db, await codeCandidates(db, alexId, now), code)).map((c) => c.id)).toEqual([i.id]);
+    expect((await getIntent(db, i.id))?.codeAttempts).toBe(0);
+    expect((await getIntent(db, other.id))?.codeAttempts).toBe(0);
+  });
+
   it("offers escrowed intents to the recipient", async () => {
     const i = await createIntent(db, base, now);
     await claimForSettlement(db, i.id, now);
@@ -126,8 +151,9 @@ describe("escrow", () => {
     const expires = new Date(now.getTime() + 7 * 86_400_000);
     await markEscrowed(db, i.id, { txHash: "f", explorerUrl: "https://x/f" }, expires);
     expect(await claimEscrowForRefund(db, i.id, now)).toBeNull();
-    expect(await claimEscrowForRelease(db, i.id)).not.toBeNull();
-    expect(await claimEscrowForRelease(db, i.id)).toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, expires)).toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, now)).not.toBeNull();
+    expect(await claimEscrowForRelease(db, i.id, now)).toBeNull();
 
     const j = await createIntent(db, base, now);
     await claimForSettlement(db, j.id, now);

@@ -32,10 +32,23 @@ export function PaymentReceipt({ view, children }: { view: PaymentView; children
           <Mono value={view.release.hash} href={view.release.url} />
         </ReceiptLine>
       ) : null}
+      {view.split ? (
+        <>
+          <ReceiptRule />
+          {view.split.legs.map((leg) => (
+            <ReceiptLine key={leg.id} label={leg.id === view.id ? `${leg.to} (this one)` : leg.to}>
+              <Money amount={leg.amount} />
+            </ReceiptLine>
+          ))}
+        </>
+      ) : null}
       <ReceiptRule />
-      <ReceiptLine label="Total" total>
-        <Money amount={view.amount} />
+      <ReceiptLine label={view.split ? "Split total" : "Total"} total>
+        {view.amount === null ? "Shielded" : <Money amount={view.amount} stock={view.stock} />}
       </ReceiptLine>
+      {view.shielded ? (
+        <ReceiptLine label="Privacy">Shielded on Zcash: amount and parties stay off the public chain</ReceiptLine>
+      ) : null}
       {children ? (
         <>
           <ReceiptRule />

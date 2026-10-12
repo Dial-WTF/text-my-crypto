@@ -47,7 +47,7 @@ export default async function PayPage({ params, searchParams }: PageProps<"/pay/
           note={profile.note}
           byText={profile.byText}
           chains={profile.chains}
-          jsonUrl={`${profile.url.split("?")[0]}.json`}
+          jsonUrl={`${profile.url.replace(/\?.*$/, "")}.json`}
         />
       </Desk>
     </SiteShell>

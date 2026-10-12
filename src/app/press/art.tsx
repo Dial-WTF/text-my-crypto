@@ -1,3 +1,4 @@
+import { site } from "../site";
 import { MARK_DATA_URL } from "./mark-data";
 
 export const GREEN = "#00ff41";
@@ -20,12 +21,12 @@ export async function markDataUrl(): Promise<string> {
   return MARK_DATA_URL;
 }
 
-export const DIM = "#0b6b23";
+const DIM = "#0b6b23";
 export const SOFT = "#8cf5a6";
 const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789";
 
 /** Deterministic rain columns so every card renders the same background. */
-export function rain(columns = 34, rows = 24): string[] {
+function rain(columns = 34, rows = 24): string[] {
   let seed = 7;
   const next = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   return Array.from({ length: columns }, () =>
@@ -51,6 +52,7 @@ export function ShareFrame({
   /** Footer, right: one muted line. */
   aside: string;
 }) {
+  const { byline } = site();
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", background: INK, fontFamily: family }}>
       <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "space-between", padding: "0 10px", opacity: 0.35 }}>
@@ -64,7 +66,7 @@ export function ShareFrame({
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <img src={mark} width={56} height={56} alt="" />
           <div style={{ display: "flex", fontSize: 40 }}>Dial.operator</div>
-          <div style={{ display: "flex", fontSize: 24, color: "#5fd37a", marginLeft: 8 }}>by Dial.Work</div>
+          {byline ? <div style={{ display: "flex", fontSize: 24, color: "#5fd37a", marginLeft: 8 }}>{byline}</div> : null}
         </div>
         {children}
         <div style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 24, fontSize: 24 }}>
@@ -77,8 +79,8 @@ export function ShareFrame({
 }
 
 /** A solid green tag, e.g. "LIVE · USDC ON SOLANA". */
-export function Tag({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "flex", padding: "6px 14px", background: GREEN, color: INK }}>{children}</div>;
+function Tag({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "flex", flexShrink: 0, padding: "6px 14px", background: GREEN, color: INK }}>{children}</div>;
 }
 
 export function fontsFor(font: ArrayBuffer | null) {

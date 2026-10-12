@@ -7,10 +7,16 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "text-my-crypto" }],
   "observability": { "enabled": true },
+  // Production's own domain. The workers.dev address stays on: Payphone's inbound webhook and texted links point there.
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "dialoperator.cc", "custom_domain": true },
+    { "pattern": "www.dialoperator.cc", "custom_domain": true }
+  ],
   // Workers AI: the operator's plain-English understanding. A binding, so no API key.
   "ai": { "binding": "AI" },
   "vars": {
-    "APP_URL": "https://text-my-crypto.raspy-thunder-20d2.workers.dev",
+    "APP_URL": "https://dialoperator.cc",
     "DIAL_OPERATOR_NUMBER": "+18066071387",
     "PAYPHONE_BASE_URL": "https://payphone.wtf",
     "SMS_MODE": "payphone",
@@ -18,8 +24,10 @@
     // Escrow for people not on Dial yet: "on" uses the dial_escrow program (solana/README.md).
     "ESCROW_PROGRAM": "on",
     "SIGNUP_DRIP_USD": "2",
+    // "yes" adds "by Dial.Work" after the site's name in titles, share previews, the wordmark and cards.
+    "SHOW_BYLINE": "no",
     // Chains that settle in production. Add one only after `pnpm chains:status` shows its treasury ready.
-    "CHAINS": "solana,tempo,ethereum,robinhood",
+    "CHAINS": "solana,tempo,ethereum,robinhood,base,arbitrum,hyperevm",
     "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
   "d1_databases": [
@@ -55,7 +63,12 @@
     "staging": {
       "name": "text-my-crypto-staging",
       "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "text-my-crypto-staging" }],
-      "triggers": { "crons": [] },
+      // Routes are inherited, and a staging deploy would take production's custom domains. Staging has none.
+      "routes": [],
+      // Every minute, for the escrow reconciler (it settles program escrow fundings that didn't confirm in
+      // time; the program is on here). The watchdog runs too, but SMS_MODE=log means nothing is texted:
+      // its alerts and the reconciler's texts only land in the SMS log.
+      "triggers": { "crons": ["* * * * *"] },
       "vars": {
         "APP_URL": "https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev",
         "DIAL_OPERATOR_NUMBER": "+18066071387",
@@ -65,6 +78,9 @@
         "ESCROW_PROGRAM": "on",
         // Each smoke run signs up a sender and a newcomer; the sender's $1 drop covers its two $0.50 payments.
         "SIGNUP_DRIP_USD": "1",
+        "SHOW_BYLINE": "no",
+        // Same chains as production, so smoke runs exercise what production settles on.
+        "CHAINS": "solana,tempo,ethereum,robinhood,base,arbitrum,hyperevm",
         "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
       },
       "ai": { "binding": "AI" },

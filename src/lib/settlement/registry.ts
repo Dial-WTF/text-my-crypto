@@ -30,17 +30,70 @@ type Common = {
   explorerAddress: (address: string) => string;
 };
 
-/** `escrowProgram`: the dial_escrow program deployed on this network (solana/README.md), when there is one. */
-export type SolanaNetwork = Common & { kind: "solana"; mint: string; escrowProgram?: string };
+/**
+ * `escrowProgram`: the dial_escrow program deployed on this network (solana/README.md), when there is one.
+ * `caip2`: the network's CAIP-2 id, which Solana Actions name in their X-Blockchain-Ids header.
+ */
+export type SolanaNetwork = Common & { kind: "solana"; mint: string; caip2: string; escrowProgram?: string };
 /** A null token means the network is wired but has no stablecoin we settle in yet; it stays off. */
-export type TempoNetwork = Common & {
+type TempoNetwork = Common & {
   kind: "tempo";
   viem: typeof tempoModerato | typeof tempo;
   token: Address | null;
   faucet: boolean;
 };
-export type EvmNetwork = Common & { kind: "evm"; viem: ViemChain; token: Address | null };
-export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork;
+/**
+ * A tokenized stock on an EVM chain: an ERC-20 with EIP-2612 permit (and ERC-8056 scaled UI amounts on
+ * Robinhood Chain). Sent beside the stablecoin, never instead of it.
+ */
+export type StockToken = { symbol: string; name: string; address: Address };
+/**
+ * `stocks`: tokenized stocks people can send on this network, besides the stablecoin.
+ * `escrowContract`: production's dial_escrow contract on this network (contracts/arbitrum-escrow), null until
+ * deployed. Its attestor is fixed at deploy, so staging deploys its own and names it in ESCROW_CONTRACT_<id>.
+ */
+export type EvmNetwork = Omit<Common, "explorerTx" | "explorerAddress"> & {
+  kind: "evm";
+  viem: ViemChain;
+  token: Address | null;
+  escrowContract?: Address | null;
+  venue?: VenueNetwork;
+  stocks?: readonly StockToken[];
+  /** Explorer links. Null where no public explorer shows this network today: no link beats a dead one. */
+  explorerTx: (hash: string) => string | null;
+  explorerAddress: (address: string) => string | null;
+};
+/**
+ * A trading venue reached from this chain: HyperCore, Hyperliquid's own chain, from HyperEVM. USDC goes in
+ * through Circle's CoreDepositWallet (the contract HyperCore's spot metadata links to USDC); `depositContract`
+ * is DialCoreDeposit (contracts/src/DialCoreDeposit.sol), which lets the treasury submit a user's signed
+ * deposit. Null until it is deployed: the adapter carries no `venue` module until then.
+ */
+export type VenueNetwork = {
+  /** "HyperCore". */
+  name: string;
+  /** "HyperCore testnet". */
+  network: string;
+  infoUrl: string;
+  coreDepositWallet: Address;
+  depositContract: Address | null;
+  explorerAddress: (address: string) => string;
+};
+/**
+ * Zcash settles in the chain's own coin, not a stablecoin, through the wallet service
+ * (services/zcash-wallet). `publicRpc` is the lightwalletd that service scans; the Worker never
+ * talks to it. People see dollars converted at `usdPerZec`, a fixed demo rate: testnet ZEC (TAZ)
+ * has no price.
+ */
+type ZcashNetwork = Common & {
+  kind: "zcash";
+  asset: "TAZ" | "ZEC";
+  usdPerZec: number | null;
+  addressPrefix: string;
+  /** True once a real round-trip has gone through the wallet service here. Until then, switched off reads "Building", not "Wired". */
+  proven: boolean;
+};
+export type NetworkEntry = SolanaNetwork | TempoNetwork | EvmNetwork | ZcashNetwork;
 
 /** Explorer links for an Etherscan-style explorer. */
 const scan = (host: string) => ({
@@ -61,6 +114,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://api.devnet.solana.com",
       alchemy: "solana-devnet",
       mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
       escrowProgram: "4YiZvobJvYBVrqcT6Lzs8y87iNagzuhu7NWu1zu1vxi3",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`,
       explorerAddress: (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`,
@@ -72,6 +126,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://api.mainnet-beta.solana.com",
       alchemy: "solana-mainnet",
       mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
       explorerTx: (s) => `https://explorer.solana.com/tx/${s}`,
       explorerAddress: (a) => `https://explorer.solana.com/address/${a}`,
     },
@@ -153,6 +208,7 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://sepolia-rollup.arbitrum.io/rpc",
       alchemy: "arb-sepolia",
       token: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      escrowContract: null, // Stylus activations are paused on Arbitrum since 2 Oct 2026 (contracts/arbitrum-escrow/README.md)
       ...scan("sepolia.arbiscan.io"),
     },
     mainnet: {
@@ -175,7 +231,19 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: "https://rpc.hyperliquid-testnet.xyz/evm",
       alchemy: "hyperliquid-testnet",
       token: "0x2B3370eE501B4a559b57D449569354196457D8Ab",
-      ...scan("testnet.purrsec.com"),
+      // No public explorer shows HyperEVM testnet today (Oct 2026): testnet.purrsec.com is gone, hypurrscan's
+      // testnet EVM pages read mainnet, the Hyperliquid app's explorer is blank for EVM hashes, and
+      // explore-testnet.hyperpc.app stopped indexing in August. Receipts link Dial's own receipt page instead.
+      explorerTx: () => null,
+      explorerAddress: () => null,
+      venue: {
+        name: "HyperCore",
+        network: "HyperCore testnet",
+        infoUrl: "https://api.hyperliquid-testnet.xyz/info",
+        coreDepositWallet: "0x0B80659a4076E9E93C7DbE0f10675A16a3e5C206",
+        depositContract: null, // pnpm hypercore deploy, then put the address here
+        explorerAddress: (a) => `https://app.hyperliquid-testnet.xyz/explorer/address/${a}`,
+      },
     },
     mainnet: {
       kind: "evm",
@@ -186,6 +254,14 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       alchemy: "hyperliquid-mainnet",
       token: null, // confirm the USDC address before enabling
       ...scan("hyperevmscan.io"),
+      venue: {
+        name: "HyperCore",
+        network: "HyperCore",
+        infoUrl: "https://api.hyperliquid.xyz/info",
+        coreDepositWallet: "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24",
+        depositContract: null,
+        explorerAddress: (a) => `https://app.hyperliquid.xyz/explorer/address/${a}`,
+      },
     },
   },
   robinhood: {
@@ -197,6 +273,15 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       publicRpc: robinhoodTestnet.rpcUrls.default.http[0],
       alchemy: "robinhood-testnet",
       token: "0x2195e3E09eab088c90B4461B92D06A74d30c1e2e", // Dial Test USD (contracts/src/DialTestUSD.sol): no Circle test USDC here
+      // Robinhood's testnet Stock Tokens, minted by its faucet (faucet.testnet.chain.robinhood.com, 5 of each per claim).
+      // Look-alikes with the same tickers exist on this testnet: these addresses are the faucet's.
+      stocks: [
+        { symbol: "TSLA", name: "Tesla", address: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E" },
+        { symbol: "AMZN", name: "Amazon", address: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02" },
+        { symbol: "PLTR", name: "Palantir", address: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0" },
+        { symbol: "NFLX", name: "Netflix", address: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93" },
+        { symbol: "AMD", name: "AMD", address: "0x71178BAc73cBeb415514eB542a8995b82669778d" },
+      ],
       ...scan("explorer.testnet.chain.robinhood.com"),
     },
     mainnet: {
@@ -209,8 +294,35 @@ export const REGISTRY: Record<Chain, Record<Network, NetworkEntry | null>> = {
       ...scan("robinhoodchain.blockscout.com"),
     },
   },
-  zcash: { testnet: null, mainnet: null },
+  zcash: {
+    testnet: {
+      kind: "zcash",
+      id: "ZCASH_TESTNET",
+      network: "Zcash testnet",
+      publicRpc: "https://testnet.zec.rocks:443",
+      asset: "TAZ",
+      // $50 per TAZ: "$5" is 0.1 TAZ, and the 0.0001 TAZ network fee is half a cent.
+      usdPerZec: 50,
+      addressPrefix: "utest1",
+      proven: false, // flip after ZCASH_INT=1 passes against the deployed service
+      explorerTx: (h) => `https://testnet.zcashexplorer.app/transactions/${h}`,
+      // Shielded addresses have no public history; the explorer page only confirms the address is valid.
+      explorerAddress: (a) => `https://testnet.zcashexplorer.app/address/${a}`,
+    },
+    mainnet: null, // custody and a real ZEC price come first
+  },
 };
+
+/** Every escrow contract override name: ESCROW_CONTRACT_<id> for each network that can carry one. */
+export const ESCROW_CONTRACT_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>
+  Object.values(byNetwork).flatMap((entry) => (entry?.kind === "evm" && entry.escrowContract !== undefined ? [`ESCROW_CONTRACT_${entry.id}`] : [])),
+);
+
+/** The trading venue this chain reaches on this network, from the registry alone (no adapter needed). */
+export function venueOf(chain: Chain, network: Network): VenueNetwork | null {
+  const entry = REGISTRY[chain][network];
+  return entry?.kind === "evm" ? (entry.venue ?? null) : null;
+}
 
 /** Every RPC override secret name, for the env schema and the secrets push script. */
 export const RPC_OVERRIDE_KEYS: string[] = Object.values(REGISTRY).flatMap((byNetwork) =>

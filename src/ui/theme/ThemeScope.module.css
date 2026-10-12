@@ -1,0 +1,18 @@
+.scope {
+  min-width: 0;
+}
+
+/* A scope with its own mode paints its own canvas: the body behind it still has the page's. */
+.themed {
+  background: var(--color-canvas);
+  color: var(--color-on-canvas);
+  font-family: var(--font-body);
+  text-shadow: var(--text-glow);
+}
+
+/* A brand page sets text and glow tokens of its own (matrix), so it applies them here rather than inherit
+ * the body's. */
+.page {
+  color: var(--color-on-canvas);
+  text-shadow: var(--text-glow);
+}

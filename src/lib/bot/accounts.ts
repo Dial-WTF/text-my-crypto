@@ -1,6 +1,6 @@
 import { errorText } from "@/lib/settlement/types";
-import { type Chain, CHAINS } from "@/lib/chains";
-import type { User, Wallet } from "@/lib/db/schema";
+import { type Chain, CHAINS, chainLabel } from "@/lib/chains";
+import type { Intent, User, Wallet } from "@/lib/db/schema";
 import {
   claimUser,
   createUser,
@@ -11,12 +11,14 @@ import {
   uniqueHandle,
 } from "@/lib/identity";
 import { randomBase32 } from "@/lib/ids";
-import { escrowedTo, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
+import { escrowedTo, isCodeLocked, issueCode, issueSharedCode, pendingRequestsFor } from "@/lib/intents";
 import { formatUsd } from "@/lib/money";
+import { money, namesItsCoin } from "@/lib/settlement/amounts";
 import { cleanDisplayName, handleFromName } from "@/lib/names";
 import { replies } from "@/lib/operator/replies";
+import { formatTotals } from "@/lib/stocks";
 import type { SettlementAdapter } from "@/lib/settlement/types";
-import { TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
+import { SettlementUnknownError, TransferUnconfirmedError } from "@/lib/settlement/unconfirmed";
 import { addWallet, claimDrip, getWallet, releaseDrip } from "@/lib/wallets";
 import { notify } from "./text";
 import type { BotDeps } from "./types";
@@ -59,7 +61,8 @@ export async function dripOnce(
     await adapter.fund(wallet.address, deps.dripAmount);
     return true;
   } catch (e) {
-    if (!(e instanceof TransferUnconfirmedError)) await releaseDrip(deps.db, wallet.userId, wallet.chain);
+    const mayHaveMoved = e instanceof TransferUnconfirmedError || e instanceof SettlementUnknownError;
+    if (!mayHaveMoved) await releaseDrip(deps.db, wallet.userId, wallet.chain);
     throw e;
   }
 }
@@ -119,31 +122,62 @@ export async function completeSignup(deps: BotDeps, phone: string, rawName: stri
   return { ok: true, user, reply: replies.joined(name, handle, dripped ? formatUsd(deps.dripAmount) : null) };
 }
 
-/** Texts the person one code that claims every escrow waiting for them. */
-export async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
-  const waiting = await escrowedTo(deps.db, user.id);
+/** How much these escrows add up to and who sent them, for a claim text. */
+async function claimSummary(deps: BotDeps, escrows: Intent[]): Promise<{ amount: string; from: string }> {
+  // Per asset, and the way the chain reads when they share one ("$5 (0.1 TAZ)" on Zcash, "0.5 TSLA").
+  const amount = formatTotals(escrows, deps.network);
+  const senders = new Set<string>();
+  for (const i of escrows) {
+    const s = await getUserById(deps.db, i.senderId);
+    if (s) senders.add(displayName(s));
+  }
+  return { amount, from: [...senders].join(", ") || "someone" };
+}
+
+/**
+ * Texts the person one code that claims every escrow waiting for them. Offered again (START after STOP),
+ * the wrong guesses made so far still count, and one locked by them isn't offered: asking again never buys more tries.
+ */
+async function offerEscrowClaims(deps: BotDeps, user: User): Promise<void> {
+  const waiting = (await escrowedTo(deps.db, user.id, deps.now())).filter((i) => !isCodeLocked(i));
   if (waiting.length === 0) return;
   const code = await issueSharedCode(
     deps.db,
     waiting.map((i) => i.id),
+    { keepAttempts: true },
   );
-  const total = waiting.reduce((sum, i) => sum + i.amount, 0n);
-  const senders = new Set<string>();
-  for (const i of waiting) {
-    const s = await getUserById(deps.db, i.senderId);
-    if (s) senders.add(displayName(s));
-  }
-  await notify(deps, user.phone, replies.claimOffer(formatUsd(total), [...senders].join(", "), code));
+  const { amount, from } = await claimSummary(deps, waiting);
+  await notify(deps, user.phone, replies.claimOffer(amount, from, code));
 }
 
-/** Someone asked a new person for money before they joined: show it again with a fresh code once they're in. */
-export async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
+/** A claim the chain refused or didn't answer: nothing moved, so a fresh code lets them try again. */
+export async function retryEscrowClaims(deps: BotDeps, failed: Intent[]): Promise<string> {
+  const code = await issueSharedCode(
+    deps.db,
+    failed.map((i) => i.id),
+  );
+  const { amount, from } = await claimSummary(deps, failed);
+  return replies.claimFailed(amount, from, code);
+}
+
+/** A claim that came too late: the escrow expired and can only go back to its sender. */
+export async function expiredClaimReply(deps: BotDeps, escrow: Intent): Promise<string> {
+  const { amount, from } = await claimSummary(deps, [escrow]);
+  return replies.claimExpired(amount, from);
+}
+
+/**
+ * Someone asked a new person for money before they joined: show it again with a fresh code once they're in.
+ * Like escrow claims, the tries already used still count, and a request locked by wrong guesses isn't offered.
+ */
+async function offerPendingRequests(deps: BotDeps, user: User): Promise<void> {
   for (const intent of await pendingRequestsFor(deps.db, user.id, deps.now())) {
+    if (isCodeLocked(intent)) continue;
     const requester = await getUserById(deps.db, intent.recipientId);
     if (!requester) continue;
-    const code = await issueCode(deps.db, intent.id);
+    const code = await issueCode(deps.db, intent.id, { keepAttempts: true });
     const link = `${deps.appUrl}/a/${intent.id}`;
-    const amount = formatUsd(intent.amount);
+    const amount = money(intent.amount, intent.chain, deps.network);
     const body =
       intent.kind === "invoice"
         ? replies.payInvoice(displayName(requester), amount, intent.note, code, link)
@@ -156,4 +190,26 @@ export async function offerPendingRequests(deps: BotDeps, user: User): Promise<v
 export async function offerWaiting(deps: BotDeps, user: User): Promise<void> {
   await offerEscrowClaims(deps, user);
   await offerPendingRequests(deps, user);
+}
+
+/**
+ * "$3 USDC on Solana" for each enabled chain where the user has a wallet. With `quiet`, a chain that won't
+ * answer is left out instead of failing the whole reply (for texts nobody asked for, like the claim tour).
+ */
+export async function balanceLines(deps: BotDeps, user: User, { quiet = false } = {}): Promise<string[]> {
+  const lines: string[] = [];
+  for (const [chain, adapter] of enabledChains(deps)) {
+    const w = await getWallet(deps.db, user.id, chain);
+    if (!w) continue;
+    let raw: bigint;
+    try {
+      raw = await adapter.getBalance(w.address);
+    } catch (e) {
+      if (quiet) continue;
+      throw e;
+    }
+    const amount = money(raw, chain, deps.network);
+    lines.push(`${namesItsCoin(amount) ? amount : `${amount} USDC`} on ${chainLabel(chain)}`);
+  }
+  return lines;
 }

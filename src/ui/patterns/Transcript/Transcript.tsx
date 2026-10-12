@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import styles from "./Transcript.module.css";
+import { cx } from "@/ui/cx";
 
 export type TranscriptLine = { from: "you" | "operator"; text: string };
 
@@ -48,7 +49,7 @@ export function Transcript({ lines, label }: { lines: TranscriptLine[]; label: s
       {lines.map((l, i) => (
         <li
           key={`${l.from}-${i}`}
-          className={`${styles.bubble} ${styles[l.from]} ${i < visible ? "" : styles.hidden}`}
+          className={cx(styles.bubble, styles[l.from], i < visible ? "" : styles.hidden)}
           aria-hidden={i < visible ? undefined : true}
         >
           <span className={styles.who}>{l.from === "you" ? "you" : "operator"}</span>

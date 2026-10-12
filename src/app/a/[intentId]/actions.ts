@@ -4,7 +4,7 @@ import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON 
 import { approveIntent } from "@/lib/bot/settle";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { botDeps } from "@/lib/deps";
-import { getIntent, matchCode } from "@/lib/intents";
+import { getIntent, matchPageCode } from "@/lib/intents";
 import { startApproval, verifyApproval } from "@/lib/passkeys";
 import { rp } from "@/lib/web";
 import type { ActionResult } from "@/ui/patterns/ApprovePanel/ApprovePanel";
@@ -19,7 +19,9 @@ async function openIntent(intentId: string) {
 async function settle(intentId: string): Promise<ActionResult> {
   const r = await approveIntent(botDeps(), intentId);
   if (r.ok) return { ok: true, message: r.status === "escrowed" ? "Sent. It's waiting for them to claim." : "Sent." };
-  return { ok: false, message: r.reason === "not_claimable" ? CLOSED.message : "That payment didn't go through. No funds moved." };
+  if (r.reason === "not_claimable") return CLOSED;
+  if (r.reason === "unconfirmed") return { ok: false, message: "Sent, but the network hasn't confirmed it yet. We'll text you when it does." };
+  return { ok: false, message: "That payment didn't go through. No funds moved." };
 }
 
 export async function beginPasskeyApproval(intentId: string): Promise<PublicKeyCredentialRequestOptionsJSON | null> {
@@ -37,6 +39,6 @@ export async function finishPasskeyApproval(intentId: string, response: Authenti
 export async function approveWithCode(intentId: string, code: string): Promise<ActionResult> {
   const intent = await openIntent(intentId);
   if (!intent || !intent.codeHash || intent.codeAttempts >= MAX_CODE_ATTEMPTS) return CLOSED;
-  const [match] = await matchCode(botDeps().db, [intent], code.trim());
+  const match = await matchPageCode(botDeps().db, intent, code.trim());
   return match ? settle(intentId) : { ok: false, message: "That code didn't match. Check the operator's last text." };
 }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { customType, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { customType, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { CHAINS } from "@/lib/chains";
 
 /** Token amounts in base units. SQLite INTEGER is 64-bit; the app works in bigint. */
@@ -12,7 +12,8 @@ const amount = customType<{ data: bigint; driverData: number | bigint }>({
 const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
 const now = sql`(unixepoch('subsec') * 1000)`;
 
-const INTENT_KINDS = ["send", "request", "invoice", "withdraw"] as const;
+/** "venue": a send (or a move of your own) from a HyperEVM wallet into a HyperCore spot balance. */
+const INTENT_KINDS = ["send", "request", "invoice", "withdraw", "venue"] as const;
 const INTENT_STATUSES = ["pending", "settling", "escrowed", "settled", "refunded", "failed", "declined"] as const;
 
 export const users = sqliteTable("users", {
@@ -55,7 +56,7 @@ export const contacts = sqliteTable(
 
 export const conversations = sqliteTable("conversations", {
   phone: text("phone").primaryKey(),
-  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice", "awaiting_duplicate"] }).notNull(),
+  state: text("state", { enum: ["awaiting_name", "awaiting_number", "awaiting_choice", "awaiting_duplicate", "awaiting_chain"] }).notNull(),
   payload: text("payload").notNull().default("{}"),
   expiresAt: ts("expires_at").notNull(),
 });
@@ -66,6 +67,9 @@ export const signupTokens = sqliteTable("signup_tokens", {
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
   challenge: text("challenge"),
+  /** The code texted with the link. A link alone can't add a passkey: it has to be opened with the code. */
+  codeHash: text("code_hash"),
+  codeAttempts: integer("code_attempts").notNull().default(0),
 });
 
 export const passkeys = sqliteTable("passkeys", {
@@ -95,6 +99,8 @@ export const intents = sqliteTable("intents", {
   chain: text("chain", { enum: CHAINS }).notNull(),
   token: text("token").notNull(),
   recipientAddress: text("recipient_address").notNull(),
+  /** The ENS name or Basename a withdrawal was addressed to, kept for display. recipientAddress is what was resolved and approved. */
+  recipientName: text("recipient_name"),
   amount: amount("amount").notNull(),
   nonce: text("nonce").notNull(),
   expiresAt: ts("expires_at").notNull(),
@@ -105,6 +111,10 @@ export const intents = sqliteTable("intents", {
   /** Set when the escrow lives in an on-chain program (this program id) instead of a server-held wallet. */
   escrowProgram: text("escrow_program"),
   escrowExpiresAt: ts("escrow_expires_at"),
+  /** When the approved payment started moving (status "settling"). The reconciler times unconfirmed sends from here. */
+  approvedAt: ts("approved_at"),
+  /** "send … privately": a shielded Zcash send. Public pages show it as shielded, with no amount, names or note. */
+  private: integer("private", { mode: "boolean" }).notNull().default(false),
   txHash: text("tx_hash"),
   explorerUrl: text("explorer_url"),
   releaseTxHash: text("release_tx_hash"),
@@ -112,7 +122,9 @@ export const intents = sqliteTable("intents", {
   error: text("error"),
   createdAt: ts("created_at").notNull().default(now),
   settledAt: ts("settled_at"),
-});
+  /** Legs of one split share this id: one code approves them all, and they settle in one transaction. */
+  splitId: text("split_id"),
+}, (t) => [index("intents_split").on(t.splitId)]);
 
 /** Numbers that texted STOP. Nothing is sent to them until they text START. */
 export const smsOptOuts = sqliteTable("sms_opt_outs", {
@@ -228,9 +240,39 @@ export const watchdogProblems = sqliteTable("watchdog_problems", {
   resolvedAt: ts("resolved_at"),
 });
 
+/**
+ * Payments from any Solana wallet through a pay link's Solana Action (a Blink). Each POST gets a fresh
+ * reference key, put in the transfer as a read-only account so the payment can be found on-chain. The
+ * watchdog cron looks the reference up and records the payment once: `signature` is set exactly once.
+ * Rows still unpaid after `expiresAt` are deleted.
+ */
+export const actionPayments = sqliteTable("action_payments", {
+  /** Also the transaction's memo, so a ledger row matches its transaction. */
+  id: text("id").primaryKey(),
+  reference: text("reference").notNull().unique(),
+  recipientId: text("recipient_id")
+    .notNull()
+    .references(() => users.id),
+  chain: text("chain", { enum: CHAINS }).notNull(),
+  /** The recipient's Dial wallet the transfer pays. */
+  recipientAddress: text("recipient_address").notNull(),
+  /** The wallet that asked for the transaction; once paid, the wallet the money actually came from. */
+  payerAddress: text("payer_address").notNull(),
+  amount: amount("amount").notNull(),
+  note: text("note"),
+  createdAt: ts("created_at").notNull().default(now),
+  expiresAt: ts("expires_at").notNull(),
+  signature: text("signature").unique(),
+  explorerUrl: text("explorer_url"),
+  /** What the recipient's token account actually gained, which is what the ledger shows. */
+  received: amount("received"),
+  paidAt: ts("paid_at"),
+});
+
 export type User = typeof users.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type Intent = typeof intents.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type Passkey = typeof passkeys.$inferSelect;
 export type AgentKey = typeof agentKeys.$inferSelect;
+export type ActionPayment = typeof actionPayments.$inferSelect;

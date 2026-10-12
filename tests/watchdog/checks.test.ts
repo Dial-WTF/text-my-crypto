@@ -83,8 +83,8 @@ describe("Payphone inbox", () => {
 
   it("throws on an error status or a body it does not understand", async () => {
     const cfg = { baseUrl: "https://pp.test", apiKey: "k", line: "+18066071387" };
-    await expect(fetchPayphoneInbox(cfg, (async () => new Response("no", { status: 502 })) as unknown as typeof fetch)).rejects.toThrow("502");
-    await expect(fetchPayphoneInbox(cfg, (async () => Response.json({ ok: 1 })) as unknown as typeof fetch)).rejects.toThrow("shape");
+    await expect(fetchPayphoneInbox(cfg, async () => new Response("no", { status: 502 }))).rejects.toThrow("502");
+    await expect(fetchPayphoneInbox(cfg, async () => Response.json({ ok: 1 }))).rejects.toThrow("shape");
   });
 });
 

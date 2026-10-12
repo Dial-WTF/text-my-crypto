@@ -21,10 +21,14 @@ const SECRETS = new Set([
   "SOLANA_TREASURY_SEED",
   "SOLANA_ESCROW_ATTESTOR_SEED",
   "EVM_TREASURY_KEY",
+  "EVM_ESCROW_ATTESTOR_KEY",
   "TEMPO_TREASURY_KEY",
   "ALCHEMY_API_KEY",
   "AI_GATEWAY_API_KEY",
   "WORKERS_AI_API_TOKEN",
+  // The Zcash wallet service (services/zcash-wallet): its URL and the shared bearer token.
+  "ZCASH_SERVICE_URL",
+  "ZCASH_SERVICE_TOKEN",
   // The owner's phone for watchdog alerts.
   "ALERT_PHONE",
 ]);

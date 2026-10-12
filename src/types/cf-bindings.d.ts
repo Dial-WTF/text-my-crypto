@@ -1,5 +1,3 @@
-/// <reference types="@cloudflare/workers-types" />
-
 import type { InboundSms } from "@/lib/sms/inbound";
 
 declare global {

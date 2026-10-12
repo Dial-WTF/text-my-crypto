@@ -1,0 +1,27 @@
+/* Brand · Ethereum: Ethereum's indigo.
+ * The accent family only (see ../README.md): canvas and text stay with the reader's mode. Three blocks:
+ * the first is dark mode and the default, then matrix and light override what differs.
+ * tests/theme-brands.test.ts checks every pair for AA contrast. */
+[data-brand="ethereum"] {
+  --color-accent: oklch(76% 0.11 277);
+  --color-accent-ink: oklch(20% 0.05 277);
+  --color-focus: oklch(76% 0.11 277);
+  --color-accent-on-card: oklch(47% 0.15 277);
+  --fill-brand: linear-gradient(90deg, oklch(64% 0.15 277), oklch(76% 0.11 277));
+  --fill-hero: linear-gradient(120deg, oklch(34% 0.12 277), oklch(52% 0.15 277));
+  --color-on-hero: oklch(99% 0.005 277);
+}
+
+[data-theme="matrix"] [data-brand="ethereum"],
+[data-theme="matrix"][data-brand="ethereum"] {
+  --color-accent-on-card: oklch(76% 0.11 277);
+}
+
+[data-theme="light"] [data-brand="ethereum"],
+[data-theme="light"][data-brand="ethereum"] {
+  --color-accent: oklch(47% 0.15 277);
+  --color-accent-ink: oklch(98% 0.01 277);
+  --color-focus: oklch(47% 0.15 277);
+  --color-accent-on-card: oklch(47% 0.15 277);
+  --fill-brand: linear-gradient(90deg, oklch(47% 0.15 277), oklch(64% 0.15 277));
+}

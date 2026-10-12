@@ -42,11 +42,17 @@ The owner can text `revoke agents` at any time. After that every key on the acco
 | `send_payment` | `{ to, amountUsd, note?, chain? }` Start a payment from the owner |
 | `request_payment` | `{ from, amountUsd, note?, chain? }` Ask someone to pay the owner |
 | `create_invoice` | `{ to, amountUsd, note?, chain? }` Bill someone; the link renders as an invoice |
-| `withdraw` | `{ amountUsd \| "all", address, chain? }` Move the owner's USDC to an outside address |
+| `withdraw` | `{ amountUsd \| "all", address, chain? }` Move the owner's USDC to an outside address, ENS name (`name.eth`, on Ethereum) or Basename (`name.base.eth`, on Base; `name.basetest.eth` on testnet) |
+| `split_payment` | `{ amountUsd, people, includeMe?, note?, chain? }` Split an amount between up to 10 people (the owner too with `includeMe`). One approval; every share settles in one Tempo transaction, or none do |
 | `get_payment` | `{ intentId }` Current status and receipt |
 | `list_payments` | `{ limit? }` Recent payments, newest first |
 | `get_pay_link` | `{ handle?, amountUsd?, note? }` A pay page (crypto Zelle) for the owner or any @handle: URL, text to send the operator, and a wallet link per chain. Share the owner's to get paid; read someone else's to pay them. Read-only |
 | `get_wallet` | Balances and deposit address per chain, pay link, recent activity, connected agents. Read-only |
+| `send_stock` | `{ to, shares, symbol, note? }` Gift Robinhood Chain stock tokens (e.g. 0.1 TSLA) by share count, approved like `send_payment`. No dollar amounts: testnet stock tokens have no price |
+| `get_stocks` | Stock token holdings on Robinhood Chain in shares, the owner's address there, and which tickers can be sent. Read-only |
+| `send_to_hyperliquid` | `{ amountUsd, to? }` Move USDC from the owner's HyperEVM wallet into a Hyperliquid (HyperCore) spot balance: the owner's own, or a Dial user's. The owner approves by text |
+| `get_hyperliquid_balance` | USDC in the owner's HyperCore spot balance. Read-only |
+| `get_price` | `{ coin }` The Hyperliquid mainnet mid for a coin like BTC or HYPE. A quote, not advice. Read-only |
 
 Full arguments, statuses and error codes: [references/tools.md](references/tools.md).
 

@@ -1,7 +1,7 @@
-import type { Metadata } from "next";
 import { botDeps } from "@/lib/deps";
 import { publicEnv } from "@/lib/env";
 import { formatUsd } from "@/lib/money";
+import { money } from "@/lib/settlement/amounts";
 import { stateLabel, timeAgo } from "@/lib/payment-labels";
 import { smsUri } from "@/lib/pay-links";
 import { walletView } from "@/lib/views/wallet";
@@ -11,11 +11,17 @@ import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { WalletPanel } from "@/ui/patterns/WalletPanel/WalletPanel";
 import { WalletSignIn } from "@/ui/patterns/WalletSignIn/WalletSignIn";
 import { Colophon } from "../colophon";
+import { pageMeta } from "../seo";
 import { passkeyFinish, passkeyOptions, revokeAgent, signOut } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Wallet", robots: { index: false } };
+export const metadata = pageMeta({
+  path: "/wallet",
+  title: "Wallet",
+  description: "Your Dial wallet: balances, deposit addresses, your pay link and your agents. Text “wallet” to the operator to open it.",
+  index: false,
+});
 
 const FAUCET = { href: "https://faucet.circle.com", label: "faucet.circle.com" };
 
@@ -41,7 +47,7 @@ export default async function WalletPage() {
   const deps = botDeps();
   const now = deps.now();
   const v = await walletView(deps, user);
-  const readable = v.chains.filter((c) => c.balance !== null);
+  const readable = v.chains.filter((c) => c.balance !== null && c.asset === "USDC");
   const total = readable.reduce((sum, c) => sum + (c.balance ?? 0n), 0n);
 
   return (
@@ -52,12 +58,13 @@ export default async function WalletPage() {
           total={readable.length ? formatUsd(total) : null}
           faucet={deps.network === "testnet" && readable.length && total === 0n ? FAUCET : null}
           payUrl={v.payUrl}
-          chains={v.chains.map((c) => ({ ...c, balance: c.balance === null ? null : formatUsd(c.balance) }))}
+          chains={v.chains.map((c) => ({ ...c, balance: c.balance === null ? null : money(c.balance, c.chain, deps.network) }))}
           activity={v.activity.map((a) => ({
             id: a.id,
             from: a.direction === "in" ? a.other : "you",
             to: a.direction === "in" ? "you" : a.other,
             amount: a.amount,
+            stock: a.stock,
             network: a.network,
             state: stateLabel(a.status, a.expiresAt, now),
             txHash: a.txHash,

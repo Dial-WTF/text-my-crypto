@@ -1,21 +1,48 @@
 import { type Chain, parseChain } from "@/lib/chains";
 import { isUsdAmount } from "@/lib/money";
+import { KNOWN_STOCK_SYMBOLS } from "@/lib/stocks";
 
 export type MoneyKind = "send" | "request" | "invoice";
 
+/** `asset`: a stock ticker ("TSLA"). Then `amountUsd` is the number of shares, not dollars. Sends only. */
 export type MoneyCommand = {
   kind: MoneyKind;
   counterparty: string;
   amountUsd: string;
   note?: string;
   chain?: Chain;
+  asset?: string;
+  /** "send … privately": a shielded Zcash send, whatever the sender's default chain. Sends only. */
+  private?: true;
 };
 
-export type WithdrawCommand = { kind: "withdraw"; amountUsd: string | "all"; address: string; chain?: Chain };
+/** `address` is an address or an ENS name / Basename; a name is resolved once, when the payment is created. */
+export type WithdrawCommand = { kind: "withdraw"; /** A USD amount, or "all". */
+  amountUsd: string; address: string; chain?: Chain };
+
+/** `venue` is the word they used ("hyperliquid", "hypercore", "hl"); the bot matches it to a chain's venue module. */
+export type VenueCommand = { kind: "venue"; venue: string; amountUsd: string; counterparty?: string };
+
+/**
+ * "split $30 between @a @b @c": $30 divided among the people listed. "split $30 with @a @b" (or listing "me")
+ * divides it among them and the sender, who pays everyone else's share.
+ */
+export type SplitCommand = {
+  kind: "split";
+  amountUsd: string;
+  people: string[];
+  includeMe: boolean;
+  note?: string;
+  chain?: Chain;
+};
 
 export type Command =
   | MoneyCommand
   | WithdrawCommand
+  | VenueCommand
+  | { kind: "venue_balance"; venue: string }
+  | { kind: "price"; coin: string }
+  | SplitCommand
   | { kind: "balance" }
   | { kind: "receive" }
   | { kind: "reclaim" }
@@ -27,7 +54,12 @@ export type Command =
   | { kind: "connect_agent"; label?: string }
   | { kind: "revoke_agents" }
   | { kind: "wallet" }
+  | { kind: "stocks" }
+  /** "send @alex $5 of TSLA": a dollar amount of a stock, which needs a price. */
+  | { kind: "stock_priced"; symbol: string }
   | { kind: "help" }
+  /** "withdraw" or "cash out" with no destination: explain how to say one. */
+  | { kind: "withdraw_help" }
   | { kind: "chat" };
 
 // A handle, up to three plain words ("my guy", "my brother jake"), or a phone number. Lazy, so a trailing
@@ -62,17 +94,132 @@ const PATTERNS: Pattern[] = [
   p("invoice", String.raw`${INVOICE}\s+(${WHO})\s+${AMT}`, 1, 2, 3, 4),
 ];
 
-const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,})`;
+// Stock sends: "send @alex 0.1 TSLA", "send 2 shares of $AMZN to alex", and the priced form "send alex $5 of TSLA".
+const SHARES = String.raw`(\d{1,6}(?:\.\d{1,6})?)\s*(?:shares?\s+(?:of\s+)?)?`;
+const TICKER = String.raw`\$?([a-z]{1,5})`;
+const DOLLARS_OF = String.raw`\$(\d{1,7}(?:\.\d+)?)\s+(?:worth\s+of|of|in)\s+`;
+const stock = (src: string) => new RegExp(`^${src}${FOR}${ON}${END}`, "i");
+const STOCK_SENDS: Array<{ re: RegExp; who: number; qty: number; sym: number; note: number; on: number }> = [
+  { re: stock(String.raw`${SEND}\s+(?:to\s+)?(${WHO})\s+${SHARES}${TICKER}`), who: 1, qty: 2, sym: 3, note: 4, on: 5 },
+  { re: stock(String.raw`${SEND}\s+${SHARES}${TICKER}\s+to\s+(${WHO})`), who: 3, qty: 1, sym: 2, note: 4, on: 5 },
+];
+const STOCK_PRICED = [
+  stock(String.raw`${SEND}\s+(?:to\s+)?(?:${WHO})\s+${DOLLARS_OF}${TICKER}`),
+  stock(String.raw`${SEND}\s+${DOLLARS_OF}${TICKER}\s+to\s+(?:${WHO})`),
+];
+const STOCKS = /^(?:stocks?|my stocks|portfolio|my portfolio|holdings)\??$/i;
+
+/** A ticker: one we know in any case ("tsla"), or any other typed in capitals ("AAPL"). Never a dollar word. */
+function tickerOf(raw: string | undefined): string | null {
+  if (!raw || /^(?:usdc?|dollars?|bucks?)$/i.test(raw)) return null;
+  const upper = raw.toUpperCase();
+  return KNOWN_STOCK_SYMBOLS.has(upper) || raw === upper ? upper : null;
+}
+
+function parseStock(t: string): Command | null {
+  for (const re of STOCK_PRICED) {
+    const symbol = tickerOf(re.exec(t)?.[2]);
+    if (symbol) return { kind: "stock_priced", symbol };
+  }
+  for (const pat of STOCK_SENDS) {
+    const m = pat.re.exec(t);
+    const who = m?.[pat.who];
+    const qty = m?.[pat.qty];
+    const asset = tickerOf(m?.[pat.sym]);
+    if (!m || !who || !qty || !asset) continue;
+    const cmd: MoneyCommand = { kind: "send", counterparty: normalizeCounterparty(who), amountUsd: qty, asset };
+    const note = m[pat.note]?.trim();
+    if (note) cmd.note = note.slice(0, 120);
+    const chainWord = m[pat.on];
+    if (chainWord === undefined) return cmd;
+    const chain = parseChain(chainWord);
+    return chain ? { ...cmd, chain } : { kind: "chat" };
+  }
+  return null;
+}
+
+// An EVM, Solana or Zcash address, or an ENS name / Basename ("vitalik.eth", "jesse.base.eth").
+const ADDRESS = String.raw`(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44}|(?:t1|t3|tm|u1|zs)[0-9a-zA-Z]{20,}|(?:[a-z0-9_-]+\.)+eth)`;
 const WITHDRAW = new RegExp(
   String.raw`^(?:withdraw|cash out|send|move)\s+(all|everything|\$?\d{1,7}(?:\.\d+)?)\s*(?:usdc?|dollars?|bucks)?\s+to\s+${ADDRESS}${ON}${END}`,
   "i",
 );
+
+// "to hyperliquid" means HyperCore; "on hyperliquid" stays a HyperEVM send (the chain alias).
+// Words for a trading venue: Hyperliquid's (the chain alias), HyperCore (the venue's name) and "hl".
+const VENUE_WORD = String.raw`hyperliquid|hypercore|hl`;
+const HL = String.raw`(?<venue>${VENUE_WORD})(?:\s+(?:spot|account|balance))?`;
+const HL_SELF = new RegExp(
+  String.raw`^(?:move|send|transfer|deposit|bridge|put)\s+${AMT}\s+(?<prep>to|into|onto)\s+(?:my\s+)?${HL}${END}`,
+  "i",
+);
+const TO_HL = String.raw`(?<prep>to|into|on)\s+(?:their\s+)?${HL}`;
+const HL_SEND = [
+  new RegExp(String.raw`^${SEND}\s+(?:to\s+)?(${WHO})\s+${AMT}\s+${TO_HL}${END}`, "i"),
+  new RegExp(String.raw`^${SEND}\s+${AMT}\s+to\s+(${WHO})\s+${TO_HL}${END}`, "i"),
+];
+const HL_BALANCE = new RegExp(
+  String.raw`^(?:(?<a>${VENUE_WORD})\s+(?:balance|bal)|(?:balance|bal)\s+(?:on\s+)?(?<b>${VENUE_WORD}))\??$`,
+  "i",
+);
+const PRICE = /^(?:price|px|quote)\s+(?:of\s+|for\s+)?\$?([a-z][a-z0-9]{0,9})\??$|^\$?([a-z][a-z0-9]{0,9})\s+price\??$/i;
+const SPLIT = new RegExp(String.raw`^split\s+${AMT}\s+(between|among|amongst|with)\s+(.+?)${FOR}${ON}${END}`, "i");
+// One person in a list: an @handle, a phone number (digit groups may be spaced), or a plain word.
+const PERSON_TOKEN = /@[a-z0-9_]+|\+?\(?\d[\d().-]*(?:\s+\(?\d[\d().-]*)*|[a-z][a-z0-9_']*/gi;
+const ME = /^(?:me|myself)$/i;
+const NAME = /^[a-z][a-z0-9_']*(?:\s[a-z][a-z0-9_']*){0,2}$/i;
+
+/**
+ * The people in a split list. Commas, "and" and "&" separate people, so a name can have spaces
+ * ("alex, my brother jake"); without them every handle, number and word is its own person
+ * ("@a @b carol"). "me" puts the sender in. Repeats are dropped. Null when something isn't a person.
+ */
+export function parsePeople(list: string): { people: string[]; includeMe: boolean } | null {
+  const chunks = list
+    .split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const separated = chunks.length > 1;
+  const people: string[] = [];
+  let includeMe = false;
+  for (const chunk of chunks) {
+    const tokens = chunk.match(PERSON_TOKEN) ?? [];
+    if (tokens.join(" ").replace(/\s+/g, "") !== chunk.replace(/\s+/g, "")) return null;
+    const singles = tokens.every((t) => t.startsWith("@") || /\d/.test(t) || ME.test(t));
+    const names = !separated || singles || tokens.length === 1 ? tokens : NAME.test(chunk) ? [chunk] : null;
+    if (!names) return null;
+    for (const name of names) {
+      if (ME.test(name)) includeMe = true;
+      else people.push(normalizeCounterparty(name));
+    }
+  }
+  return { people: [...new Set(people)], includeMe };
+}
+
+function parseSplit(m: RegExpExecArray): Command {
+  const [, amount, word, list, note, chainWord] = m;
+  if (!amount || !word || !list) return { kind: "chat" };
+  if (!isUsdAmount(amount)) return { kind: "chat" };
+  const parsed = parsePeople(list);
+  if (!parsed || parsed.people.length === 0) return { kind: "chat" };
+  const cmd: SplitCommand = {
+    kind: "split",
+    amountUsd: amount,
+    people: parsed.people,
+    includeMe: parsed.includeMe || word.toLowerCase() === "with",
+  };
+  if (note?.trim()) cmd.note = note.trim().slice(0, 120);
+  if (chainWord === undefined) return cmd;
+  const chain = parseChain(chainWord);
+  return chain ? { ...cmd, chain } : { kind: "chat" };
+}
 
 const BALANCE = /^(?:balance|bal|how much do i have)\??$/i;
 const RECEIVE = /^(?:receive|my address|address|deposit|pay link|my pay link)\??$/i;
 const WALLET = /^(?:wallet|my wallet|open wallet|log ?in|sign ?in)\??$/i;
 const HELP = /^(?:help|\?|commands)$/i;
 const RECLAIM = /^(?:reclaim|refund)$/i;
+const WITHDRAW_HELP = /^(?:how (?:do i |can i |to )?)?(?:withdraw|cash ?out|take (?:it|my money) out|move (?:it|my money) out)(?: (?:all|everything|my money|it|money))?\??$/i;
 const UPGRADE = /^(?:upgrade|passkey)$/i;
 const DECLINE = /^(?:no|nope|decline)$/i;
 const DIRECTORY = /^(?:411|directory|lookup|look up|find|who is|whos|who's)\s+(.{2,40}?)\??$/i;
@@ -80,6 +227,18 @@ const RENAME = /^(?:call me|my name is|rename me to|rename to|rename)\s+(.{1,80}
 const WHOAMI = /^(?:whoami|who am i|me)\??$/i;
 const CONNECT_AGENT = /^connect\s+(?:an?\s+|my\s+)?agent(?:\s+(?:called\s+|named\s+)?(.+?))?\s*[.!]?$/i;
 const REVOKE_AGENTS = /^(?:revoke|disconnect|remove)\s+(?:all\s+|my\s+)?agents?\s*[.!]?$/i;
+
+// "privately send …", "send privately …", "send … privately" and "send … private" (before any "for …" or
+// "on …", or at the end). "for private lessons" stays a note.
+const PRIVATE_LEAD = /^privately\s+/i;
+const PRIVATE_AFTER_VERB = /^((?:please\s+)?(?:send|pay|give|transfer))\s+privately\s+/i;
+const PRIVATE_TAIL = /\s+(?:privately|private)(?=\s+for\s|\s+on\s|\s*[.!]?$)/i;
+
+/** The text without its "privately", or null when it doesn't ask for a private send. */
+function withoutPrivately(t: string): string | null {
+  const s = t.replace(PRIVATE_LEAD, "").replace(PRIVATE_AFTER_VERB, "$1 ").replace(PRIVATE_TAIL, "");
+  return s === t ? null : s;
+}
 
 /** Phone numbers pass through untouched; names are lowercased and keep a leading "@" (which means a global Dial handle). */
 export function normalizeCounterparty(raw: string): string {
@@ -101,13 +260,42 @@ function build(pat: Pattern, m: RegExpExecArray): Command | null {
   return chain ? { ...cmd, chain } : { kind: "chat" };
 }
 
+/** "move $5 to hyperliquid", "send @alex $5 to hyperliquid". Checked before plain sends, which would read "hyperliquid" as a name. */
+function parseVenue(t: string): Command | null {
+  const self = HL_SELF.exec(t);
+  const selfVenue = self?.groups?.venue;
+  if (self?.[1] && selfVenue) {
+    return isUsdAmount(self[1]) ? { kind: "venue", venue: selfVenue.toLowerCase(), amountUsd: self[1] } : { kind: "chat" };
+  }
+  for (const [i, re] of HL_SEND.entries()) {
+    const m = re.exec(t);
+    const [who, amount] = i === 0 ? [m?.[1], m?.[2]] : [m?.[2], m?.[1]];
+    const venue = m?.groups?.venue?.toLowerCase();
+    if (!who || !amount || !venue) continue;
+    // "on hyperliquid" names the chain (a HyperEVM send); only "on hypercore" names the venue.
+    if (m?.groups?.prep?.toLowerCase() === "on" && venue !== "hypercore") return null;
+    if (!isUsdAmount(amount)) return { kind: "chat" };
+    return { kind: "venue", venue, amountUsd: amount, counterparty: normalizeCounterparty(who) };
+  }
+  return null;
+}
+
 export function parseCommand(text: string): Command {
   const t = text.trim().replace(/\s+/g, " ");
   if (BALANCE.test(t)) return { kind: "balance" };
+  const venueBalance = HL_BALANCE.exec(t);
+  const balanceWord = venueBalance?.groups?.a ?? venueBalance?.groups?.b;
+  if (balanceWord) return { kind: "venue_balance", venue: balanceWord.toLowerCase() };
+  const price = PRICE.exec(t);
+  if (price) return { kind: "price", coin: (price[1] ?? price[2] ?? "").toUpperCase() };
+  const hl = parseVenue(t);
+  if (hl) return hl;
   if (RECEIVE.test(t)) return { kind: "receive" };
   if (WALLET.test(t)) return { kind: "wallet" };
+  if (STOCKS.test(t)) return { kind: "stocks" };
   if (HELP.test(t)) return { kind: "help" };
   if (RECLAIM.test(t)) return { kind: "reclaim" };
+  if (WITHDRAW_HELP.test(t)) return { kind: "withdraw_help" };
   if (UPGRADE.test(t)) return { kind: "upgrade" };
   if (DECLINE.test(t)) return { kind: "decline" };
   if (WHOAMI.test(t)) return { kind: "whoami" };
@@ -128,11 +316,23 @@ export function parseCommand(text: string): Command {
     const chain = parseChain(w[3]);
     return chain ? { ...cmd, chain } : { kind: "chat" };
   }
+  const split = SPLIT.exec(t);
+  if (split) return parseSplit(split);
+  const plain = withoutPrivately(t);
+  if (plain !== null) {
+    const cmd = matchMoney(plain);
+    // Only sends can be private; anything else asked "privately" goes to the plain-English reader.
+    return cmd.kind === "send" ? { ...cmd, private: true } : { kind: "chat" };
+  }
+  return matchMoney(t);
+}
+
+function matchMoney(t: string): Command {
   for (const pat of PATTERNS) {
     const m = pat.re.exec(t);
     if (!m) continue;
     const cmd = build(pat, m);
     if (cmd) return cmd;
   }
-  return { kind: "chat" };
+  return parseStock(t) ?? { kind: "chat" };
 }

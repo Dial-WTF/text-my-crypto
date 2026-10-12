@@ -1,11 +1,12 @@
 import { address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import type { Env } from "@/lib/env";
-import { rpcOverrides } from "@/lib/env";
-import { activeChains, solanaEscrow } from "@/lib/settlement";
+import { escrowContractOverrides, rpcOverrides } from "@/lib/env";
+import { activeChains, evmEscrow, solanaEscrow } from "@/lib/settlement";
+import { createEvmAdapter } from "@/lib/settlement/evm";
 import { createSolanaAdapter } from "@/lib/settlement/solana";
 import { findEscrowAddress, findVaultAddress, intentIdHash } from "@/lib/settlement/solana-escrow";
-import { NETWORKS, REGISTRY, RPC_OVERRIDE_KEYS, resolveRpc, type SolanaNetwork } from "@/lib/settlement/registry";
+import { ESCROW_CONTRACT_KEYS, type EvmNetwork, NETWORKS, REGISTRY, RPC_OVERRIDE_KEYS, resolveRpc, type SolanaNetwork, venueOf } from "@/lib/settlement/registry";
 
 const solanaDevnet = REGISTRY.solana.testnet!;
 
@@ -41,17 +42,36 @@ describe("registry", () => {
     for (const byNetwork of Object.values(REGISTRY)) {
       for (const network of NETWORKS) {
         const entry = byNetwork[network];
-        if (!entry || entry.kind === "solana") continue;
+        if (!entry || entry.kind === "solana" || entry.kind === "zcash") continue;
         expect(entry.viem.testnet ?? false).toBe(network === "testnet");
       }
     }
   });
 });
 
+describe("venueOf", () => {
+  it("finds HyperCore on HyperEVM, on both networks, with its own explorer", () => {
+    const a = "0x00000000000000000000000000000000000000aa";
+    expect(venueOf("hyperevm", "testnet")?.name).toBe("HyperCore");
+    expect(venueOf("hyperevm", "testnet")?.explorerAddress(a)).toBe(`https://app.hyperliquid-testnet.xyz/explorer/address/${a}`);
+    expect(venueOf("hyperevm", "mainnet")?.explorerAddress(a)).toBe(`https://app.hyperliquid.xyz/explorer/address/${a}`);
+  });
+
+  it("is null on EVM chains without a venue and on chains that aren't EVM", () => {
+    expect(venueOf("base", "testnet")).toBeNull();
+    expect(venueOf("solana", "testnet")).toBeNull();
+  });
+});
+
 describe("activeChains", () => {
-  it("runs only listed chains that have a stablecoin on the selected network", () => {
+  it("runs only listed chains that have something to settle in on the selected network", () => {
     const chains = activeChains(env({ CHAINS: "solana,base,robinhood,zcash" }), {});
-    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood"]);
+    expect(chains.map((c) => c.chain)).toEqual(["solana", "base", "robinhood", "zcash"]);
+  });
+
+  it("keeps Zcash off mainnet until it has a price and custody story", () => {
+    const chains = activeChains(env({ NETWORK: "mainnet", ALLOW_MAINNET: "yes", CHAINS: "zcash" }), {});
+    expect(chains).toEqual([]);
   });
 
   it("switches every chain to its mainnet entry together", () => {
@@ -126,5 +146,40 @@ describe("solana escrow program", () => {
 
     const plain = createSolanaAdapter({ rpcUrl: "http://127.0.0.1:1", mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", explorerTx: (s) => s, treasurySeed: new Uint8Array(32) });
     expect(plain.escrow).toBeUndefined();
+  });
+});
+
+describe("evm escrow contract", () => {
+  const arbSepolia = REGISTRY.arbitrum.testnet as EvmNetwork;
+  const key = `0x${"11".repeat(32)}`;
+  const contract = "0x00000000000000000000000000000000000e5c00";
+  const on = { ESCROW_PROGRAM: "on" as const, EVM_ESCROW_ATTESTOR_KEY: key };
+
+  it("has a registry field on Arbitrum Sepolia, empty until the contract is deployed", () => {
+    expect(arbSepolia.escrowContract).toBeNull();
+    expect(ESCROW_CONTRACT_KEYS).toEqual(["ESCROW_CONTRACT_ARBITRUM_SEPOLIA"]);
+    expect(evmEscrow(on, arbSepolia, {})).toBeUndefined();
+  });
+
+  it("is used only with the flag on, a contract for this deployment, and an attestor key", () => {
+    const deployed = { ...arbSepolia, escrowContract: contract } as EvmNetwork;
+    expect(evmEscrow(on, deployed, {})).toEqual({ contract, attestorKey: key });
+    expect(evmEscrow({ ...on, ESCROW_PROGRAM: "off" }, deployed, {})).toBeUndefined();
+    expect(evmEscrow({ ...on, EVM_ESCROW_ATTESTOR_KEY: undefined }, deployed, {})).toBeUndefined();
+  });
+
+  it("lets a deployment name its own contract (staging has its own attestor)", () => {
+    const staging = "0x0000000000000000000000000000000000057a6e";
+    const overrides = escrowContractOverrides({ ESCROW_CONTRACT_ARBITRUM_SEPOLIA: staging, ESCROW_CONTRACT_NOPE: contract });
+    expect(overrides).toEqual({ ESCROW_CONTRACT_ARBITRUM_SEPOLIA: staging });
+    expect(evmEscrow(on, arbSepolia, overrides)?.contract).toBe(staging);
+    expect(() => escrowContractOverrides({ ESCROW_CONTRACT_ARBITRUM_SEPOLIA: "not-an-address" })).toThrow();
+  });
+
+  it("gives the arbitrum adapter an escrow module only when a contract is set", () => {
+    const base = { ...arbSepolia, chain: "arbitrum" as const, rpcUrl: "http://127.0.0.1:1", treasuryKey: key as `0x${string}` };
+    expect(createEvmAdapter(base).escrow).toBeUndefined();
+    const adapter = createEvmAdapter({ ...base, escrow: { contract, attestorKey: key as `0x${string}` } });
+    expect(adapter.escrow?.programId).toBe(contract);
   });
 });

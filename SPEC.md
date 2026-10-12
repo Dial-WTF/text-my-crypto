@@ -1,8 +1,8 @@
-# Text My Crypto — Spec
+# Text My Crypto: spec
 
 Text a payment to anyone. Text the Dial number, it says hi, notices when you want to send money, you approve with a passkey, it settles on-chain, and you get a receipt by text.
 
-This is Text My Bits (2020, Rootstock, SMS bearer codes) rebuilt: same idea of money over plain SMS, but with real identities instead of hashed phone codes, passkey approval instead of a 4-character code, and settlement on modern chains. The voucher idea survives as the claim link for people who don't have an account yet.
+Money over plain SMS is an old idea; this version uses real identities instead of hashed phone codes, a texted code or passkey to approve each payment, and settlement on modern chains. People who don't have an account yet get a claim link for money waiting for them.
 
 > "send jeremy $10" → confirm link → passkey → 10 USDC lands → receipt with tx hash
 

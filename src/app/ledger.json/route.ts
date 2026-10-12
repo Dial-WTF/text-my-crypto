@@ -1,6 +1,8 @@
 import { getDb } from "@/lib/db/client";
-import { chainProofs, runningNetwork, safeNetworkName } from "@/lib/ledger";
+import { liveExplorer } from "@/lib/explorers";
+import { chainProofs, runningNetwork, safePaymentNetwork } from "@/lib/ledger";
 import { type PublicStats, publicStats, recentPayments } from "@/lib/stats";
+import { formatShares } from "@/lib/stocks";
 import { quietly } from "../ledger-data";
 
 export const dynamic = "force-dynamic";
@@ -30,13 +32,20 @@ export async function GET(): Promise<Response> {
         id: r.id,
         from: r.from,
         to: r.to,
-        amountUsd: usd(r.amount),
+        kind: r.kind,
+        ...(r.amount === null
+          ? { amountUsd: null }
+          : r.stock
+            ? { amountUsd: null, shares: formatShares(r.amount), asset: r.stock }
+            : { amountUsd: usd(r.amount) }),
+        shielded: r.amount === null,
         chain: r.chain,
-        network: safeNetworkName(r.chain),
+        network: safePaymentNetwork(r),
         status: r.status,
         tx: r.txHash,
-        explorer: r.explorerUrl,
+        explorer: liveExplorer(r.explorerUrl),
         at: r.at.toISOString(),
+        split: r.splitId,
       })),
     },
     { headers: { "cache-control": "public, max-age=30" } },

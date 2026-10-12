@@ -1,11 +1,12 @@
-import { and, eq, gt, isNotNull, isNull, like, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, like, lt, or, sql } from "drizzle-orm";
+import { MAX_CODE_ATTEMPTS, newCode } from "@/lib/codes";
 import type { Db } from "@/lib/db/client";
 import { signupTokens, type User, users } from "@/lib/db/schema";
+import { sha256Hex } from "@/lib/hash";
 import { newId, randomToken } from "@/lib/ids";
 import { normalizePhone } from "@/lib/phone";
 
-export const HANDLE_RE = /^[a-z][a-z0-9_]{2,19}$/;
-export const SIGNUP_TTL_MS = 15 * 60_000;
+const SIGNUP_TTL_MS = 15 * 60_000;
 
 export async function findUserByPhone(db: Db, phone: string): Promise<User | null> {
   const [u] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
@@ -113,19 +114,58 @@ export async function renameUser(db: Db, userId: string, name: string): Promise<
   return u ?? null;
 }
 
-export async function createSignupToken(db: Db, phone: string, now: Date): Promise<string> {
+const hashSignupCode = (token: string, code: string) => sha256Hex(`dial-signup-code-v1|${token}|${code}`);
+
+/** "upgrade": a one-time passkey link and a code, both texted to the phone. Neither works alone, like the wallet and agent links. */
+export async function createSignupToken(db: Db, phone: string, now: Date): Promise<{ token: string; code: string }> {
   const token = randomToken(18);
-  await db.insert(signupTokens).values({ token, phone, expiresAt: new Date(now.getTime() + SIGNUP_TTL_MS) });
-  return token;
+  const code = newCode();
+  await db
+    .insert(signupTokens)
+    .values({ token, phone, codeHash: await hashSignupCode(token, code), expiresAt: new Date(now.getTime() + SIGNUP_TTL_MS) });
+  return { token, code };
 }
 
+/** The phone a passkey link belongs to, while it can still be used. Safe for page loads and link previews: it consumes nothing. */
 export async function peekSignupToken(db: Db, token: string, now: Date): Promise<string | null> {
   const [row] = await db
     .select({ phone: signupTokens.phone })
     .from(signupTokens)
-    .where(and(eq(signupTokens.token, token), isNull(signupTokens.usedAt), gt(signupTokens.expiresAt, now)))
+    .where(
+      and(
+        eq(signupTokens.token, token),
+        isNull(signupTokens.usedAt),
+        gt(signupTokens.expiresAt, now),
+        lt(signupTokens.codeAttempts, MAX_CODE_ATTEMPTS),
+      ),
+    )
     .limit(1);
   return row?.phone ?? null;
+}
+
+/**
+ * Checks the code texted with a passkey link. Five wrong tries close the link. The try is counted (one
+ * conditional UPDATE) before the code is compared, so parallel guesses can't get past the limit; a right
+ * code gives it back, so someone whose device cancelled the passkey can try again.
+ */
+export async function checkSignupCode(db: Db, token: string, code: string, now: Date): Promise<boolean> {
+  const open = and(
+    eq(signupTokens.token, token),
+    isNull(signupTokens.usedAt),
+    gt(signupTokens.expiresAt, now),
+    isNotNull(signupTokens.codeHash),
+  );
+  const [row] = await db
+    .update(signupTokens)
+    .set({ codeAttempts: sql`${signupTokens.codeAttempts} + 1` })
+    .where(and(open, lt(signupTokens.codeAttempts, MAX_CODE_ATTEMPTS)))
+    .returning({ codeHash: signupTokens.codeHash });
+  if (!row?.codeHash || row.codeHash !== (await hashSignupCode(token, code.replace(/[\s-]/g, "")))) return false;
+  await db
+    .update(signupTokens)
+    .set({ codeAttempts: sql`${signupTokens.codeAttempts} - 1` })
+    .where(eq(signupTokens.token, token));
+  return true;
 }
 
 export async function consumeSignupToken(db: Db, token: string, now: Date): Promise<string | null> {

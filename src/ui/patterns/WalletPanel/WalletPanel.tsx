@@ -10,12 +10,12 @@ import { type FeedEntry, PaymentFeed } from "../PaymentFeed/PaymentFeed";
 import { Split } from "../Section/Section";
 import styles from "./WalletPanel.module.css";
 
-export type WalletPanelChain = { network: string; address: string; uri: string; explorer: string; balance: string | null };
-export type WalletPanelAgent = { id: string; label: string; lastUsed: string };
+type WalletPanelChain = { network: string; address: string; uri: string; explorer: string | null; asset: string; balance: string | null };
+type WalletPanelAgent = { id: string; label: string; lastUsed: string };
 
 type WalletPanelProps = {
   handle: string;
-  /** Sum across chains, e.g. "$0.31"; null when no balance could be read. */
+  /** Sum across the USDC chains, e.g. "$0.31"; null when no balance could be read. Testnet ZEC is listed per chain, not added in. */
   total: string | null;
   /** Shown when the wallet is empty: where to get test money. */
   faucet: { href: string; label: string } | null;
@@ -85,7 +85,7 @@ export function WalletPanel({ handle, total, faucet, payUrl, chains, activity, a
           {chains.map((c, i) => (
             <details key={c.network} className={styles.chain} open={i === 0}>
               <summary className={styles.summary}>
-                USDC on {c.network} · {shorten(c.address)}
+                {c.asset} on {c.network} · {shorten(c.address)}
               </summary>
               <Stack gap="sm">
                 <QrCode value={c.uri} label={`QR code to deposit on ${c.network}`} caption="Scan with a wallet app" />

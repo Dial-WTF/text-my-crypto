@@ -54,6 +54,25 @@ export const ESCROW_ERRORS = {
   NotAssociatedTokenAccount: 6005,
 } as const;
 
+/**
+ * The program's error code behind a failed send, if it was the program that refused. Kit reports a failed
+ * preflight as "Transaction simulation failed" and puts the instruction error ({ code: 6002 }) in a cause.
+ */
+export function escrowErrorCode(e: unknown): number | null {
+  const codes = new Set<number>(Object.values(ESCROW_ERRORS));
+  for (let at: unknown = e, depth = 0; at && depth < 5; depth++) {
+    const code = (at as { context?: { code?: unknown } }).context?.code;
+    if (typeof code === "number" && codes.has(code)) return code;
+    at = (at as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** "WrongAttestor" for 6004, and so on. */
+export function escrowErrorName(code: number): string | null {
+  return Object.entries(ESCROW_ERRORS).find(([, c]) => c === code)?.[0] ?? null;
+}
+
 const hash32 = fixEncoderSize(getBytesEncoder(), 32);
 const hash32Decoder = fixDecoderSize(getBytesDecoder(), 32);
 const encoder = new TextEncoder();
@@ -232,11 +251,29 @@ const refundedDecoder = getStructDecoder([
   ["amount", getU64Decoder()],
 ]);
 
-/** The program's events from a transaction's log lines (Anchor writes them as "Program data: <base64>"). */
-export function escrowEventsFromLogs(logs: readonly string[]): EscrowEvent[] {
+const INVOKE = /^Program (\S+) invoke \[\d+\]$/;
+const RETURN = /^Program (\S+) (?:success$|failed)/;
+
+/**
+ * The program's events from a transaction's log lines (Anchor writes them as "Program data: <base64>").
+ * Only data written while `programId` itself is running counts: any program can log bytes that decode as
+ * an EscrowClaimed, in a transaction that merely lists the escrow's address. Which program is running comes
+ * from the runtime's own "invoke" and "success"/"failed" lines, which no program can write.
+ */
+export function escrowEventsFromLogs(logs: readonly string[], programId: string): EscrowEvent[] {
   const events: EscrowEvent[] = [];
+  const running: string[] = [];
   for (const line of logs) {
-    if (!line.startsWith("Program data: ")) continue;
+    const invoked = INVOKE.exec(line);
+    if (invoked?.[1]) {
+      running.push(invoked[1]);
+      continue;
+    }
+    if (RETURN.exec(line)?.[1] === running.at(-1)) {
+      running.pop();
+      continue;
+    }
+    if (!line.startsWith("Program data: ") || running.at(-1) !== programId) continue;
     const data = getBase64Encoder().encode(line.slice("Program data: ".length));
     if (startsWith(data, ESCROW_DISCRIMINATORS.escrowCreated)) {
       events.push({ name: "EscrowCreated", ...createdDecoder.decode(data, 8) });

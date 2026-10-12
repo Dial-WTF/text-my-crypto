@@ -1,8 +1,16 @@
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+const RATE_LIMITED = /\b429\b|too many requests/i;
+
+/**
+ * A 429 from either client. viem says so in the message. @solana/kit puts the status in `context.statusCode`, and in a
+ * production build (NODE_ENV=production) its message is only an encoded error number, so the message alone misses it.
+ */
 function isRateLimited(e: unknown): boolean {
-  const text = e instanceof Error ? `${e.message} ${String((e as { context?: unknown }).context ?? "")}` : String(e);
-  return /\b429\b|too many requests/i.test(text);
+  if (!(e instanceof Error)) return RATE_LIMITED.test(String(e));
+  const context = (e as { context?: unknown }).context;
+  const status = typeof context === "object" && context !== null ? (context as { statusCode?: unknown }).statusCode : undefined;
+  return status === 429 || RATE_LIMITED.test(e.message);
 }
 
 /** Retries an RPC call when the node rate-limits us (HTTP 429), with exponential backoff. */

@@ -25,8 +25,9 @@ body {
   box-sizing: border-box;
 }
 
+/* --color-link is currentColor (the text around it) unless a brand page points it at the accent. */
 a {
-  color: inherit;
+  color: var(--color-link);
 }
 
 :focus-visible {
@@ -42,6 +43,11 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* A ThemeScope with backdrop="off" (chain pages) hides the theme's backdrop for the whole page. */
+body:has([data-backdrop="off"]) [data-backdrop-layer] {
+  display: none;
 }
 
 .visually-hidden {

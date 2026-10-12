@@ -25,3 +25,15 @@ export function timeAgo(at: Date, now: Date): string {
   if (s < 30 * 86_400) return `${Math.floor(s / 86_400)}d ago`;
   return at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
+
+/** "0xd8dA…6045" for EVM addresses, "7xKX…gAsU" for the rest. */
+export function shortAddress(a: string): string {
+  const head = a.startsWith("0x") ? 6 : 4;
+  return a.length > head + 8 ? `${a.slice(0, head)}…${a.slice(-4)}` : a;
+}
+
+/** Where a withdrawal goes: "vitalik.eth (0xd8dA…6045)" when it was addressed to a name, else the short address. */
+export function withdrawTarget(i: Pick<Intent, "recipientAddress" | "recipientName">): string {
+  const short = shortAddress(i.recipientAddress);
+  return i.recipientName ? `${i.recipientName} (${short})` : short;
+}

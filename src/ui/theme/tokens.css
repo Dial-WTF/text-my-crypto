@@ -61,3 +61,44 @@
   /* Optional theme effects; off unless a theme opts in */
   --text-glow: none;
 }
+
+/* The accent family's derived roles. Unbranded they give the house look; a brand (./brands) sets the base
+ * ones and a brand page (below) points the rest at it.
+ * Declared on every theme scope so each var() follows that scope's values, not the page's. */
+:root,
+[data-theme] {
+  /* A band or swatch in the accent, always an image (a gradient), so it works as a background-image. */
+  --fill-brand: linear-gradient(var(--color-accent), var(--color-accent));
+  /* A page title's band (ChainHero) and the text on it. */
+  --fill-hero: var(--fill-brand);
+  --color-on-hero: var(--color-accent-ink);
+  /* The accent tuned for cards rather than the canvas. The house accent on a card is the card's own ink. */
+  --color-accent-on-card: var(--color-on-card);
+  /* The mode's own accent, which a brand never sets: a brand scope that keeps the house look at rest reads it. */
+  --color-house-accent: var(--color-accent);
+  --color-house-accent-ink: var(--color-accent-ink);
+
+  --color-heading: var(--color-on-canvas);
+  --color-link: currentColor;
+  --color-link-on-card: currentColor;
+  --color-marker: var(--color-on-canvas-muted);
+  --color-focus-on-card: var(--color-focus);
+  --color-section-rule: transparent;
+  --color-frame-on-card: transparent;
+  --card-edge-start: var(--card-border);
+}
+
+/* A brand page (<ThemeScope brand extent="page">): the brand also takes the headings, links, list markers,
+ * rules, card edges and focus rings. On the scope itself, so every var() resolves to that brand. */
+[data-brand-extent="page"] {
+  --color-heading: var(--color-accent);
+  --color-link: var(--color-accent);
+  --color-link-on-card: var(--color-accent-on-card);
+  --color-marker: var(--color-accent);
+  --color-focus-on-card: var(--color-accent-on-card);
+  --color-canvas-rule: color-mix(in oklab, var(--color-accent) 45%, var(--color-canvas));
+  --color-card-rule: color-mix(in oklab, var(--color-accent-on-card) 45%, var(--color-card));
+  --color-section-rule: color-mix(in oklab, var(--color-accent) 70%, var(--color-canvas));
+  --color-frame-on-card: var(--color-accent-on-card);
+  --card-edge-start: var(--rule-thick) solid var(--color-accent-on-card);
+}

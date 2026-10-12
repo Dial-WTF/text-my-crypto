@@ -1,10 +1,11 @@
 import type { User } from "@/lib/db/schema";
 import { replies } from "@/lib/operator/replies";
-import { startLoginLink } from "@/lib/web/sessions";
+import { walletPageUrl } from "@/lib/pay-links";
+import { issueWalletCode } from "@/lib/web/sessions";
 import type { BotDeps } from "./types";
 
-/** "wallet": texts a one-time link and code that open the wallet page on the web. */
+/** "wallet": texts the account's permanent wallet link and a fresh code that opens it. Only members text it, so there's a handle. */
 export async function walletLinkReply(deps: BotDeps, user: User): Promise<string> {
-  const { token, code } = await startLoginLink(deps.db, user.id, deps.now());
-  return replies.walletLink(`${deps.appUrl}/wallet/in/${token}`, code);
+  const { code } = await issueWalletCode(deps.db, user.id, deps.now());
+  return replies.walletLink(user.handle ? walletPageUrl(deps.appUrl, user.handle) : `${deps.appUrl}/wallet`, code);
 }

@@ -5,6 +5,7 @@ import type { Db } from "@/lib/db/client";
 import * as schema from "@/lib/db/schema";
 import { watchdogProblems } from "@/lib/db/schema";
 import { logInbound, logOutbound } from "@/lib/sms/log";
+import { LAST_RUN_KEY } from "@/lib/watchdog/problems";
 import { runWatchdog, type WatchdogDeps } from "@/lib/watchdog/run";
 import { type D1Like, scheduledWatchdog } from "@/lib/watchdog/scheduled";
 import { resetSlotForTests } from "@/lib/watchdog/slot";
@@ -23,7 +24,7 @@ type Inbox = Array<{ direction: string; contact: string; body: string; timestamp
 function fakePayphone(opts: { inbox?: Inbox; authStatus?: number; inboxStatus?: number } = {}) {
   const calls: string[] = [];
   const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : String(input);
     calls.push(url);
     if (url.includes("/numbers/mine")) return new Response("{}", { status: opts.authStatus ?? 200 });
     if (url.includes("/sms/inbox")) {
@@ -73,6 +74,15 @@ describe("watchdog run", () => {
     expect(alerts).toEqual([]);
     expect(logs).toHaveLength(1);
     expect(JSON.parse(logs[0] ?? "")).toMatchObject({ evt: "watchdog", ok: true, failing: [], sent: false });
+  });
+
+  it("records when it last ran, in a row no check uses and that is never open", async () => {
+    await runWatchdog(deps());
+    now = at(1);
+    await runWatchdog(deps());
+    const rows = await db.select().from(watchdogProblems);
+    expect(rows).toEqual([expect.objectContaining({ key: LAST_RUN_KEY, firstSeenAt: at(1), resolvedAt: at(1), lastAlertedAt: null })]);
+    expect(alerts).toEqual([]);
   });
 
   it("texts the owner about an unanswered text once, then the all-clear once it is answered", async () => {
@@ -237,7 +247,7 @@ describe("cron trigger", () => {
   function sink() {
     const sent: Array<{ to: string; message: string }> = [];
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-      sent.push(JSON.parse(String(init?.body)));
+      sent.push(JSON.parse(init?.body as string) as { to: string; message: string });
       return new Response("{}");
     }) as unknown as typeof fetch;
     return { sent, fetchImpl };

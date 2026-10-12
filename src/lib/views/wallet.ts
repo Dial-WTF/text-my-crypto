@@ -5,16 +5,20 @@ import { getUserById } from "@/lib/identity";
 import { intentsFor } from "@/lib/intents";
 import { hasPasskey } from "@/lib/passkeys";
 import { errorText } from "@/lib/settlement/types";
+import { paymentNetwork } from "@/lib/ledger";
+import { formatShares, stockForToken } from "@/lib/stocks";
 import { type PayChain, payProfile } from "./pay";
 
-export type WalletChain = PayChain & { balance: bigint | null };
+type WalletChain = PayChain & { balance: bigint | null };
 
-export type WalletActivity = {
+type WalletActivity = {
   id: string;
   kind: Intent["kind"];
   direction: "in" | "out";
   other: string;
   amount: bigint;
+  /** The stock token's ticker when the payment moved one; null for dollars. */
+  stock: string | null;
   status: Intent["status"];
   network: string;
   note: string | null;
@@ -26,7 +30,7 @@ export type WalletActivity = {
   waitingOnYou: boolean;
 };
 
-export type WalletAgent = { id: string; label: string; createdAt: Date; lastUsedAt: Date | null };
+type WalletAgent = { id: string; label: string; createdAt: Date; lastUsedAt: Date | null };
 
 /** The owner's view: balances, where to deposit, their pay link, recent activity and connected agents. */
 export type WalletView = {
@@ -66,16 +70,25 @@ export async function walletView(deps: BotDeps, user: User): Promise<WalletView>
   };
   const activity: WalletActivity[] = [];
   for (const i of await intentsFor(deps.db, user.id, 10)) {
-    const direction = directionFor(i, user.id);
+    // Moving your own money into HyperCore: it leaves the wallet, and the other side is your Hyperliquid balance.
+    const ownVenueMove = i.kind === "venue" && i.recipientId === i.senderId;
+    const direction = ownVenueMove ? "out" : directionFor(i, user.id);
     const otherId = i.kind === "withdraw" ? null : i.senderId === user.id ? i.recipientId : i.senderId;
     activity.push({
       id: i.id,
       kind: i.kind,
       direction,
-      other: i.kind === "withdraw" ? "an outside wallet" : await nameOf(otherId ?? ""),
+      other:
+        i.kind === "withdraw"
+          ? (i.recipientName ?? "an outside wallet")
+          : ownVenueMove
+            ? "your Hyperliquid balance"
+            : await nameOf(otherId ?? ""),
       amount: i.amount,
+      stock: stockForToken(i.chain, i.token)?.symbol ?? null,
       status: i.status,
-      network: profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain,
+      network:
+        i.kind === "venue" ? paymentNetwork(i, deps.network) : (profile.chains.find((c) => c.chain === i.chain)?.network ?? i.chain),
       note: i.note,
       txHash: i.txHash,
       explorerUrl: i.explorerUrl,
@@ -111,7 +124,7 @@ export function walletJson(v: WalletView) {
     chains: v.chains.map(({ balance, ...c }) => ({ ...c, balanceUsd: balance === null ? null : usd(balance) })),
     activity: v.activity.map(({ amount, at, expiresAt, ...a }) => ({
       ...a,
-      amountUsd: usd(amount),
+      ...(a.stock ? { amountUsd: null, shares: formatShares(amount) } : { amountUsd: usd(amount) }),
       at: at.toISOString(),
       expiresAt: expiresAt.toISOString(),
     })),

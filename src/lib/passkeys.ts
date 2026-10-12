@@ -16,7 +16,7 @@ import { z } from "zod";
 import type { Db } from "@/lib/db/client";
 import { type Intent, type Passkey, passkeyChallenges, passkeys, signupTokens } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/hash";
-import { intentHash } from "@/lib/intents";
+import { intentHash, splitHash, splitLegs } from "@/lib/intents";
 import { randomToken } from "@/lib/ids";
 
 export type RelyingParty = { rpID: string; origin: string; rpName: string };
@@ -28,7 +28,7 @@ export function relyingParty(appUrl: string): RelyingParty {
 
 const transportsSchema = z.array(z.string());
 
-export async function listPasskeys(db: Db, userId: string): Promise<Passkey[]> {
+async function listPasskeys(db: Db, userId: string): Promise<Passkey[]> {
   return db.select().from(passkeys).where(eq(passkeys.userId, userId));
 }
 
@@ -86,9 +86,9 @@ export async function finishRegistration(
   return true;
 }
 
-/** The challenge is the intent hash, so the signature covers exactly this payment. */
-async function intentChallenge(intent: Intent): Promise<Uint8Array<ArrayBuffer>> {
-  const hex = await intentHash(intent);
+/** The challenge is the intent hash (for a split, the hash over every leg), so the signature covers exactly this payment. */
+async function intentChallenge(db: Db, intent: Intent): Promise<Uint8Array<ArrayBuffer>> {
+  const hex = intent.splitId ? await splitHash(await splitLegs(db, intent.splitId)) : await intentHash(intent);
   return Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
 }
 
@@ -100,7 +100,7 @@ export async function startApproval(
   const keys = await listPasskeys(db, intent.senderId);
   return generateAuthenticationOptions({
     rpID: rp.rpID,
-    challenge: await intentChallenge(intent),
+    challenge: await intentChallenge(db, intent),
     userVerification: "required",
     allowCredentials: keys.map((k) => ({ id: k.id, transports: transportsSchema.parse(JSON.parse(k.transports)) })),
   });
@@ -119,7 +119,7 @@ export async function verifyApproval(
     .where(and(eq(passkeys.id, response.id), eq(passkeys.userId, intent.senderId)))
     .limit(1);
   if (!key) return false;
-  return verifyAssertion(db, rp, key, response, isoBase64URL.fromBuffer(await intentChallenge(intent)));
+  return verifyAssertion(db, rp, key, response, isoBase64URL.fromBuffer(await intentChallenge(db, intent)));
 }
 
 /** Checks one assertion by a stored passkey against the expected challenge, and bumps its counter. */
@@ -143,7 +143,7 @@ async function verifyAssertion(
       transports: transportsSchema.parse(JSON.parse(key.transports)),
     },
   }).catch(() => ({ verified: false as const, authenticationInfo: undefined }));
-  if (!verification.verified || !verification.authenticationInfo) return false;
+  if (!verification.verified) return false;
   await db
     .update(passkeys)
     .set({ counter: verification.authenticationInfo.newCounter })

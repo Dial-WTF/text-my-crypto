@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/db/client";
+import { isUsdAmount, usdToBaseUnits } from "@/lib/money";
+import type { LlmInterpreter } from "@/lib/operator/brain";
 import { type Adapters, errorText } from "@/lib/settlement/types";
 
 export type Check = { ok: boolean; ms: number; detail?: string };
@@ -47,9 +49,28 @@ export async function dependencyChecks(deps: {
     });
   }
   for (const [chain, adapter] of Object.entries(deps.adapters)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Partial<Record> allows an explicit undefined, which Object.entries hides
     if (!adapter) continue;
-    const address = chain === "solana" ? SOLANA_PROBE : EVM_PROBE;
-    checks[`${chain}Balance`] = await timed(async () => `${await adapter.getBalance(address)}`);
+    checks[`${chain}Balance`] = await timed(async () => {
+      // Zcash can only read wallets its service holds, so it probes the treasury.
+      const address = chain === "solana" ? SOLANA_PROBE : chain === "zcash" ? await adapter.treasuryAddress() : EVM_PROBE;
+      return `${await adapter.getBalance(address)}`;
+    });
   }
   return checks;
+}
+
+/** The one sample text the language model check reads. It must come back as "send $5". */
+export const LLM_SAMPLE = "can u pay alex five bucks for lunch";
+
+/** Runs LLM_SAMPLE through the operator's model. It costs a model call, so callers decide how often. */
+export async function llmCheck(llm: LlmInterpreter): Promise<Check> {
+  const start = Date.now();
+  try {
+    const r = await llm(LLM_SAMPLE, []);
+    const ok = r.intent === "send" && !!r.amountUsd && isUsdAmount(r.amountUsd) && usdToBaseUnits(r.amountUsd) === 5_000_000n;
+    return { ok, ms: Date.now() - start, detail: `${r.intent} ${r.counterparty ?? "-"} ${r.amountUsd ?? "-"} "${r.note ?? ""}"` };
+  } catch (err) {
+    return { ok: false, ms: Date.now() - start, detail: errorText(err).slice(0, 200) };
+  }
 }

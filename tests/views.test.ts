@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createUnclaimedUser, createUser } from "@/lib/identity";
 import { claimForSettlement, createIntent, getIntent, issueCode, markEscrowed } from "@/lib/intents";
 import { buildPaymentView } from "@/lib/views/payment";
+import { receiptWords } from "@/lib/web/receipt-card";
 import { createTestDb } from "./helpers/db";
 
 const now = new Date("2026-10-09T12:00:00Z");
@@ -44,6 +45,14 @@ describe("buildPaymentView", () => {
     expect(late.status).toEqual({ label: "Expired", tone: "bad" });
   });
 
+  it("drops names and note from the public page once a payment expires without being approved", async () => {
+    const { db, i } = await setup();
+    const monthLater = new Date(now.getTime() + 30 * 86_400_000);
+    const expired = await buildPaymentView(db, (await getIntent(db, i.id))!, monthLater, publicView);
+    expect(expired).toMatchObject({ from: "@alex", to: "someone new", note: null, approve: null });
+    expect(JSON.stringify(expired, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v))).not.toMatch(/Alex Rivera|0099|pizza/);
+  });
+
   it("shows only @handles and no note on a public receipt once the payment is past pending", async () => {
     const { db, i } = await setup();
     await claimForSettlement(db, i.id, now);
@@ -57,6 +66,22 @@ describe("buildPaymentView", () => {
     for (const status of ["settled", "refunded", "failed", "declined"] as const) {
       const v = await buildPaymentView(db, { ...escrowed, status }, now, publicView);
       expect(v).toMatchObject({ from: "@alex", to: "someone new", note: null });
+    }
+  });
+
+  it("shows only @handles and no note on a share card, even while the payment is pending", async () => {
+    const { db, i } = await setup();
+    const pending = (await getIntent(db, i.id))!;
+    const card = await buildPaymentView(db, pending, now, { network: "testnet", audience: "card" });
+    expect(card).toMatchObject({ from: "@alex", to: "someone new", note: null, status: { label: "Awaiting approval" } });
+
+    const words = receiptWords(card);
+    expect(words).toEqual({
+      title: "$5 USDC payment · Awaiting approval",
+      description: expect.stringMatching(/^@alex → someone new on Solana devnet\. /),
+    });
+    for (const v of [card, words]) {
+      expect(JSON.stringify(v, (_k, x: unknown) => (typeof x === "bigint" ? x.toString() : x))).not.toMatch(/Alex Rivera|0099|pizza/);
     }
   });
 

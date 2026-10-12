@@ -1,5 +1,22 @@
 import { z } from "zod";
-import { RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
+import { DEFAULT_OPERATOR_NUMBER } from "@/lib/operator-line";
+import { ESCROW_CONTRACT_KEYS, RPC_OVERRIDE_KEYS } from "@/lib/settlement/registry";
+
+/**
+ * Settings that are safe to show on a public page: which network and chains run, and the money limits.
+ * Shared by env() and publicEnv() so a page and the operator never disagree on a default.
+ */
+const publicSettings = {
+  /** Which column of the chain registry runs. Mainnet also needs ALLOW_MAINNET=yes. */
+  NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
+  /** Comma-separated chains to settle on. A chain also needs its treasury key and a stablecoin in the registry. */
+  CHAINS: z.string().default("solana,tempo"),
+  SIGNUP_DRIP_USD: z.string().default("25"),
+  PER_TX_CAP_USD: z.string().default("50"),
+  PER_DAY_CAP_USD: z.string().default("200"),
+  PASSKEY_THRESHOLD_USD: z.string().default("20"),
+  ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
+};
 
 const schema = z.object({
   APP_URL: z.url(),
@@ -12,11 +29,8 @@ const schema = z.object({
   DIAL_OPERATOR_NUMBER: z.string().regex(/^\+[1-9]\d{7,14}$/),
   SMS_WEBHOOK_SECRET: z.string().min(32),
   WALLET_ENCRYPTION_KEY: z.string().min(40),
-  /** Which column of the chain registry runs. Mainnet also needs ALLOW_MAINNET=yes. */
-  NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
+  ...publicSettings,
   ALLOW_MAINNET: z.literal("yes").optional(),
-  /** Comma-separated chains to settle on. A chain also needs its treasury key and a stablecoin in the registry. */
-  CHAINS: z.string().default("solana,tempo"),
   /** One key for every network Alchemy serves. RPC_<NETWORK ID> secrets override single networks. */
   ALCHEMY_API_KEY: z
     .string()
@@ -32,11 +46,16 @@ const schema = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
-  SIGNUP_DRIP_USD: z.string().default("25"),
-  PER_TX_CAP_USD: z.string().default("50"),
-  PER_DAY_CAP_USD: z.string().default("200"),
-  PASSKEY_THRESHOLD_USD: z.string().default("20"),
-  ESCROW_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /** The Zcash wallet service (services/zcash-wallet) and its bearer token. Zcash is off when either is unset. */
+  ZCASH_SERVICE_URL: z
+    .url()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  ZCASH_SERVICE_TOKEN: z
+    .string()
+    .min(32)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   /**
    * "on": escrow for people not on Dial yet goes through the chain's escrow program (Solana's dial_escrow),
    * where the money can only go to the recipient on the attestor's word or back to the sender after expiry.
@@ -48,6 +67,14 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v || undefined),
+  /**
+   * Hex key of the address that sends escrow claims on EVM chains with a dial_escrow contract (Arbitrum).
+   * Each deployment has its own, and the contract it names was deployed with it as the attestor.
+   */
+  EVM_ESCROW_ATTESTOR_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
   AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   DIAL_OPERATOR_MODEL: z.string().default("anthropic/claude-haiku-5.5"),
   /** Workers AI model, used whenever the "ai" binding exists. Needs JSON mode (structured output). */
@@ -116,15 +143,38 @@ export function rpcOverrides(source: Record<string, string | undefined> = proces
   return out;
 }
 
+/**
+ * ESCROW_CONTRACT_<NETWORK ID> vars (e.g. ESCROW_CONTRACT_ARBITRUM_SEPOLIA): a deployment's own dial_escrow
+ * contract in place of the registry's. Staging sets one, since a contract only takes claims from the
+ * attestor it was deployed with. Only names the registry knows are read; blanks count as unset.
+ */
+export function escrowContractOverrides(source: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of ESCROW_CONTRACT_KEYS) {
+    const value = source[key]?.trim();
+    if (value) out[key] = z.string().regex(/^0x[0-9a-fA-F]{40}$/).parse(value);
+  }
+  return out;
+}
+
 const publicSchema = z.object({
-  APP_URL: z.url().default("https://text-my-crypto.raspy-thunder-20d2.workers.dev"),
+  APP_URL: z.url().default("https://dialoperator.cc"),
   DIAL_OPERATOR_NUMBER: z
     .string()
     .regex(/^\+[1-9]\d{7,14}$/)
-    .default("+18066071387"),
+    .default(DEFAULT_OPERATOR_NUMBER),
+  ...publicSettings,
+  /** The @handle whose pay link the judge pages show as a demo Blink. Someone who agreed to be shown; unset shows none. */
+  DEMO_HANDLE: z
+    .string()
+    .regex(/^@?[A-Za-z0-9_]{1,32}$/)
+    .transform((h) => h.replace(/^@/, "").toLowerCase())
+    .optional(),
+  /** "yes" adds "by Dial.Work" after the site's name: titles, share previews, the wordmark, cards. Off by default. */
+  SHOW_BYLINE: z.enum(["yes", "no"]).optional(),
 });
 
-/** The few settings public pages need. Never includes secrets. */
+/** The few settings public pages need: URL, phone number, network, chains and limits. Never includes secrets. */
 export function publicEnv(): z.infer<typeof publicSchema> {
   return publicSchema.parse(withoutBlanks(process.env));
 }

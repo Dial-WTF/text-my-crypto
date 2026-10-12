@@ -33,7 +33,7 @@ export function PasskeySignIn({ actions, next }: { actions: PasskeySignInActions
 
   return (
     <Stack gap="sm">
-      <Button full variant="outline" state={state} onClick={onClick}>
+      <Button full variant="outline" state={state} onClick={() => void onClick()}>
         Sign in with a passkey
       </Button>
       {error ? <Notice tone="error">{error}</Notice> : null}

@@ -6,7 +6,8 @@
 //
 // A fresh sender signs up (hi → name), checks its balance, pays the standing receiver $0.50 with the
 // texted code, sends $0.50 to a fresh number that isn't on Dial (escrow), which signs up and claims it
-// with its code, and opens its wallet link. Exits 1 with the transcript on the first wrong or missing reply.
+// with its code. Then the sender texts WALLET and signs in on the web with the texted link and code.
+// Exits 1 with the transcript on the first wrong or missing reply.
 // The two payments spend the sender's whole $1 signup drop (SIGNUP_DRIP_USD on staging).
 import { existsSync, readFileSync } from "node:fs";
 
@@ -198,15 +199,35 @@ async function main() {
     return (await expectReply(newcomer, /Reply (\d{6}) to claim it\./, { timeoutMs: 90_000 }))[1];
   });
 
-  await step("claim code pays the newcomer; the sender is told", async () => {
+  await step("claim code pays the newcomer, who gets the wallet tour; the sender is told", async () => {
     await say(newcomer, claimCode);
-    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. Receipt: https?://`), { timeoutMs: 120_000 });
+    await expectReply(newcomer, new RegExp(`^Claimed ${PAY_RE} from Smoke Sender\\. It's in your Dial wallet now, nothing to set up\\. Receipt: https?://`), {
+      timeoutMs: 120_000,
+    });
+    await expectReply(newcomer, /^Your Dial wallet: .+ Sending is just a text: .+ Guide: https?:\/\/\S+\/how-it-works#got-paid$/, { timeoutMs: 30_000 });
     await expectReply(sender, new RegExp(`claimed the ${PAY_RE} you sent`), { timeoutMs: 30_000 });
   });
 
-  await step("wallet texts a link", async () => {
+  await step("wallet texts the wallet link and a code that signs in", async () => {
     await say(sender, "wallet");
-    await expectReply(sender, /https?:\/\/\S+/);
+    const [, link, handle, code] = await expectReply(
+      sender,
+      /^Your wallet: (https?:\/\/\S+\/@(\w+)\/wallet) Code: (\d{6})\. It works once, for 15 minutes\.$/,
+    );
+    const page = await fetch(link);
+    if (page.status !== 200) throw new SmokeError(`${link} answered ${page.status}`);
+    // The page's plain form, posted the way a browser does: the response sets the cookie and 303s to /wallet.
+    const signIn = await fetch(`${base}/api/wallet/sign-in`, {
+      method: "POST",
+      body: new URLSearchParams({ handle, code }),
+      redirect: "manual",
+    });
+    const cookie = signIn.headers.getSetCookie().find((c) => c.startsWith("dial_session="));
+    if (signIn.status !== 303 || signIn.headers.get("location") !== "/wallet" || !cookie) {
+      throw new SmokeError(`sign-in answered ${signIn.status} → ${signIn.headers.get("location")} with${cookie ? "" : "out"} a session cookie`);
+    }
+    const wallet = await fetch(`${base}/wallet`, { headers: { cookie: cookie.split(";")[0] } });
+    if (!(await wallet.text()).includes("Hi, Smoke Sender")) throw new SmokeError("/wallet with the new cookie isn't signed in");
   });
 
   await step("watchdog answers", async () => {

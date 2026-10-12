@@ -3,9 +3,9 @@ import type { Db } from "@/lib/db/client";
 import { watchdogProblems } from "@/lib/db/schema";
 
 /** At most one alert per check per this window, however long it stays broken or however often it flaps. */
-export const REALERT_MS = 30 * 60_000;
+const REALERT_MS = 30 * 60_000;
 /** Passing runs in a row before an open problem counts as resolved. */
-export const RESOLVE_AFTER = 2;
+const RESOLVE_AFTER = 2;
 
 /**
  * One check's outcome in a run. `ok: null` means it could not be evaluated this run (say the Payphone
@@ -81,7 +81,6 @@ export async function markSent(db: Db, plan: Plan, now: Date): Promise<void> {
   }
 }
 
-/** The one text for a plan, or null when there is nothing to say. Never carries a full phone number. */
 /** Each check in the owner's words: what's wrong, and what it looks like when it's fixed. */
 const WORDS: Record<string, [problem: string, fixed: string]> = {
   app: ["the bot isn't answering at all", "the bot is answering again"],
@@ -97,12 +96,33 @@ const WORDS: Record<string, [problem: string, fixed: string]> = {
 export function checkWords(key: string): [problem: string, fixed: string] {
   const chain = /^(\w+)Balance$/.exec(key)?.[1];
   if (chain) {
-    const name = `${chain[0]?.toUpperCase()}${chain.slice(1)} network`;
+    const name = `${chain.charAt(0).toUpperCase()}${chain.slice(1)} network`;
     return [`${name} not answering`, `${name} is answering again`];
   }
   return WORDS[key] ?? [key, `${key} is fine again`];
 }
 
+/** Whether a key is one of the watchdog's own checks (a chain's balance check counts), as opposed to a stray or reserved row. */
+export function isKnownCheck(key: string, chains: readonly string[]): boolean {
+  const chain = /^(\w+)Balance$/.exec(key)?.[1];
+  return chain ? chains.includes(chain) : Object.hasOwn(WORDS, key);
+}
+
+/**
+ * The row in watchdog_problems that is not a problem: its first_seen_at is when the watchdog last
+ * finished gathering, so the status page can say how long ago it ran. Always resolved, never alerted,
+ * and no check has this key, so planAlerts never touches it.
+ */
+export const LAST_RUN_KEY = "lastRun";
+
+export async function markRun(db: Db, now: Date): Promise<void> {
+  await db
+    .insert(watchdogProblems)
+    .values({ key: LAST_RUN_KEY, detail: "ran", failures: 0, firstSeenAt: now, resolvedAt: now })
+    .onConflictDoUpdate({ target: watchdogProblems.key, set: { firstSeenAt: now, resolvedAt: now } });
+}
+
+/** The one text for a plan, or null when there is nothing to say. Never carries a full phone number. */
 export function alertText(plan: Plan): string | null {
   const parts: string[] = [];
   if (plan.alert.length) {

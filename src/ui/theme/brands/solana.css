@@ -1,0 +1,27 @@
+/* Brand · Solana: Solana's purple-to-green gradient.
+ * The accent family only (see ../README.md): canvas and text stay with the reader's mode. Three blocks:
+ * the first is dark mode and the default, then matrix and light override what differs.
+ * tests/theme-brands.test.ts checks every pair for AA contrast. */
+[data-brand="solana"] {
+  --color-accent: oklch(84% 0.17 165);
+  --color-accent-ink: oklch(20% 0.06 300);
+  --color-focus: oklch(70% 0.2 300);
+  --color-accent-on-card: oklch(50% 0.24 300);
+  --fill-brand: linear-gradient(90deg, oklch(59% 0.25 297), oklch(85% 0.18 163));
+  --fill-hero: linear-gradient(110deg, oklch(66% 0.22 297), oklch(86% 0.18 163));
+  --color-on-hero: oklch(16% 0.03 300);
+}
+
+[data-theme="matrix"] [data-brand="solana"],
+[data-theme="matrix"][data-brand="solana"] {
+  --color-accent-on-card: oklch(84% 0.17 165);
+}
+
+[data-theme="light"] [data-brand="solana"],
+[data-theme="light"][data-brand="solana"] {
+  --color-accent: oklch(50% 0.24 300);
+  --color-accent-ink: oklch(98% 0.01 300);
+  --color-focus: oklch(50% 0.24 300);
+  --color-accent-on-card: oklch(50% 0.24 300);
+  --fill-brand: linear-gradient(90deg, oklch(52% 0.25 297), oklch(62% 0.15 163));
+}

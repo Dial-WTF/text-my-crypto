@@ -1,6 +1,5 @@
 import { sha256Hex } from "@/lib/hash";
 
-export const CODE_RE = /^\d{6}$/;
 export const MAX_CODE_ATTEMPTS = 5;
 
 export function newCode(): string {

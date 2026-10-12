@@ -1,4 +1,4 @@
-import { chainLabel } from "@/lib/chains";
+import { type Chain, chainLabel } from "@/lib/chains";
 import { MAX_CODE_ATTEMPTS } from "@/lib/codes";
 import { saveContact } from "@/lib/contacts";
 import {
@@ -8,7 +8,7 @@ import {
   type LoadedConversation,
   setConversation,
 } from "@/lib/conversations";
-import type { User } from "@/lib/db/schema";
+import type { Intent, User } from "@/lib/db/schema";
 import {
   createSignupToken,
   describe,
@@ -22,14 +22,15 @@ import {
 import {
   cancelUnapproved,
   codeCandidates,
+  expiredEscrowForCode,
   hasAwaitingApproval,
   hasLockedCode,
   latestSettledTo,
   matchCode,
   matchesExpiredCode,
 } from "@/lib/intents";
-import { formatUsd } from "@/lib/money";
 import { cleanDisplayName } from "@/lib/names";
+import { formatAmount } from "@/lib/stocks";
 import { interpret } from "@/lib/operator/brain";
 import { replies } from "@/lib/operator/replies";
 import { ChainDownError } from "@/lib/settlement/types";
@@ -37,14 +38,18 @@ import type { InboundSms } from "@/lib/sms/inbound";
 import { isBurstRepeat, lastOutbound, logInbound, recentHistory } from "@/lib/sms/log";
 import { isOptedOut, optIn, optOut } from "@/lib/sms/optout";
 import { getWallet } from "@/lib/wallets";
-import { completeSignup, enabledChains, offerWaiting } from "./accounts";
+import { balanceLines, completeSignup, enabledChains, expiredClaimReply, offerWaiting, retryEscrowClaims } from "./accounts";
 import { connectAgentReply, revokeAgentsReply } from "./agents";
+import { endSessionsForUser } from "@/lib/web/sessions";
 import { walletLinkReply } from "./web";
 import { type Action, decide, type Session } from "./machine/decide";
 import { classify } from "./machine/classify";
-import { moneyCommandSchema, prepareMoney, prepareWithdraw } from "./money";
+import { moneyCommandSchema, prepareMoney, prepareWithdraw, withdrawCommandSchema } from "./money";
 import { approveIntent, declineLatest, reclaimExpired, releaseEscrow } from "./settle";
+import { prepareVenue, priceReply, venueBalanceReply } from "./hyperliquid";
+import { prepareSplit } from "./split";
 import { latestRecent, needsMention, statusReply } from "./status";
+import { stockPricedReply, stocksReply } from "./stocks";
 import { text } from "./text";
 import type { BotDeps } from "./types";
 
@@ -86,7 +91,7 @@ export async function handleInbound(deps: BotDeps, msg: InboundSms): Promise<str
   return out;
 }
 
-const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "command"]);
+const CONSUMES_QUESTION = new Set<Action["do"]>(["signup", "nevermind", "confirmNew", "pick", "useNumber", "useChain", "command"]);
 
 async function loadSession(
   deps: BotDeps,
@@ -116,14 +121,22 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
   switch (action.do) {
     case "silence":
       return;
-    case "optOut":
+    case "optOut": {
+      // CANCEL is a carrier opt-out word, but it may also mean "cancel my payment": do both, and say so.
+      const cancelled = action.cancelPending && ctx.user ? await cancelUnapproved(deps.db, ctx.user.id, deps.now()) : 0;
       await optOut(deps.db, phone, deps.now());
-      return reply(replies.optedOut(), true);
+      // Opting out also signs them out of the wallet on the web: STOP means stop everything.
+      if (ctx.user) await endSessionsForUser(deps.db, ctx.user.id, deps.now());
+      return reply(replies.optedOut(cancelled > 0), true);
+    }
     case "optIn":
       await optIn(deps.db, phone);
-      return reply(replies.optedIn());
+      await reply(replies.optedIn());
+      // Anything sent or asked of them while they were away was held back; offer it now, as at signup.
+      if (ctx.user && isClaimed(ctx.user)) await offerWaiting(deps, ctx.user);
+      return;
     case "help":
-      return reply(replies.help());
+      return helpReplies(deps, reply);
     case "welcome":
       await setConversation(deps.db, phone, { state: "awaiting_name", payload: {} }, deps.now());
       return reply(await welcome(deps, ctx.user));
@@ -137,10 +150,13 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
       await reply(result.reply);
       return offerWaiting(deps, result.user);
     }
+    default:
+      // Everything else needs a signed-up user: the switch below.
+      break;
   }
 
   const user = ctx.user;
-  if (!user) return reply(replies.welcome());
+  if (!user) return reply(replies.welcome(deps.appUrl));
 
   switch (action.do) {
     case "approve":
@@ -158,9 +174,24 @@ async function act(deps: BotDeps, action: Action, ctx: Ctx): Promise<void> {
     case "pick":
     case "useNumber":
       return reply(await answerPrompt(deps, user, ctx.convo, action));
+    case "useChain":
+      return reply(await answerChain(deps, user, ctx.convo, action.chain));
     case "command":
       return runCommand(deps, user, action.text, reply);
   }
+}
+
+/** HELP: who this is and where to get help, then the commands. */
+async function helpReplies(deps: BotDeps, reply: (b: string) => Promise<void>): Promise<void> {
+  await reply(replies.help(deps.appUrl));
+  await reply(replies.commands());
+}
+
+/** "ethereum" after the operator asked which chain a withdrawal goes out on. */
+async function answerChain(deps: BotDeps, user: User, convo: Conversation | null, chain: Chain): Promise<string> {
+  if (convo?.state !== "awaiting_chain") return replies.chatFallback();
+  const parsed = withdrawCommandSchema.safeParse(JSON.parse(convo.payload.command));
+  return parsed.success ? prepareWithdraw(deps, user, { ...parsed.data, chain }) : replies.chatFallback();
 }
 
 /** Replies to "1", a phone number, or NEW after the operator asked a question. */
@@ -175,7 +206,7 @@ async function answerPrompt(
   if (!parsed.success) return replies.chatFallback();
   if (action.do === "confirmNew") return prepareMoney(deps, user, parsed.data, { allowDuplicate: true });
   if (action.do === "useNumber") {
-    if (convo.state !== "awaiting_duplicate") await saveContact(deps.db, user.id, convo.payload.name, action.phone);
+    if (convo.state === "awaiting_number" || convo.state === "awaiting_choice") await saveContact(deps.db, user.id, convo.payload.name, action.phone);
     return prepareMoney(deps, user, { ...parsed.data, counterparty: action.phone });
   }
   const handle = convo.state === "awaiting_choice" ? convo.payload.handles[action.index] : undefined;
@@ -187,7 +218,7 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
   const cmd = turn.command;
   switch (cmd.kind) {
     case "help":
-      return reply(replies.help());
+      return helpReplies(deps, reply);
     case "chat":
       return reply(await chatReply(deps, user, body, turn.reply));
     case "balance":
@@ -196,6 +227,8 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await receiveReply(deps, user));
     case "reclaim":
       return reply(await reclaimExpired(deps, user.id));
+    case "withdraw_help":
+      return reply(replies.withdrawHowTo(deps.appUrl));
     case "decline":
       return reply(await declineLatest(deps, user.id));
     case "directory": {
@@ -209,8 +242,10 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
     }
     case "whoami":
       return reply(replies.whoami(displayName(user), user.handle ?? ""));
-    case "upgrade":
-      return reply(replies.upgrade(`${deps.appUrl}/s/${await createSignupToken(deps.db, user.phone, deps.now())}`));
+    case "upgrade": {
+      const { token, code } = await createSignupToken(deps.db, user.phone, deps.now());
+      return reply(replies.upgrade(`${deps.appUrl}/s/${token}`, code));
+    }
     case "connect_agent":
       return reply(await connectAgentReply(deps, user, cmd.label));
     case "revoke_agents":
@@ -223,6 +258,18 @@ async function runCommand(deps: BotDeps, user: User, body: string, reply: (b: st
       return reply(await prepareMoney(deps, user, cmd));
     case "withdraw":
       return reply(await prepareWithdraw(deps, user, cmd));
+    case "venue":
+      return reply(await prepareVenue(deps, user, cmd));
+    case "venue_balance":
+      return reply(await venueBalanceReply(deps, user, cmd.venue));
+    case "price":
+      return reply(await priceReply(cmd.coin));
+    case "split":
+      return reply(await prepareSplit(deps, user, cmd));
+    case "stocks":
+      return reply(await stocksReply(deps, user));
+    case "stock_priced":
+      return reply(stockPricedReply(deps, cmd.symbol));
   }
 }
 
@@ -240,11 +287,15 @@ async function chatReply(deps: BotDeps, user: User, body: string, modelReply: st
 
 async function welcome(deps: BotDeps, user: User | null): Promise<string> {
   if (user) {
-    const waiting = await latestSettledTo(deps.db, user.id);
+    const latest = await latestSettledTo(deps.db, user.id);
+    // An escrow that expired isn't waiting for them any more.
+    const expired = latest?.status === "escrowed" && latest.escrowExpiresAt !== null && latest.escrowExpiresAt <= deps.now();
+    const waiting = expired ? null : latest;
     const sender = waiting ? await getUserById(deps.db, waiting.senderId) : null;
-    if (waiting && sender) return replies.welcomeWithMoney(formatUsd(waiting.amount), displayName(sender));
+    // formatAmount reads "$5", "$5 (0.1 TAZ)" or "0.5 TSLA"; the reply adds "USDC" only to plain dollars.
+    if (waiting && sender) return replies.welcomeWithMoney(formatAmount(waiting, deps.network), displayName(sender), deps.appUrl);
   }
-  return replies.welcome();
+  return replies.welcome(deps.appUrl);
 }
 
 /** A 6-digit reply: approve the payment it belongs to, release an escrow, or explain why not. */
@@ -253,6 +304,8 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
   const matches = await matchCode(deps.db, candidates, code);
   if (matches.length === 0) {
     if (await matchesExpiredCode(deps.db, user.id, code, deps.now())) return [replies.codeExpired()];
+    const lateClaim = await expiredEscrowForCode(deps.db, user.id, code, deps.now());
+    if (lateClaim) return [await expiredClaimReply(deps, lateClaim)];
     if (candidates.length === 0) {
       if (await hasLockedCode(deps.db, user.id, deps.now())) return [replies.codeMismatch(0)];
       // A late or repeated code: say what happened to their latest payment instead of a bare "nothing waiting".
@@ -263,20 +316,32 @@ async function approveByCode(deps: BotDeps, user: User, code: string): Promise<s
     return [replies.codeMismatch(Math.max(0, MAX_CODE_ATTEMPTS - used))];
   }
   const notes: string[] = [];
+  const retry: Intent[] = [];
+  // Every leg of a split shares its code: approve the split once.
+  const splits = new Set<string>();
   for (const intent of matches) {
-    const outcome =
-      intent.status === "escrowed" ? await releaseEscrow(deps, intent.id) : await approveIntent(deps, intent.id);
+    if (intent.splitId) {
+      if (splits.has(intent.splitId)) continue;
+      splits.add(intent.splitId);
+    }
+    if (intent.status === "escrowed") {
+      const outcome = await releaseEscrow(deps, intent.id);
+      if (outcome.ok) continue;
+      if (outcome.reason === "not_claimable") notes.push(replies.codeMismatch());
+      else if (outcome.reason === "expired") notes.push(await expiredClaimReply(deps, intent));
+      else retry.push(intent);
+      continue;
+    }
+    const outcome = await approveIntent(deps, intent.id);
     if (!outcome.ok && outcome.reason === "not_claimable") notes.push(replies.codeMismatch());
   }
+  // The claim code was used up when the claim started; a failed one gets a fresh code.
+  if (retry.length > 0) notes.push(await retryEscrowClaims(deps, retry));
   return notes;
 }
 
 async function balanceReply(deps: BotDeps, user: User): Promise<string> {
-  const lines: string[] = [];
-  for (const [chain, adapter] of enabledChains(deps)) {
-    const w = await getWallet(deps.db, user.id, chain);
-    if (w) lines.push(`${formatUsd(await adapter.getBalance(w.address))} USDC on ${chainLabel(chain)}`);
-  }
+  const lines = await balanceLines(deps, user);
   return lines.length ? replies.balance(lines) : replies.chainUnavailable(chainLabel(user.defaultChain));
 }
 

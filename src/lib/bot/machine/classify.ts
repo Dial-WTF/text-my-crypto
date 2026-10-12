@@ -3,7 +3,10 @@ import { normalizePhone } from "@/lib/phone";
 /** Every inbound text becomes exactly one of these, before any account state is considered. */
 export type Input =
   | { kind: "empty" }
-  | { kind: "stop" }
+  /** A phone's tapback or emoji reaction to one of the operator's texts, sent over SMS as text. Never answered. */
+  | { kind: "reaction" }
+  /** `cancel`: the word was CANCEL, which may also mean "cancel my payment". */
+  | { kind: "stop"; cancel?: true }
   | { kind: "start" }
   | { kind: "help" }
   | { kind: "nevermind" }
@@ -28,13 +31,19 @@ const CODE = /^[\s-]*(\d[\s-]*){6}$/;
 const STATUS =
   /^(?:status|update|any update|any news|\?{2,}|what happened|whats happening|what's happening|is it done|is it sent|did it (?:work|go through|go|send|land)|did that (?:work|go through|go|send)|did my (?:payment|money|code|text) (?:work|go through|go|send|land)|did you get (?:it|that|my code|the code|my text)|where(?:'s| is) my (?:money|payment))\??$/i;
 const THANKS = /^(?:thanks|thank you|thx|ty|tysm|thanks!|cheers|appreciate it|🙏)$/iu;
+// Reactions phones send as SMS when the other side isn't on the same chat app: iMessage tapbacks
+// ('Loved “…”', 'Removed a heart from “…”', iOS 18 'Reacted 😂 to “…”') and Android ('Reacted 👍 to "…"').
+// The quoted text is one of the operator's own messages, so it is never a command.
+const REACTION =
+  /^(?:(?:loved|liked|disliked|laughed at|emphasi[sz]ed|questioned)|reacted \S{1,12} to|removed (?:an? )?(?:heart|like|dislike|laugh|exclamation|question mark|\S{1,12}) from) (?:[“"‘'].*|an? (?:image|photo|attachment|video|movie|sticker|gif|audio message))$/isu;
 const PICK = /^[1-5]$/;
 const PHONE_SHAPED = /^[+\d\s().-]{7,}$/;
 
 export function classify(raw: string): Input {
   const text = raw.trim().replace(/[.!]+$/, "");
   if (!text) return { kind: "empty" };
-  if (STOP.test(text)) return { kind: "stop" };
+  if (REACTION.test(text)) return { kind: "reaction" };
+  if (STOP.test(text)) return /^cancel$/i.test(text) ? { kind: "stop", cancel: true } : { kind: "stop" };
   if (START.test(text)) return { kind: "start" };
   if (HELP.test(text)) return { kind: "help" };
   if (NEVERMIND.test(text)) return { kind: "nevermind" };

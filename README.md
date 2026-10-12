@@ -2,9 +2,8 @@
 
 The Dial operator does agentic peer-to-peer crypto payments. People use it by SMS: text **+1 806 607 1387** and send, request, invoice, receive and withdraw stablecoins with plain sentences, from any phone, with no app and no wallet address. Agents use the same operator through an MCP server, and a person still approves every payment from a text. It runs on testnets only. Powered by [Dial.Work](https://dial.work).
 
-- Live site: https://text-my-crypto.raspy-thunder-20d2.workers.dev
-- Public ledger: https://text-my-crypto.raspy-thunder-20d2.workers.dev/ledger
-- Demo video: TODO (link to be added)
+- Live site: https://dialoperator.cc
+- Public ledger: https://dialoperator.cc/ledger
 
 ```
 you: hi
@@ -24,38 +23,40 @@ op:  Sent $10 to jeremy. They have 7 days to claim it.
 
 1. Text `hi` to **+1 806 607 1387**.
 2. Reply with a name. You get a handle (for example `@alex`) and a small amount of test USDC to try it with. It is play money.
-3. Text `send @someone $1`, using a friend's handle, or `send $1 to <their phone number>`. Add `on tempo`, `on ethereum` or `on robinhood` to pick a chain; Solana is the default.
+3. Text `send @someone $1`, using a friend's handle, or `send $1 to <their phone number>`. Add `on tempo`, `on base`, `on ethereum`, `on arbitrum`, `on hyperliquid` or `on robinhood` to pick a chain; Solana is the default.
 4. The operator replies with a 6-digit code. Text the code back to approve.
-5. You get `Sending…` and then a receipt with the explorer link. The payment also shows on [/ledger](https://text-my-crypto.raspy-thunder-20d2.workers.dev/ledger).
+5. You get `Sending…` and then a receipt with the explorer link. The payment also shows on [/ledger](https://dialoperator.cc/ledger).
 
 Paying a number that isn't on Dial puts the money in escrow (the Solana escrow program below). The recipient claims it with a code texted to their phone, or you text `reclaim` after 7 days.
 
-Other commands: `balance`, `411 <name>`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `receive`, `withdraw $10 to <address>`, `wallet`, `upgrade` (add a passkey), `connect agent`, `revoke agents`, `status`, `help`, `STOP`.
+Other commands: `balance`, `split $30 between @alex @sam on tempo`, `411 <name>`, `request $25 from adam for pizza`, `invoice sam $200 for logo design`, `receive`, `withdraw $10 to <address>`, `wallet`, `upgrade` (add a passkey), `connect agent`, `revoke agents`, `status`, `help`, `STOP`.
 
 ### Without a phone
 
-- **Pay page:** every handle has one, Zelle style: [/@alex?amount=5&note=pizza](https://text-my-crypto.raspy-thunder-20d2.workers.dev/@alex?amount=5&note=pizza). Agents read the same page as JSON at [/@alex.json](https://text-my-crypto.raspy-thunder-20d2.workers.dev/@alex.json).
-- **Ledger:** [/ledger](https://text-my-crypto.raspy-thunder-20d2.workers.dev/ledger) lists every settled payment linked to its transaction. [/ledger.json](https://text-my-crypto.raspy-thunder-20d2.workers.dev/ledger.json) has the payments, stats, treasury addresses and escrow program.
-- **For LLMs:** [/llms.txt](https://text-my-crypto.raspy-thunder-20d2.workers.dev/llms.txt) describes the service, the MCP tools and the chains.
+- **Pay page:** every handle has one, Zelle style: [/@alex?amount=5&note=pizza](https://dialoperator.cc/@alex?amount=5&note=pizza). Agents read the same page as JSON at [/@alex.json](https://dialoperator.cc/@alex.json).
+- **Ledger:** [/ledger](https://dialoperator.cc/ledger) lists every settled payment linked to its transaction. [/ledger.json](https://dialoperator.cc/ledger.json) has the payments, stats, treasury addresses and escrow program.
+- **For LLMs:** [/llms.txt](https://dialoperator.cc/llms.txt) describes the service, the MCP tools and the chains.
 - **Connect an agent:** see [For agents](#for-agents). Getting a key needs one text from a Dial account.
 
 ## Chains
 
-Production settles on the chains listed in `CHAINS` in `wrangler.jsonc`: `solana,tempo,ethereum,robinhood`. Network details come from `src/lib/settlement/registry.ts`; treasury addresses come from [/ledger.json](https://text-my-crypto.raspy-thunder-20d2.workers.dev/ledger.json). "Live" means payments from texts have settled there and are on the ledger. "Enabled" means it is switched on in production.
+Production settles on the chains in `CHAINS` in `wrangler.jsonc`: `solana,tempo,ethereum,robinhood,base,arbitrum,hyperevm`, all testnets. Network details come from `src/lib/settlement/registry.ts`; treasury addresses are in [/ledger.json](https://dialoperator.cc/ledger.json). "Live" means payments from texts have settled there and are on the [ledger](https://dialoperator.cc/ledger). "Ready" means it is switched on in production and waiting for its first settled payment. Each chain has its own page, for example [/chains/solana](https://dialoperator.cc/chains/solana).
 
 | Chain | Network | Status | Treasury | Stablecoin |
 | --- | --- | --- | --- | --- |
 | Solana | Solana devnet | Live | [`DfY9ax…GxW5`](https://explorer.solana.com/address/DfY9axb2gcxAz4EHCgx9NJpFpDjH22VTFRdPc7dpGxw5?cluster=devnet) | Circle test USDC [`4zMMC9…DncDU`](https://explorer.solana.com/address/4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU?cluster=devnet) |
-| Tempo | Tempo Moderato | Enabled | [`0x01cd…C201`](https://explore.testnet.tempo.xyz/address/0x01cd379b7ae08c313DC27e565D36F11c8183C201) | AlphaUSD [`0x20c0…0001`](https://explore.testnet.tempo.xyz/address/0x20c0000000000000000000000000000000000001) |
-| Ethereum | Ethereum Sepolia | Enabled | [`0xcc55…2B6f`](https://sepolia.etherscan.io/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Circle test USDC [`0x1c7D…7238`](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
-| Robinhood Chain | Robinhood Chain testnet | Enabled | [`0xcc55…2B6f`](https://explorer.testnet.chain.robinhood.com/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Dial Test USD [`0x2195…1e2e`](https://explorer.testnet.chain.robinhood.com/address/0x2195e3E09eab088c90B4461B92D06A74d30c1e2e) |
-| Zcash | | In progress | | |
+| Tempo | Tempo Moderato | Ready | [`0x01cd…C201`](https://explore.testnet.tempo.xyz/address/0x01cd379b7ae08c313DC27e565D36F11c8183C201) | AlphaUSD [`0x20c0…0001`](https://explore.testnet.tempo.xyz/address/0x20c0000000000000000000000000000000000001) |
+| Base | Base Sepolia | Ready | [`0xcc55…2B6f`](https://sepolia.basescan.org/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Circle test USDC [`0x036C…CF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
+| Ethereum | Ethereum Sepolia | Ready | [`0xcc55…2B6f`](https://sepolia.etherscan.io/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Circle test USDC [`0x1c7D…7238`](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
+| Arbitrum | Arbitrum Sepolia | Ready | [`0xcc55…2B6f`](https://sepolia.arbiscan.io/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Circle test USDC [`0x75fa…AA4d`](https://sepolia.arbiscan.io/address/0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d) |
+| Hyperliquid | HyperEVM testnet | Ready | `0xcc55…2B6f` | test USDC `0x2B33…D8Ab` |
+| Robinhood Chain | Robinhood Chain testnet | Ready | [`0xcc55…2B6f`](https://explorer.testnet.chain.robinhood.com/address/0xcc5583a18a9908b80a20876cd8877048ae792B6f) | Dial Test USD [`0x2195…1e2e`](https://explorer.testnet.chain.robinhood.com/address/0x2195e3E09eab088c90B4461B92D06A74d30c1e2e) |
+| Zcash | Zcash testnet | Off | | shielded TAZ |
 
-- **Solana:** SPL token transfers with the payment id in a memo. Escrow for people not on Dial goes through the `dial_escrow` program.
-- **Tempo:** TIP-20 transfers with the payment id in the 32-byte memo. The treasury co-signs as fee payer, so users hold no gas.
-- **Ethereum and Robinhood Chain:** EIP-3009 `transferWithAuthorization`. The user's wallet signs, the treasury submits and pays gas. Robinhood Chain testnet has no Circle test USDC, so Dial deployed [Dial Test USD](contracts/src/DialTestUSD.sol), an ERC-20 with the same EIP-3009 interface. Testnet only; the deployer can mint.
-- **Base Sepolia, Arbitrum Sepolia and HyperEVM testnet** are in the registry with the same EVM adapter but are not in `CHAINS`.
-- **Zcash** (shielded sends, payment id in the encrypted memo) needs its own wallet service and has no network in the registry yet.
+- **Solana:** SPL token transfers with the payment id in a memo. Escrow for people not on Dial goes through the `dial_escrow` program. Pay links are Solana Actions, so a `/@handle` link unfurls as a Blink.
+- **Tempo:** TIP-20 transfers with the payment id in the 32-byte memo. The treasury co-signs as fee payer, so users hold no gas. `split` pays every share in one atomic Tempo transaction.
+- **Base, Ethereum, Arbitrum, HyperEVM and Robinhood Chain:** EIP-3009 `transferWithAuthorization`. The user's wallet signs, the treasury submits and pays gas. HyperEVM testnet has no working public explorer today, so its addresses aren't linked. Robinhood Chain testnet has no Circle test USDC, so Dial deployed [Dial Test USD](contracts/src/DialTestUSD.sol), an ERC-20 with the same EIP-3009 interface. Testnet only; the deployer can mint.
+- **Zcash:** shielded sends with the payment id in the encrypted memo, through a small Rust wallet service (`services/zcash-wallet`). It stays off until one real testnet round trip has gone through; see [docs/zcash.md](docs/zcash.md).
 
 ### Solana escrow program
 
@@ -90,7 +91,7 @@ flowchart LR
   adapters["Settlement adapters"]
   sol["Solana devnet<br/>+ dial_escrow program"]
   tempo["Tempo Moderato"]
-  evm["Ethereum Sepolia,<br/>Robinhood Chain testnet"]
+  evm["Base, Ethereum, Arbitrum,<br/>HyperEVM, Robinhood Chain"]
 
   phone --> payphone
   payphone -- webhook --> webhook
@@ -121,8 +122,8 @@ One Cloudflare Worker serves everything: Next.js 16 built with OpenNext, plus a 
 Any MCP client can pay, request from or invoice anyone with a phone number. The person still approves every payment from a text.
 
 1. Text `connect agent` to **+1 806 607 1387** from a Dial account (text `hi` first if you don't have one). You get a one-time link and code. Open the link, enter the code, and the page shows the agent key once.
-2. Point your MCP client at `https://text-my-crypto.raspy-thunder-20d2.workers.dev/api/mcp` (Streamable HTTP) with `Authorization: Bearer <key>`.
-3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `request_payment`, `create_invoice`, `withdraw`, `get_payment`, `list_payments`, `get_pay_link`, `get_wallet`.
+2. Point your MCP client at `https://dialoperator.cc/api/mcp` (Streamable HTTP) with `Authorization: Bearer <key>`.
+3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `split_payment`, `request_payment`, `create_invoice`, `withdraw`, `get_payment`, `list_payments`, `get_pay_link`, `get_wallet`, `get_price`, `get_stocks`, `get_hyperliquid_balance`.
 
 Money tools create a pending payment, text the payer a code, and return `{ intentId, status: "awaiting_approval", approveUrl }`. The agent polls `get_payment`. `GET /api/wallet` with the same key returns balances and deposit addresses, read-only. Text `revoke agents` to turn off every key.
 
@@ -132,7 +133,7 @@ Install the skill that teaches an agent all of this:
 npx skills add Dial-WTF/text-my-crypto
 ```
 
-More: [/llms.txt](https://text-my-crypto.raspy-thunder-20d2.workers.dev/llms.txt), [skills/dial-operator/](skills/dial-operator/SKILL.md). Source: `src/app/api/mcp/route.ts`, `src/lib/agents/`.
+More: [/llms.txt](https://dialoperator.cc/llms.txt), [skills/dial-operator/](skills/dial-operator/SKILL.md). Source: `src/app/api/mcp/route.ts`, `src/lib/agents/`.
 
 ## Run it locally
 
@@ -150,19 +151,25 @@ node --env-file=.env.local scripts/sim.mjs +15550001111 "hi"
 
 `gen-secrets.mjs` prints the new treasury addresses; fund them from the testnet faucets. Local runs use `SMS_MODE=log`, so replies are printed and never sent. `pnpm dev` handles texts inline because `next dev` has no queue consumer. `pnpm run preview` runs the real worker with a local queue, so it exercises the webhook, queue and consumer path. Use only fictional 555 numbers in local runs and tests.
 
-Checks:
+### Checks
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test                    # in-memory SMS stub and SQLite
+pnpm lint                    # ESLint with typescript-eslint's type-checked rules
+pnpm typecheck               # tsc; run `pnpm cf-typegen` once in a fresh checkout
+pnpm deadcode                # knip: unused files, exports and dependencies
+pnpm test:coverage           # every test, plus a 95% branch-coverage floor on the money paths
 SOLANA_INT=1 pnpm test       # also runs settlement tests against Solana devnet
 pnpm smoke --env local       # the staging smoke test, against pnpm dev
+pnpm rust:check              # clippy and cargo audit on the Rust code; slower, not part of ship
 ```
 
-The escrow program tests run the built program in LiteSVM: `pnpm exec vitest run tests/settlement/escrow-program.test.ts`.
+The suite includes fast-check property tests (`tests/property/`) and a migration check: every `drizzle/*.sql`, applied in order to an empty database, has to produce exactly `src/lib/db/schema.ts`. The escrow program tests run the built program in LiteSVM: `pnpm exec vitest run tests/settlement/escrow-program.test.ts`.
 
-Deploy with `pnpm ship` (the gate described above; `pnpm ship --staging-only` stops after staging). Runtime secrets go to the Worker with `pnpm secrets:push`. `pnpm run deploy` deploys production directly and skips the gate.
+### Deploy
+
+`pnpm ship` is the gate: the checks above, one build, then staging (D1 migrations, deploy, a smoke test that drives the real webhook with fictional 555 numbers), and production only if the smoke test passes. `pnpm ship --staging-only` stops after staging. Runtime secrets go to the Worker with `pnpm secrets:push`. `pnpm run deploy` deploys production directly and skips the gate.
+
+Production answers on https://dialoperator.cc (a Worker custom domain, and `APP_URL`). GET and HEAD requests to `www.dialoperator.cc`, and to pages on the old `text-my-crypto.raspy-thunder-20d2.workers.dev` address, get a 301 to the same path there (`src/lib/canonical-host.ts`). Anything under `/api/` on workers.dev is served where it is, so Payphone's inbound webhook, the MCP server and the Actions API keep the address they were given. Staging is its own Worker (`text-my-crypto-staging`) with `SMS_MODE=log`, so it never sends a real text.
 
 ## Repo map
 
@@ -172,14 +179,15 @@ Deploy with `pnpm ship` (the gate described above; `pnpm ship --staging-only` st
 | `src/lib` | The operator: `bot/` (state machines and router), `operator/` (grammar, replies, language model), `settlement/` (chain adapters and registry), `sms/` (webhook, queue, Payphone), `agents/` (MCP server and keys), `watchdog/`, `db/` |
 | `src/ui` | A small themeable UI kit: tokens, themes, primitives, patterns |
 | `solana` | The `dial_escrow` Anchor program and its built artifacts |
-| `contracts` | `DialTestUSD.sol`, the EIP-3009 test dollar for Robinhood Chain testnet |
+| `contracts` | `DialTestUSD.sol`, the EIP-3009 test dollar for Robinhood Chain testnet, and `arbitrum-escrow`, a Stylus escrow contract |
+| `services` | `zcash-wallet`, the Rust wallet service for shielded Zcash |
 | `skills` | `dial-operator`, the agent skill installed by `npx skills add` |
 | `docs` | State machines, roadmap, task list |
 | `tests` | Vitest suites, mirroring `src/lib` |
 | `scripts` | Secrets, simulator, smoke test, deploy gate, chain status |
 | `drizzle` | D1 migrations |
-| `worker.ts` | Worker entry: HTTP, queue consumer, cron |
+| `worker.ts` | Worker entry: canonical-host redirects, HTTP, queue consumer, cron |
 
 ## License
 
-TODO: license to be chosen by the owner.
+AGPL-3.0 ([LICENSE](LICENSE)), with a commercial license available from Dial.Work. See [LICENSING.md](LICENSING.md).

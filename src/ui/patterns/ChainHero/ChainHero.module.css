@@ -1,0 +1,93 @@
+/* A full-width band in the brand's hero fill. Everything on it reads --color-on-hero, which the contrast
+ * test checks against every part of the fill; the body below stays on the reader's canvas. */
+.hero {
+  min-width: 0;
+  padding: var(--space-xl) var(--gutter);
+  background-color: var(--color-canvas);
+  background-image: var(--fill-hero);
+  color: var(--color-on-hero);
+  /* A matrix glow belongs on the canvas, not on a solid fill. */
+  text-shadow: none;
+}
+
+.inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "logo heading"
+    "logo meta"
+    "lede lede";
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  min-width: 0;
+}
+
+.logo {
+  grid-area: logo;
+  display: inline-flex;
+  font-size: clamp(4rem, 13vw, 9rem);
+  line-height: 0;
+}
+
+.heading {
+  grid-area: heading;
+  align-self: end;
+  margin: 0;
+  font: 800 var(--text-3xl) / 0.95 var(--font-display);
+  text-transform: var(--display-case);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  grid-area: meta;
+  align-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* The badge is a chip of the canvas in the brand's accent, so it reads the same on any hero fill. */
+.status {
+  padding: var(--space-3xs) var(--space-2xs);
+  border: var(--rule-thin) solid var(--color-canvas);
+  background: var(--color-canvas);
+  color: var(--color-accent);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.live {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.network {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lede {
+  grid-area: lede;
+  max-width: var(--measure);
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-lg);
+}
+
+@media (min-width: 48rem) {
+  .inner {
+    column-gap: var(--space-lg);
+  }
+
+  .lede {
+    grid-column: 2;
+    margin-top: 0;
+  }
+}

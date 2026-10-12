@@ -5,9 +5,18 @@ import { Mono } from "@/ui/primitives/Mono/Mono";
 import { QrCode } from "@/ui/primitives/QrCode/QrCode";
 import { Receipt, ReceiptLine, ReceiptRule } from "@/ui/primitives/Receipt/Receipt";
 import { Stack } from "@/ui/primitives/Stack/Stack";
+import { SmsConsent } from "../SmsConsent/SmsConsent";
 import styles from "./PayCard.module.css";
 
-export type PayCardChain = { network: string; address: string; uri: string; explorer: string };
+/** `action`: Solana only, the pay link as a Solana Action (Blink): its solana-action: URI and Dial's checkout page for it. */
+type PayCardChain = {
+  network: string;
+  address: string;
+  uri: string;
+  explorer: string | null;
+  assetNote: string | null;
+  action?: { uri: string; blink: string };
+};
 
 type PayCardProps = {
   handle: string;
@@ -47,12 +56,14 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
           Text “{byText.body}”
         </ButtonLink>
         <Fine>Opens your messages addressed to the Dial operator. You confirm with a code it texts back.</Fine>
+        <SmsConsent on="card" />
       </Stack>
 
       {chains.map((c) => (
         <Stack key={c.network} gap="sm">
           <ReceiptRule />
           <Fine caps>Pay from a wallet · {c.network}</Fine>
+          {c.assetNote ? <Fine>{c.assetNote}</Fine> : null}
           <QrCode value={c.uri} label={`QR code to pay @${handle} on ${c.network}`} caption="Scan with a wallet app" />
           <ReceiptLine label="Address">
             <Mono value={c.address} href={c.explorer} full />
@@ -60,6 +71,21 @@ export function PayCard({ handle, name, amountUsd, note, byText, chains, jsonUrl
           <ButtonLink href={c.uri} variant="outline" full>
             Open in a wallet app
           </ButtonLink>
+          {c.action ? (
+            <>
+              <ButtonLink href={c.action.blink} variant="outline" full>
+                Pay with a Solana wallet
+              </ButtonLink>
+              <Fine>
+                Pick an amount and approve it in Phantom, Solflare or Backpack in this browser. Wallets that read Solana
+                Actions open{" "}
+                <a className={styles.link} href={c.action.uri}>
+                  this link
+                </a>{" "}
+                directly.
+              </Fine>
+            </>
+          ) : null}
         </Stack>
       ))}
 

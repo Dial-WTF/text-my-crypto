@@ -6,13 +6,18 @@
 //   pnpm ship                 # everything
 //   pnpm ship --staging-only  # stop after the staging smoke test
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 
 const stagingOnly = process.argv.includes("--staging-only");
 
 const steps = [
-  ["lint", "pnpm", ["lint"]],
+  // Fast gates first: types, type-aware lint, dead code, then every test with the money-path coverage floors
+  // (property tests and the migration check included). `pnpm rust:check` is separate: it's slower.
+  // Typecheck runs `next typegen` first: type-aware lint needs the route types it writes for new pages.
   ["typecheck", "pnpm", ["typecheck"]],
-  ["test", "pnpm", ["test"]],
+  ["lint", "pnpm", ["lint"]],
+  ["deadcode", "pnpm", ["deadcode"]],
+  ["test + coverage floors", "pnpm", ["test:coverage"]],
   ["build", "pnpm", ["exec", "opennextjs-cloudflare", "build"]],
   ["scrub baked env", "node", ["scripts/scrub-build-env.mjs"]],
   ["staging: migrate D1", "pnpm", ["exec", "wrangler", "d1", "migrations", "apply", "text-my-crypto-staging", "--env", "staging", "--remote"]],
@@ -25,6 +30,10 @@ const steps = [
         ["production: deploy", "pnpm", ["exec", "opennextjs-cloudflare", "deploy"]],
       ]),
 ];
+
+// The last build's output goes first. worker.ts imports .open-next/worker.js, so a leftover bundle joins the
+// type program and lint reads everything through it as `any`. The build below makes a fresh one anyway.
+rmSync(".open-next", { recursive: true, force: true });
 
 for (const [name, cmd, args] of steps) {
   console.log(`\n▶ ${name}`);

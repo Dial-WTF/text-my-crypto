@@ -3,21 +3,31 @@ import {
   bytesToHex,
   createPublicClient,
   createWalletClient,
+  encodeAbiParameters,
   type Hex,
-  hexToBytes,
+  hexToBigInt,
   http,
   isAddress,
   keccak256,
   parseAbi,
   parseSignature,
   stringToHex,
+  TransactionReceiptNotFoundError,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Chain } from "@/lib/chains";
-import type { EvmNetwork } from "./registry";
+import { STOCK_ONCHAIN_SCALE } from "@/lib/stocks";
+import { createEvmEscrow, viemEscrowRpc } from "./evm-escrow";
+import type { EvmNetwork, StockToken } from "./registry";
 import { withRateLimitRetry as rl } from "./retry";
+import { type Asset, type AssetTransfers, type VenueTransfer, VenueAccountMissingError } from "./capabilities";
+import { spotUsdc } from "./hypercore";
 import type { SettlementAdapter, SettleResult } from "./types";
 import { TransferUnconfirmedError } from "./unconfirmed";
+
+/** How long a signed transfer authorization stays valid. After it (plus a margin), a transfer not mined never will be. */
+const AUTHORIZATION_TTL_S = 3600;
+const NEVER_LANDS_AFTER_MS = AUTHORIZATION_TTL_S * 1000 + 10 * 60_000;
 
 const ERC20_3009 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -27,16 +37,43 @@ const ERC20_3009 = parseAbi([
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
 ]);
 
-const AUTH_TYPES = {
-  TransferWithAuthorization: [
-    { name: "from", type: "address" },
-    { name: "to", type: "address" },
+/** A stock token: EIP-2612 permit plus the EIP-5267 domain, so the treasury can move it for a wallet with no gas. */
+const STOCK_ABI = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function nonces(address) view returns (uint256)",
+  "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
+  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
+  "function transferFrom(address from, address to, uint256 value) returns (bool)",
+]);
+
+const PERMIT_TYPES = {
+  Permit: [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
     { name: "value", type: "uint256" },
-    { name: "validAfter", type: "uint256" },
-    { name: "validBefore", type: "uint256" },
-    { name: "nonce", type: "bytes32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
   ],
 } as const;
+
+const AUTH_FIELDS = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" },
+] as const;
+
+/** Transfer: anyone may submit it. Receive: only `to` may, which is how a contract like DialCoreDeposit pulls. */
+const AUTH_TYPES = { TransferWithAuthorization: AUTH_FIELDS, ReceiveWithAuthorization: AUTH_FIELDS } as const;
+
+/** HyperEVM's read precompile for "does this address exist on HyperCore?" (coreUserExists, hyper-evm-lib PrecompileLib). */
+export const CORE_USER_EXISTS: Address = "0x0000000000000000000000000000000000000810";
+
+const CORE_DEPOSIT = parseAbi([
+  "function deposit(address from, address recipient, uint256 amount, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+]);
 
 /** The EIP-3009 nonce ties every on-chain transfer to its payment: keccak256 of the intent id. */
 export function authorizationNonce(memo: string): Hex {
@@ -54,16 +91,63 @@ export async function signTransferAuthorization(args: {
   value: bigint;
   memo: string;
   validBefore: bigint;
+  /** Default "TransferWithAuthorization". */
+  primaryType?: keyof typeof AUTH_TYPES;
 }): Promise<{ from: Address; nonce: Hex; signature: Hex }> {
   const account = privateKeyToAccount(bytesToHex(args.secret));
   const nonce = authorizationNonce(args.memo);
+  const primaryType = args.primaryType ?? "TransferWithAuthorization";
   const signature = await account.signTypedData({
     domain: { name: args.domainName, version: args.domainVersion, chainId: args.chainId, verifyingContract: args.token },
     types: AUTH_TYPES,
-    primaryType: "TransferWithAuthorization",
+    primaryType,
     message: { from: account.address, to: args.to, value: args.value, validAfter: 0n, validBefore: args.validBefore, nonce },
   });
   return { from: account.address, nonce, signature };
+}
+
+/** Signs an EIP-2612 permit letting `spender` move `value` of the token. Pure: no network. */
+export async function signPermit(args: {
+  secret: Uint8Array<ArrayBuffer>;
+  token: Address;
+  chainId: number;
+  domainName: string;
+  domainVersion: string;
+  spender: Address;
+  value: bigint;
+  nonce: bigint;
+  deadline: bigint;
+}): Promise<{ owner: Address; signature: Hex }> {
+  const account = privateKeyToAccount(bytesToHex(args.secret));
+  const signature = await account.signTypedData({
+    domain: { name: args.domainName, version: args.domainVersion, chainId: args.chainId, verifyingContract: args.token },
+    types: PERMIT_TYPES,
+    primaryType: "Permit",
+    message: { owner: account.address, spender: args.spender, value: args.value, nonce: args.nonce, deadline: args.deadline },
+  });
+  return { owner: account.address, signature };
+}
+
+/**
+ * Waits until the RPC's latest block has reached `block`. Base hands back a receipt from a pre-confirmed block
+ * before every node behind the RPC has it, so a balance read straight afterwards still shows the old balance
+ * (a fresh drop reads as $0). Gives up after `timeoutMs`: the transfer is confirmed either way.
+ */
+export async function waitForHead(
+  head: () => Promise<bigint>,
+  block: bigint,
+  { timeoutMs = 10_000, intervalMs = 500, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) } = {},
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if ((await head()) >= block) return true;
+    } catch {
+      // A failed head check only means we wait a little longer.
+    }
+    if (Date.now() >= deadline) return false;
+    await sleep(intervalMs);
+  }
 }
 
 /**
@@ -71,7 +155,13 @@ export async function signTransferAuthorization(args: {
  * treasury submits it. Escrow wallets work the same way, so no address ever needs native tokens.
  */
 export function createEvmAdapter(
-  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx"> & { chain: Chain; treasuryKey: Hex; rpcUrl?: string },
+  cfg: Pick<EvmNetwork, "viem" | "token" | "explorerTx" | "venue" | "stocks"> & {
+    chain: Chain;
+    treasuryKey: Hex;
+    rpcUrl?: string;
+    /** The dial_escrow contract and the attestor key that sends claims. Absent: escrow stays server-held. */
+    escrow?: { contract: Address; attestorKey: Hex };
+  },
 ): SettlementAdapter {
   const token = cfg.token;
   if (!token) throw new Error(`${cfg.chain} has no stablecoin configured`);
@@ -96,12 +186,139 @@ export function createEvmAdapter(
       throw unconfirmedIsTyped ? new TransferUnconfirmedError(cfg.chain, hash, e) : e;
     }
     if (receipt.status !== "success") throw new Error(`${cfg.chain} tx ${hash} reverted`);
+    await waitForHead(() => publicClient.getBlockNumber({ cacheTime: 0 }), receipt.blockNumber);
     return { txHash: hash, explorerUrl: cfg.explorerTx(hash) };
   }
 
+  /** The user signs, the treasury submits, DialCoreDeposit pulls the USDC and deposits it on HyperCore: one transaction. */
+  const hyperCoreVenue = (name: string, infoUrl: string, contract: Address): VenueTransfer => {
+    const accepts = async (address: string): Promise<boolean> => {
+      const { data } = await rl(() =>
+        publicClient.call({ to: CORE_USER_EXISTS, data: encodeAbiParameters([{ type: "address" }], [address as Address]) }),
+      );
+      return data !== undefined && data !== "0x" && hexToBigInt(data) !== 0n;
+    };
+    return {
+      name,
+      balance: (address) => spotUsdc(infoUrl, address),
+      accepts,
+      async deposit({ fromSecret, to, amount, memo }) {
+        // Checked again here, right before money moves: HyperCore keeps deposits to accounts it hasn't seen.
+        if (!(await accepts(to))) throw new VenueAccountMissingError(to);
+        const { name, version } = await tokenDomain();
+        const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const { from, nonce, signature } = await signTransferAuthorization({
+          secret: fromSecret,
+          token,
+          chainId: cfg.viem.id,
+          domainName: name,
+          domainVersion: version,
+          to: contract,
+          value: amount,
+          memo,
+          validBefore,
+          primaryType: "ReceiveWithAuthorization",
+        });
+        const { r, s, v, yParity } = parseSignature(signature);
+        const hash = await rl(() =>
+          wallet.writeContract({
+            address: contract,
+            abi: CORE_DEPOSIT,
+            functionName: "deposit",
+            args: [from, to as Address, amount, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
+          }),
+        );
+        // Sent: a missing receipt from here on doesn't mean nothing moved.
+        return confirm(hash, { unconfirmedIsTyped: true });
+      },
+    };
+  };
+  const venue = cfg.venue;
+
+  /**
+   * A stock token, moved like the stablecoin without the sender holding gas: the wallet signs a permit for
+   * the treasury, which submits it and then transferFrom. The payment id rides on the transferFrom calldata.
+   */
+  function stockAsset(stock: StockToken): Pick<SettlementAdapter, "getBalance" | "settle"> {
+    const address = stock.address;
+    let stockDomain: Promise<{ name: string; version: string }> | undefined;
+    const domainOf = () =>
+      (stockDomain ??= rl(() => publicClient.readContract({ address, abi: STOCK_ABI, functionName: "eip712Domain" })).then(
+        ([, name, version]) => ({ name, version }),
+      ));
+    return {
+      async getBalance(owner) {
+        const raw = await rl(() =>
+          publicClient.readContract({ address, abi: STOCK_ABI, functionName: "balanceOf", args: [owner as Address] }),
+        );
+        return raw / STOCK_ONCHAIN_SCALE;
+      },
+      async settle({ fromSecret, to, amount, memo }) {
+        const value = amount * STOCK_ONCHAIN_SCALE;
+        const owner = privateKeyToAccount(bytesToHex(fromSecret)).address;
+        const [{ name, version }, nonce] = await Promise.all([
+          domainOf(),
+          rl(() => publicClient.readContract({ address, abi: STOCK_ABI, functionName: "nonces", args: [owner] })),
+        ]);
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const { signature } = await signPermit({
+          secret: fromSecret,
+          token: address,
+          chainId: cfg.viem.id,
+          domainName: name,
+          domainVersion: version,
+          spender: treasury.address,
+          value,
+          nonce,
+          deadline,
+        });
+        const { r, s, v, yParity } = parseSignature(signature);
+        const permitted = await rl(() =>
+          wallet.writeContract({
+            address,
+            abi: STOCK_ABI,
+            functionName: "permit",
+            args: [owner, treasury.address, value, deadline, Number(v ?? BigInt(yParity + 27)), r, s],
+          }),
+        );
+        await confirm(permitted);
+        const hash = await rl(() =>
+          wallet.writeContract({
+            address,
+            abi: STOCK_ABI,
+            functionName: "transferFrom",
+            args: [owner, to as Address, value],
+            dataSuffix: stringToHex(memo),
+          }),
+        );
+        return confirm(hash);
+      },
+    };
+  }
+
+  /** The `assets` capability: this network's stock tokens, amounts in millionths of a token. */
+  function stockTransfers(stocks: readonly StockToken[]): AssetTransfers {
+    const list: Asset[] = stocks.map((s) => ({ symbol: s.symbol, name: s.name, address: s.address, decimals: 18 }));
+    const movers = new Map(stocks.map((s) => [s.address.toLowerCase(), stockAsset(s)]));
+    const mover = (asset: Asset) => {
+      const m = movers.get(asset.address.toLowerCase());
+      if (!m) throw new Error(`${cfg.chain} has no stock token ${asset.address}`);
+      return m;
+    };
+    return {
+      list: () => list,
+      balanceOf: (address, asset) => mover(asset).getBalance(address),
+      transfer: ({ asset, ...args }) => mover(asset).settle(args),
+    };
+  }
+
+  const assets = cfg.stocks?.length ? stockTransfers(cfg.stocks) : undefined;
+
   return {
+    ...(venue?.depositContract ? { venue: hyperCoreVenue(venue.name, venue.infoUrl, venue.depositContract) } : {}),
     chain: cfg.chain,
     tokenId: token,
+    ...(assets ? { assets } : {}),
     isValidAddress: (a) => isAddress(a, { strict: false }),
     async createWallet() {
       const secret = crypto.getRandomValues(new Uint8Array(32));
@@ -114,7 +331,7 @@ export function createEvmAdapter(
     },
     async settle({ fromSecret, to, amount, memo }) {
       const { name, version } = await tokenDomain();
-      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+      const validBefore = BigInt(Math.floor(Date.now() / 1000) + AUTHORIZATION_TTL_S);
       const { from, nonce, signature } = await signTransferAuthorization({
         secret: fromSecret,
         token,
@@ -135,7 +352,17 @@ export function createEvmAdapter(
           args: [from, to as Address, amount, 0n, validBefore, nonce, Number(v ?? BigInt(yParity + 27)), r, s],
         }),
       );
-      return confirm(hash);
+      // Sent: from here a missing receipt doesn't mean nothing moved.
+      return confirm(hash, { unconfirmedIsTyped: true });
+    },
+    async transferOutcome(txHash, { sentAt, now }) {
+      const receipt = await rl(() => publicClient.getTransactionReceipt({ hash: txHash as Hex })).catch((e: unknown) => {
+        if (e instanceof TransactionReceiptNotFoundError) return null;
+        throw e;
+      });
+      if (receipt) return receipt.status === "success" ? { state: "landed", result: { txHash, explorerUrl: cfg.explorerTx(txHash) } } : { state: "failed" };
+      // Its authorization has expired: if it's ever mined it reverts, so nothing can move any more.
+      return now.getTime() - sentAt.getTime() > NEVER_LANDS_AFTER_MS ? { state: "failed" } : { state: "pending" };
     },
     async treasuryAddress() {
       return treasury.address;
@@ -147,9 +374,16 @@ export function createEvmAdapter(
       // Sent: from here a missing receipt doesn't mean nothing moved.
       return confirm(hash, { unconfirmedIsTyped: true });
     },
+    ...(cfg.escrow
+      ? {
+          escrow: createEvmEscrow({
+            contract: cfg.escrow.contract,
+            token,
+            chainId: cfg.viem.id,
+            explorerTx: cfg.explorerTx,
+            rpc: viemEscrowRpc({ viem: cfg.viem, rpcUrl: cfg.rpcUrl, contract: cfg.escrow.contract, treasuryKey: cfg.treasuryKey, attestorKey: cfg.escrow.attestorKey, token, tokenDomain }),
+          }),
+        }
+      : {}),
   };
-}
-
-export function evmSecretFromHex(hex: Hex): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(hexToBytes(hex));
 }
