@@ -102,6 +102,10 @@ export default async function JudgesPage() {
               <a href="/how-it-works">How it works</a>: codes, passkeys, escrow, limits and custody.
             </li>
             <li>
+              <a href="/self-audit">Self-audit</a>: every way the Solana side could lose money, what&apos;s at stake
+              right now, and how we&apos;d harden it.
+            </li>
+            <li>
               <a href="/agents">Agents</a>: the MCP server, keys and tools.
             </li>
             <li>

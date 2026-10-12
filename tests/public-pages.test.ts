@@ -16,6 +16,7 @@ describe("sitemapEntries", () => {
       "https://dial.example/judges",
       "https://dial.example/ledger",
       "https://dial.example/status",
+      "https://dial.example/self-audit",
       "https://dial.example/terms",
       "https://dial.example/privacy",
     ]);
