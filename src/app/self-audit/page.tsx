@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Self-audit",
   description:
-    "Every way the Solana side of the Dial operator could lose money: what an attacker needs, the worst case, how much is at stake right now, and how we'd harden it.",
+    "Every way the Solana side of text-my-crypto could lose money: what an attacker needs, the worst case, how much is at stake right now, and how we'd harden it.",
   alternates: { canonical: "/self-audit" },
 };
 
@@ -107,11 +107,11 @@ export default async function SelfAuditPage() {
       <Section
         level={1}
         heading="Self-audit: Solana"
-        lede="Every way the Solana side of Dial could lose money: what an attacker needs, the worst they can do, how much is at stake right now, and how we'd close it. Worst first."
+        lede="Every way the Solana side of text-my-crypto could lose money: what an attacker needs, the worst they can do, how much is at stake right now, and how we'd close it. Worst first."
       >
         <StatStrip
           items={[
-            { value: money(e ? usersTotal(e) : null), label: "in people's Dial wallets" },
+            { value: money(e ? usersTotal(e) : null), label: "in people's wallets" },
             { value: money(e?.escrows.amount), label: `in live escrows (${e?.escrows.count ?? "—"})` },
             { value: money(e?.treasury), label: "in the treasury" },
             { value: money(e ? everything(e) : null), label: "at stake if every key leaked" },
@@ -123,15 +123,15 @@ export default async function SelfAuditPage() {
         </Fine>
       </Section>
 
-      <Section heading="How Dial holds money">
+      <Section heading="How text-my-crypto holds money">
         <Prose>
           <p>
-            Dial is custodial today. The server keeps every person&apos;s Solana key, sealed with one encryption key, and
+            text-my-crypto is custodial today. The server keeps every person&apos;s Solana key, sealed with one encryption key, and
             signs their payments once they approve with a texted code or a passkey. It also holds the treasury key (test
             money for new people, and network fees) and the escrow attestor key.
           </p>
           <p>
-            The escrow program is the one part that doesn&apos;t need trust in Dial for refunds: after expiry, anyone can
+            The escrow program is the one part that doesn&apos;t need trust in the operator for refunds: after expiry, anyone can
             send an escrow back to its sender. Before expiry, the attestor alone decides who it pays.
           </p>
           <p>

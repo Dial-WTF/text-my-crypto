@@ -8,9 +8,9 @@ import { errorText, type SettlementAdapter } from "@/lib/settlement/types";
  * ledger. A null means that part couldn't be read just now; it is never guessed.
  */
 export type Exposure = {
-  /** The USDC in each Dial-held user wallet on Solana; null when any of them couldn't be read. */
+  /** The USDC in each server-held user wallet on Solana; null when any of them couldn't be read. */
   balances: bigint[] | null;
-  /** Money waiting in the escrow program for people not on Dial yet, before expiry. */
+  /** Money waiting in the escrow program for people who haven't joined yet, before expiry. */
   escrows: { count: number; amount: bigint };
   /** The operator's treasury USDC, which funds signups. */
   treasury: bigint | null;

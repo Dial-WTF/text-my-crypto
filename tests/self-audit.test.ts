@@ -56,6 +56,8 @@ describe("what's at stake", () => {
       expect(c.harden.length).toBeGreaterThan(0);
       expect(c.inPlace.length).toBeGreaterThan(0);
       expect(`${c.title} ${c.worst} ${c.harden.join(" ")}`).not.toMatch(/\bfirst ever\b|\bonly one\b|—/);
+      // The audit is about this project, not the company behind it.
+      expect(JSON.stringify({ ...c, loss: c.loss(e).basis })).not.toMatch(/\bDial\b/);
     }
     // Worst first: the severities never get worse further down the page.
     const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
