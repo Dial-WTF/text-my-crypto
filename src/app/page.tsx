@@ -19,7 +19,7 @@ import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "./agent-content";
 import { Colophon } from "./colophon";
-import { DEMO_VIDEO } from "./demo-video";
+import { DEMO_VIDEO, PITCH_VIDEO } from "./demo-video";
 import { limitItems, runsOn, settlesOn, transcript } from "./landing-content";
 import { loadChainStatuses, loadLedger } from "./ledger-data";
 import { pageMeta } from "./seo";
@@ -81,6 +81,10 @@ export default async function Home() {
         lede="Any AI agent can pay, request or invoice anyone with a phone number through the Dial operator's MCP server. Agents start payments; a human approves every one from a text."
       >
         <AgentPanel {...agentFacts()} />
+      </Section>
+
+      <Section heading="Why we built it">
+        <DemoVideo {...PITCH_VIDEO} />
       </Section>
 
       <Section heading="On the ledger right now">

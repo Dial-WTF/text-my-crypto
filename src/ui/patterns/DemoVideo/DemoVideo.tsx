@@ -8,8 +8,10 @@ type DemoVideoProps = {
   sources: readonly string[];
   /** A still from the video, shown until it plays. */
   poster: string;
-  /** WebVTT captions of the narration. */
-  captions: string;
+  /** WebVTT captions, when the captions aren't already in the picture. */
+  captions?: string;
+  /** What the play button says to a screen reader, e.g. "Play the demo video". */
+  label: string;
   /** What the video shows, in one line under it. */
   caption: string;
 };
@@ -18,7 +20,7 @@ type DemoVideoProps = {
  * A recorded product demo. Nothing loads until someone presses play: a large button over the poster, and a click
  * anywhere on it, starts the video; the browser's own controls take over once it plays.
  */
-export function DemoVideo({ sources, poster, captions, caption }: DemoVideoProps) {
+export function DemoVideo({ sources, poster, captions, caption, label }: DemoVideoProps) {
   const video = useRef<HTMLVideoElement>(null);
   const [started, setStarted] = useState(false);
   const play = () => {
@@ -42,10 +44,10 @@ export function DemoVideo({ sources, poster, captions, caption }: DemoVideoProps
           {sources.map((src) => (
             <source key={src} src={src} type="video/mp4" />
           ))}
-          <track kind="captions" src={captions} srcLang="en" label="English" />
+          {captions ? <track kind="captions" src={captions} srcLang="en" label="English" /> : null}
         </video>
         {started ? null : (
-          <button type="button" className={styles.play} onClick={play} aria-label="Play the demo video">
+          <button type="button" className={styles.play} onClick={play} aria-label={label}>
             <span className={styles.icon} aria-hidden />
           </button>
         )}
