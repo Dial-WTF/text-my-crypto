@@ -3,6 +3,7 @@ import { usdToBaseUnits } from "@/lib/money";
 import { smsUri } from "@/lib/pay-links";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
 import { Prose } from "@/ui/patterns/Prose/Prose";
+import { DemoVideo } from "@/ui/patterns/DemoVideo/DemoVideo";
 import { Section, Split } from "@/ui/patterns/Section/Section";
 import { SiteShell } from "@/ui/patterns/SiteShell/SiteShell";
 import { ButtonLink } from "@/ui/primitives/Button/Button";
@@ -13,6 +14,7 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "../agent-content";
 import { codeUrl } from "../chain-content";
 import { Colophon } from "../colophon";
+import { DEMO_VIDEO } from "../demo-video";
 import { settlesOn } from "../landing-content";
 import { loadChainStatuses } from "../ledger-data";
 import { pageMeta } from "../seo";
@@ -44,6 +46,10 @@ export default async function JudgesPage() {
         heading="For judges"
         lede={`The Dial operator sends, requests and invoices stablecoins by text message. People use SMS from any phone. AI agents use an MCP server, and a person approves every payment they start.${testnet ? " Everything here runs on testnets with test money." : ""}`}
       />
+
+      <Section heading="Watch it first">
+        <DemoVideo {...DEMO_VIDEO} />
+      </Section>
 
       <Section heading="Try it in 60 seconds">
         <Split>

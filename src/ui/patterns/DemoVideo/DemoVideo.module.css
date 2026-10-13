@@ -1,0 +1,22 @@
+.figure {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  min-width: 0;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: var(--rule-thin) solid var(--color-canvas-rule);
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.caption {
+  max-width: var(--measure);
+  font-size: var(--text-sm);
+  color: var(--color-on-canvas-muted);
+}
