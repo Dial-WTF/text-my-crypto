@@ -14,7 +14,7 @@ import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "../agent-content";
 import { codeUrl } from "../chain-content";
 import { Colophon } from "../colophon";
-import { DEMO_VIDEO } from "../demo-video";
+import { DEMO_VIDEO, PITCH_VIDEO } from "../demo-video";
 import { settlesOn } from "../landing-content";
 import { loadChainStatuses } from "../ledger-data";
 import { pageMeta } from "../seo";
@@ -49,6 +49,10 @@ export default async function JudgesPage() {
 
       <Section heading="Watch it first">
         <DemoVideo {...DEMO_VIDEO} />
+      </Section>
+
+      <Section heading="The pitch">
+        <DemoVideo {...PITCH_VIDEO} />
       </Section>
 
       <Section heading="Try it in 60 seconds">
