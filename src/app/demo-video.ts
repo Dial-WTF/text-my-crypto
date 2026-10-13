@@ -1,6 +1,10 @@
-/** The recorded demo: a dollar to Jacob's phone and back, by text, on Solana devnet. Files live in public/demo. */
+/**
+ * The recorded demo: a dollar to Jacob's phone and back, by text, on Solana devnet. The video plays from the R2
+ * media domain, which answers byte-range requests (iPhone Safari needs them; static assets don't do ranges), and
+ * falls back to the copy in public/demo. Poster and captions are served from this site.
+ */
 export const DEMO_VIDEO = {
-  src: "/demo/dial-operator-demo.mp4",
+  sources: ["https://media.dialoperator.cc/demo/dial-operator-demo.mp4", "/demo/dial-operator-demo.mp4"],
   poster: "/demo/dial-operator-demo.jpg",
   captions: "/demo/dial-operator-demo.vtt",
   caption:

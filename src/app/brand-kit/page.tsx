@@ -42,6 +42,9 @@ export default function BrandKitPage() {
               <figcaption>
                 <p className={styles.name}>{a.name}</p>
                 <p className={styles.note}>{a.note}</p>
+                <p className={styles.note}>
+                  <strong>Use it for:</strong> {a.uses}
+                </p>
               </figcaption>
               <ul className={styles.links}>
                 {a.downloads.map((d) => (
