@@ -4,6 +4,7 @@ import { formatPhone } from "@/lib/phone";
 import { smsUri } from "@/lib/pay-links";
 import { AgentPanel } from "@/ui/patterns/AgentPanel/AgentPanel";
 import { ChainStrip } from "@/ui/patterns/ChainStrip/ChainStrip";
+import { DemoVideo } from "@/ui/patterns/DemoVideo/DemoVideo";
 import { Limits } from "@/ui/patterns/Limits/Limits";
 import { Marquee } from "@/ui/patterns/Marquee/Marquee";
 import { OnchainProof } from "@/ui/patterns/OnchainProof/OnchainProof";
@@ -18,6 +19,7 @@ import { Transcript } from "@/ui/patterns/Transcript/Transcript";
 import { Stack } from "@/ui/primitives/Stack/Stack";
 import { agentFacts } from "./agent-content";
 import { Colophon } from "./colophon";
+import { DEMO_VIDEO } from "./demo-video";
 import { limitItems, runsOn, settlesOn, transcript } from "./landing-content";
 import { loadChainStatuses, loadLedger } from "./ledger-data";
 import { pageMeta } from "./seo";
@@ -52,6 +54,10 @@ export default async function Home() {
         href="https://dial.work"
         line="Agentic peer-to-peer crypto payments, by SMS for people and MCP for agents. Built for Colosseum's Crypto World's Fair."
       />
+
+      <Section heading="Watch a real payment">
+        <DemoVideo {...DEMO_VIDEO} />
+      </Section>
 
       <ChainStrip heading="Settles on" items={settlesOn(chains)} size="large" />
       <ChainStrip heading="Runs on" items={runsOn} />
