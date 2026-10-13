@@ -5,6 +5,11 @@
   min-width: 0;
 }
 
+.frame {
+  position: relative;
+  min-width: 0;
+}
+
 .video {
   display: block;
   width: 100%;
@@ -19,4 +24,50 @@
   max-width: var(--measure);
   font-size: var(--text-sm);
   color: var(--color-on-canvas-muted);
+}
+
+/* The whole poster is the play button; the round icon sits in the middle. */
+.play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: clamp(3.5rem, 9vw, 6rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 0.5rem color-mix(in oklab, var(--color-accent) 25%, transparent);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+/* A play triangle, nudged right so it looks centred. */
+.icon::after {
+  content: "";
+  width: 34%;
+  aspect-ratio: 1;
+  margin-left: 10%;
+  background: var(--color-accent-ink);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.play:hover .icon,
+.play:focus-visible .icon {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 0.75rem color-mix(in oklab, var(--color-accent) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    transition: none;
+  }
 }
