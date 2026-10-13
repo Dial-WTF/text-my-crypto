@@ -29,7 +29,10 @@
   --space-xl: 3rem;
   --space-2xl: 4rem;
   --space-3xl: 6rem;
-  --gutter: clamp(1rem, 4vw, 3rem);
+  /* The page's content column: on a wide screen the gutters grow so the content stays this wide and centred,
+   * while section backgrounds and rules still run edge to edge. */
+  --page-max: 84rem;
+  --gutter: max(clamp(1rem, 4vw, 3rem), (100vw - var(--page-max)) / 2);
 
   /* Shape */
   --measure: 62ch;

@@ -1,6 +1,8 @@
 .figure {
   display: grid;
   gap: var(--space-sm);
+  /* Never taller than the screen: the width follows the height left over after the section heading. */
+  width: min(100%, (100svh - 9rem) * 16 / 9);
   margin: 0;
   min-width: 0;
 }
@@ -35,7 +37,8 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
-  background: transparent;
+  /* A soft shade behind the icon, so it reads over whatever the poster shows. */
+  background: radial-gradient(circle at center, rgb(0 0 0 / 0.45), transparent 60%);
   cursor: pointer;
 }
 
