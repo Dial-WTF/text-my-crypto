@@ -12,6 +12,7 @@ const footerLinks = () => [
   { href: "/ledger", label: "Ledger" },
   { href: "/status", label: "Status" },
   { href: "/self-audit", label: "Self-audit" },
+  { href: "/brand-kit", label: "Brand kit" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
   { href: site().source, label: "GitHub" },
