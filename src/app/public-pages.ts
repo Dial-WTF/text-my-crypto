@@ -12,6 +12,7 @@ export const PUBLIC_PAGES: readonly Page[] = [
   { path: "/ledger", changeFrequency: "hourly", priority: 0.6 },
   { path: "/status", changeFrequency: "hourly", priority: 0.4 },
   { path: "/self-audit", changeFrequency: "weekly", priority: 0.6 },
+  { path: "/brand-kit", changeFrequency: "monthly", priority: 0.3 },
   { path: "/terms", changeFrequency: "monthly", priority: 0.3 },
   { path: "/privacy", changeFrequency: "monthly", priority: 0.3 },
 ];
