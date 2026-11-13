@@ -8,7 +8,7 @@ Money over plain SMS is an old idea; this version uses real identities instead o
 
 Target: Colosseum Crypto World's Fair. Submission closes **2026-10-12 11:59pm PDT**. One submission, multiple chains integrated so it's eligible across ecosystem tracks plus the general pool. **Main demo is Solana.** Chain order: Solana → Tempo → Base → Zcash (stretch).
 
-Bot number: **+1 806-607-1387** (Payphone line, owned by our API account).
+Bot number: **+1 806-302-1661** (Payphone line, owned by our API account).
 
 ## Goals
 
