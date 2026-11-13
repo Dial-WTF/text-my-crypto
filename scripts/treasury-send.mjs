@@ -6,7 +6,7 @@
 process.loadEnvFile(process.env.ENV_FILE ?? ".env.production.local");
 
 // Wrangler supplies these at runtime; for local scripts default to production values if absent.
-process.env.DIAL_OPERATOR_NUMBER ??= "+18066071387";
+process.env.DIAL_OPERATOR_NUMBER ??= "+18063021661";
 process.env.NETWORK ??= "testnet";
 process.env.CHAINS ??= "solana,tempo";
 process.env.ESCROW_PROGRAM ??= "on";

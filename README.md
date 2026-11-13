@@ -1,6 +1,6 @@
 # Dial operator
 
-The Dial operator does agentic peer-to-peer crypto payments. People use it by SMS: text **+1 806 607 1387** and send, request, invoice, receive and withdraw stablecoins with plain sentences, from any phone, with no app and no wallet address. Agents use the same operator through an MCP server, and a person still approves every payment from a text. It runs on testnets only. Powered by [Dial.Work](https://dial.work).
+The Dial operator does agentic peer-to-peer crypto payments. People use it by SMS: text **+1 806 302 1661** and send, request, invoice, receive and withdraw stablecoins with plain sentences, from any phone, with no app and no wallet address. Agents use the same operator through an MCP server, and a person still approves every payment from a text. It runs on testnets only. Powered by [Dial.Work](https://dial.work).
 
 - Live site: https://dialoperator.cc
 - Public ledger: https://dialoperator.cc/ledger
@@ -20,7 +20,7 @@ op:  Want friends to know it's you? Text CALL ME and your name, like CALL ME Ale
 
 ### With a phone
 
-1. Text `hi` to **+1 806 607 1387**.
+1. Text `hi` to **+1 806 302 1661**.
 2. That first text opens your account: you get a handle and a small amount of test USDC to try it with. It is play money. Text `call me Alex` to pick your name (and an `@alex` handle).
 3. Text `send @someone $1`, using a friend's handle, or `send $1 to <their phone number>`. Add `on tempo`, `on base`, `on ethereum`, `on arbitrum`, `on hyperliquid` or `on robinhood` to pick a chain; Solana is the default.
 4. The operator replies with a 6-digit code. Text the code back to approve.
@@ -74,7 +74,7 @@ flowchart LR
   phone["Phone (SMS)"]
   agent["Agent (MCP client)"]
   browser["Browser"]
-  payphone["Payphone line<br/>+1 806 607 1387"]
+  payphone["Payphone line<br/>+1 806 302 1661"]
   subgraph cf["Cloudflare"]
     webhook["/api/sms/:secret"]
     queue[["Queue: sms-inbound<br/>8 retries, then DLQ"]]
@@ -120,7 +120,7 @@ One Cloudflare Worker serves everything: Next.js 16 built with OpenNext, plus a 
 
 Any MCP client can pay, request from or invoice anyone with a phone number. The person still approves every payment from a text.
 
-1. Text `connect agent` to **+1 806 607 1387** from a Dial account (text `hi` first if you don't have one). You get a one-time link and code. Open the link, enter the code, and the page shows the agent key once.
+1. Text `connect agent` to **+1 806 302 1661** from a Dial account (text `hi` first if you don't have one). You get a one-time link and code. Open the link, enter the code, and the page shows the agent key once.
 2. Point your MCP client at `https://dialoperator.cc/api/mcp` (Streamable HTTP) with `Authorization: Bearer <key>`.
 3. Tools: `whoami`, `get_balance`, `get_receive_address`, `resolve_recipient`, `send_payment`, `split_payment`, `request_payment`, `create_invoice`, `withdraw`, `get_payment`, `list_payments`, `get_pay_link`, `get_wallet`, `get_price`, `get_stocks`, `get_hyperliquid_balance`.
 

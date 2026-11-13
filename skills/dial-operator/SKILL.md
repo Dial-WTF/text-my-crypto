@@ -5,13 +5,13 @@ description: Pay, request money from, or invoice anyone with a phone number in U
 
 # Dial operator
 
-Dial moves USDC between phone numbers. People use it by texting +1 806 607 1387. This MCP server lets you do the same things for one Dial account: check the balance, start payments, request money, send invoices, and track them.
+Dial moves USDC between phone numbers. People use it by texting +1 806 302 1661. This MCP server lets you do the same things for one Dial account: check the balance, start payments, request money, send invoices, and track them.
 
 You never approve a payment. Every money tool creates a pending payment and texts a one-time code to the person who has to pay. Nothing moves until that person replies with the code or approves with their passkey.
 
 ## Connect
 
-1. The account owner texts `connect agent` (optionally with a name, e.g. `connect agent claude`) to **+1 806 607 1387**. They need a Dial account first; texting `hi` starts one.
+1. The account owner texts `connect agent` (optionally with a name, e.g. `connect agent claude`) to **+1 806 302 1661**. They need a Dial account first; texting `hi` starts one.
 2. The operator replies with a one-time link and a 6-digit code. They open the link, enter the code, and the page shows the agent key once. Keys look like `dial_ak_…`.
 3. Add the server to your MCP client with the key as a bearer token:
 
