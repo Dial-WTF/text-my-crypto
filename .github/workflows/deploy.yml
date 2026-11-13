@@ -30,5 +30,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # cloudflare-env.d.ts is gitignored; ship's typecheck needs it.
+      - run: pnpm cf-typegen
       - name: Checks, staging and smoke test, then production
         run: pnpm ship

@@ -20,6 +20,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      # cloudflare-env.d.ts is gitignored, so generate it before anything type-checks.
+      - run: pnpm cf-typegen
+      # Typecheck runs `next typegen`, which writes the route types (RouteContext) that type-aware lint reads,
+      # so it goes before lint. Same order as scripts/ship.mjs.
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm test
