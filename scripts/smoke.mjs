@@ -15,7 +15,7 @@ const TARGETS = {
   staging: { url: "https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev", envFile: ".env.staging.local" },
   local: { url: "http://localhost:3100", envFile: ".env.local" },
 };
-const OPERATOR = "+18066071387";
+const OPERATOR = "+18063021661";
 /** The receiver every run pays. It signs up on the first run and is reused after. */
 const RECEIVER = "+18065550100";
 

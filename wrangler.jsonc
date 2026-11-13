@@ -17,7 +17,7 @@
   "ai": { "binding": "AI" },
   "vars": {
     "APP_URL": "https://dialoperator.cc",
-    "DIAL_OPERATOR_NUMBER": "+18066071387",
+    "DIAL_OPERATOR_NUMBER": "+18063021661",
     "PAYPHONE_BASE_URL": "https://payphone.wtf",
     "SMS_MODE": "payphone",
     "ESCROW_TTL_DAYS": "7",
@@ -54,7 +54,7 @@
     ]
   },
   // The watchdog (worker.ts scheduled → /api/sms/<secret>/watchdog): health, unanswered texts and
-  // Payphone reconciliation every minute; texts ALERT_PHONE on problems.
+  // Payphone reconciliation every minute; problems are logged, never texted.
   "triggers": { "crons": ["* * * * *"] },
   "env": {
     // Staging: its own Worker, D1 and queues. SMS_MODE=log, so it never sends a real text; the smoke
@@ -71,7 +71,7 @@
       "triggers": { "crons": ["* * * * *"] },
       "vars": {
         "APP_URL": "https://text-my-crypto-staging.raspy-thunder-20d2.workers.dev",
-        "DIAL_OPERATOR_NUMBER": "+18066071387",
+        "DIAL_OPERATOR_NUMBER": "+18063021661",
         "PAYPHONE_BASE_URL": "https://payphone.wtf",
         "SMS_MODE": "log",
         "ESCROW_TTL_DAYS": "7",

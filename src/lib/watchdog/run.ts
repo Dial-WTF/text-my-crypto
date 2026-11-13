@@ -23,7 +23,7 @@ export type WatchdogDeps = {
   /** Compare against Payphone's inbox. Only where the line really points at this deployment. */
   reconcile: boolean;
   adapters: Adapters;
-  /** Texts the owner. Null when no ALERT_PHONE is set: alerts are only logged. */
+  /** Delivers an alert. Production passes null, so alerts are only logged and never texted. */
   alert: ((body: string) => Promise<void>) | null;
 };
 

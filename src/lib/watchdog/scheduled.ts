@@ -1,6 +1,4 @@
 // Runs in the custom worker entry (worker.ts), outside the Next.js bundle: keep imports tiny.
-import { normalizePhone } from "@/lib/phone";
-import { payphoneSender } from "@/lib/sms/payphone";
 import { mayAlertStateless } from "./slot";
 
 /** The bit of D1's API this file uses, so tests can hand it SQLite. */
@@ -12,11 +10,6 @@ export type ScheduledEnv = {
   APP_URL: string;
   SMS_WEBHOOK_SECRET: string;
   DB?: D1Like;
-  SMS_MODE?: string;
-  PAYPHONE_API_KEY?: string;
-  PAYPHONE_BASE_URL?: string;
-  DIAL_OPERATOR_NUMBER?: string;
-  ALERT_PHONE?: string;
 };
 
 const KEY = "app";
@@ -48,13 +41,16 @@ async function recordFailure(db: D1Like, detail: string, now: number): Promise<b
 
 /**
  * The cron trigger's job: run the watchdog route in-process. If the app cannot even answer it (a bad
- * deploy, env that fails to parse), text the owner straight from here: after two failing minutes and
- * at most every 30 minutes, tracked in D1; if D1 is unreachable too, on the stateless 30-minute slot.
+ * deploy, env that fails to parse), log an alert from here: after two failing minutes and at most
+ * every 30 minutes, tracked in D1; if D1 is unreachable too, on the stateless 30-minute slot.
+ *
+ * Alerts are never texted. Automated texts from the operator line got its previous number
+ * (+1 806 607 1387) blocked by the carrier, so the line only ever answers people.
  */
 export async function scheduledWatchdog(
   fetchApp: (req: Request) => Promise<Response>,
   env: ScheduledEnv,
-  opts: { now?: () => number; fetchImpl?: typeof fetch } = {},
+  opts: { now?: () => number } = {},
 ): Promise<void> {
   const url = new URL(`/api/sms/${env.SMS_WEBHOOK_SECRET}/watchdog`, env.APP_URL);
   let problem: string | null = null;
@@ -79,18 +75,7 @@ export async function scheduledWatchdog(
   console.error(JSON.stringify({ evt: "watchdog", ok: false, failing: [KEY], error: problem, state }));
   if (!alert) return;
 
-  const owner = env.ALERT_PHONE ? normalizePhone(env.ALERT_PHONE) : null;
-  if (env.SMS_MODE !== "payphone" || !owner || !env.PAYPHONE_API_KEY || !env.DIAL_OPERATOR_NUMBER) return;
-  const send = payphoneSender(
-    { baseUrl: env.PAYPHONE_BASE_URL ?? "https://payphone.wtf", apiKey: env.PAYPHONE_API_KEY, from: env.DIAL_OPERATOR_NUMBER },
-    opts.fetchImpl,
-  );
-  try {
-    await send(owner, `Dial watchdog. PROBLEM: app: not answering (${problem}). Texts may be failing.`);
-  } catch {
-    console.error(JSON.stringify({ evt: "watchdog", ok: false, error: "fallback alert failed" }));
-    return;
-  }
+  console.error(JSON.stringify({ evt: "watchdog_alert", failing: [KEY], error: problem, state }));
   if (state === "d1" && env.DB) {
     await env.DB.prepare("update watchdog_problems set last_alerted_at = ?1 where key = ?2")
       .bind(now, KEY)

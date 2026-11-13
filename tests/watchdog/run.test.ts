@@ -13,7 +13,6 @@ import { createSqlite, createTestDb } from "../helpers/db";
 import { fakeAdapter } from "../helpers/fakes";
 
 const ALEX = "+15550000010";
-const OWNER = "+15550000099";
 const LINE = "+18066071387";
 const T0 = new Date("2026-10-09T12:00:00Z");
 const at = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
@@ -215,11 +214,6 @@ describe("cron trigger", () => {
   const env = {
     APP_URL: "https://tmc.test",
     SMS_WEBHOOK_SECRET: "s".repeat(40),
-    SMS_MODE: "payphone",
-    PAYPHONE_API_KEY: "key",
-    PAYPHONE_BASE_URL: "https://pp.test",
-    DIAL_OPERATOR_NUMBER: LINE,
-    ALERT_PHONE: OWNER,
   };
   let sqlite: Database;
   let d1: D1Like;
@@ -245,44 +239,47 @@ describe("cron trigger", () => {
   });
 
   function sink() {
-    const sent: Array<{ to: string; message: string }> = [];
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-      sent.push(JSON.parse(init?.body as string) as { to: string; message: string });
-      return new Response("{}");
-    }) as unknown as typeof fetch;
-    return { sent, fetchImpl };
+    const fetchImpl = vi.fn(async () => new Response("{}")) as unknown as typeof fetch;
+    return { fetchImpl };
   }
   const broken = async () => new Response("boom", { status: 500 });
 
+  function alertLogs(spy: { mock: { calls: unknown[][] } }): unknown[] {
+    return spy.mock.calls
+      .map(([line]): unknown => (typeof line === "string" && line.includes('"watchdog_alert"') ? JSON.parse(line) : null))
+      .filter((entry) => entry !== null);
+  }
+
   it("runs the watchdog route and sends nothing itself when it answers", async () => {
     const seen: string[] = [];
-    const s = sink();
     await scheduledWatchdog(async (req) => {
       seen.push(`${req.method} ${new URL(req.url).pathname}`);
       return Response.json({ ok: true });
-    }, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl });
+    }, { ...env, DB: d1 });
     expect(seen).toEqual([`POST /api/sms/${env.SMS_WEBHOOK_SECRET}/watchdog`]);
-    expect(s.sent).toEqual([]);
   });
 
-  it("texts only the owner from the second failing minute, then at most every 30 minutes, across isolates", async () => {
+  it("logs an alert from the second failing minute, then at most every 30 minutes, and never texts", async () => {
     const s = sink();
+    vi.stubGlobal("fetch", s.fetchImpl);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     // A new isolate every run: nothing but D1 carries over.
     for (let m = 0; m <= 31; m++) {
-      await scheduledWatchdog(broken, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
+      await scheduledWatchdog(broken, { ...env, DB: d1 }, { now: () => at(m).getTime() });
     }
-    expect(s.sent).toEqual([
-      { to: OWNER, from: LINE, message: expect.stringContaining("app: not answering (watchdog route answered 500)") },
-      { to: OWNER, from: LINE, message: expect.stringContaining("not answering") },
+    expect(alertLogs(spy)).toEqual([
+      expect.objectContaining({ error: "watchdog route answered 500", state: "d1" }),
+      expect.objectContaining({ error: "watchdog route answered 500", state: "d1" }),
     ]);
+    expect(s.fetchImpl).not.toHaveBeenCalled();
     const [row] = await db.select().from(watchdogProblems);
     expect(row).toMatchObject({ key: "app", failures: 32, lastAlertedAt: at(31) });
+    spy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it("hands the all-clear to the watchdog route once the app answers again", async () => {
-    const s = sink();
-    for (const m of [0, 1]) await scheduledWatchdog(broken, { ...env, DB: d1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
-    expect(s.sent).toHaveLength(1);
+    for (const m of [0, 1]) await scheduledWatchdog(broken, { ...env, DB: d1 }, { now: () => at(m).getTime() });
     for (const m of [2, 3]) {
       now = at(m);
       await runWatchdog(deps({ reconcile: false }));
@@ -290,27 +287,17 @@ describe("cron trigger", () => {
     expect(alerts).toEqual(["[Dial watchdog, for you only] Fixed: the bot is answering again."]);
   });
 
-  it("without D1, texts only on the 30-minute slot", async () => {
-    const s = sink();
+  it("without D1, logs an alert only on the 30-minute slot", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const noD1: D1Like = {
       prepare: () => {
         throw new Error("D1_ERROR: unavailable");
       },
     };
     for (let m = 1; m <= 61; m++) {
-      await scheduledWatchdog(broken, { ...env, DB: noD1 }, { fetchImpl: s.fetchImpl, now: () => at(m).getTime() });
+      await scheduledWatchdog(broken, { ...env, DB: noD1 }, { now: () => at(m).getTime() });
     }
-    expect(s.sent).toHaveLength(2);
-  });
-
-  it("never texts outside production SMS mode or without an owner", async () => {
-    const s = sink();
-    for (const m of [0, 1, 2]) {
-      const t = () => at(m).getTime();
-      await scheduledWatchdog(broken, { ...env, DB: d1, SMS_MODE: "log" }, { fetchImpl: s.fetchImpl, now: t });
-      await scheduledWatchdog(broken, { ...env, DB: d1, ALERT_PHONE: undefined }, { fetchImpl: s.fetchImpl, now: t });
-      await scheduledWatchdog(broken, { ...env, DB: d1, ALERT_PHONE: "not a phone" }, { fetchImpl: s.fetchImpl, now: t });
-    }
-    expect(s.sent).toEqual([]);
+    expect(alertLogs(spy)).toHaveLength(2);
+    spy.mockRestore();
   });
 });
